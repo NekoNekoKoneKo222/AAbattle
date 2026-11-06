@@ -11,14 +11,6 @@ services:
       - key: NODE_ENV
         value: production
       - key: DATABASE_URL
-        fromDatabase:
-          name: aabattle-db
-          property: connectionString
+        sync: false  # Neon PostgreSQL: enter the secret connection string on first deploy
       - key: AI_MODEL
         value: gpt-4.1-mini
-
-databases:
-  - name: aabattle-db
-    region: singapore
-    plan: free
-    ipAllowList: []
