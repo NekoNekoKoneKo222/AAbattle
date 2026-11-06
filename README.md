@@ -39,6 +39,8 @@ npm test
 
 ユーザー名は3～20文字（文字・数字・アンダースコア）。パスワードは10～128文字。ログイン・新規登録に基本的な回数制限があります。パスワード再設定、メール認証、管理者モデレーションは未実装です。実サービスにする前にバックアップ、ログ監視、ユーザー通報、セッション管理を補強してください。
 
+Neonを使う場合は、初回にデータベースオーナーの**直接接続**で `migrations/001_init.sql` を適用してください。Webアプリ用には、`public` スキーマに対する `read_write` 権限だけを持つ別ロールのプール接続文字列を設定します。アプリの起動時にはスキーマを変更しません。
+
 ## AI生成モード
 
 AI解析を利用するにはRenderの環境変数などで `OPENAI_API_KEY` を設定します。必要に応じて `AI_MODEL` でモデルを変更できます。**API呼び出しは従量課金になる可能性があります。** キーはGitHubリポジトリやソースコードに記載しないでください。
@@ -52,7 +54,7 @@ AIの出力を直接コードとして実行することはありません。AI�
 リポジトリ直下の `render.yaml` はSingaporeリージョンのRender Web Serviceを構成します。**期限付きのRender無料Postgresは作成しません。** アカウントや対戦履歴は外部の長期保存向けPostgreSQL（例：Neon）に保存します。
 
 1. [Neon](https://neon.com/) などでPostgreSQLデータベースを作成する。Neonの無料プランは2026年10月現在1プロジェクトあたり1GBのストレージ枠がありますが、無料プランの内容や利用規約は将来変更され得ます。
-2. データベースのTLS接続文字列を用意する。Neonでは `sslmode=require` を含む接続文字列を使用してください。**接続文字列をGitHubやチャットに公開しないでください。**
+2. `migrations/001_init.sql` を直接接続で適用し、アプリ用の `read_write` ロールを作成する。Neonでは `sslmode=require` を含むプール接続文字列を使用してください。**接続文字列をGitHubやチャットに公開しないでください。**
 3. GitHubリポジトリの `main` に変更を反映する。
 4. Renderの [Blueprint作成画面](https://dashboard.render.com/blueprint/new?repo=https://github.com/NekoNekoKoneKo222/AAbattle) を開く。
 5. Blueprintの初回適用時に、必要な秘密環境変数 `DATABASE_URL` に接続文字列を設定する。
