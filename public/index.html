@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#081015">
+  <meta name="description" content="アスキーアートで生まれた戦士が完全自動で戦う、オンラインAAバトル。">
+  <title>ASCII BATTLE // 文字が戦う世界</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="noise" aria-hidden="true"></div>
+  <div class="site-shell">
+    <header class="site-header">
+      <div>
+        <p class="terminal-label">// MULTIPLAYER ASCII COMBAT SYSTEM</p>
+        <h1><span class="mark">[</span> ASCII<span class="accent">BATTLE</span> <span class="mark">]</span></h1>
+        <p class="tagline">描いた文字が、意志を持って戦い始める。</p>
+      </div>
+      <div class="right-header">
+        <span id="mode-badge" class="small-badge">GENERATOR : CHECKING...</span>
+        <span id="user-badge" class="small-badge">GUEST MODE</span>
+      </div>
+    </header>
+
+    <div id="notification" class="notification hidden" role="status"></div>
+
+    <main id="auth-view" class="auth-layout">
+      <section class="ascii-frame auth-panel">
+        <div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div>
+        <div class="ascii-content">
+          <div class="panel-heading"><span class="number">01</span> ACCOUNT ACCESS</div>
+          <h2 id="auth-title">ログイン</h2>
+          <p class="muted">Google連携なし。自分だけのIDとパスワードで始めよう。</p>
+          <div class="auth-switch">
+            <button id="switch-login" class="text-button active" type="button">[ ログイン ]</button>
+            <button id="switch-register" class="text-button" type="button">[ 新規登録 ]</button>
+          </div>
+          <form id="auth-form" class="stack">
+            <label for="username">PLAYER NAME</label>
+            <input id="username" name="username" autocomplete="username" required minlength="3" maxlength="20" placeholder="プレイヤー名（3～20文字）">
+            <label for="password">PASSWORD</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required minlength="10" maxlength="128" placeholder="10文字以上のパスワード">
+            <button id="auth-submit" class="primary-button" type="submit">&gt;&gt; LOGIN</button>
+          </form>
+          <p class="fineprint">アカウントはこのゲーム専用です。パスワードの再発行は現在未対応のため、安全に保管してください。</p>
+        </div>
+        <div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div>
+      </section>
+      <section class="ascii-frame showcase-panel">
+        <div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div>
+        <div class="ascii-content">
+          <div class="panel-heading"><span class="number">02</span> TERMINAL PREVIEW</div>
+          <pre class="showcase-art" aria-label="猫とロボットのアスキーアート">  /\_/\                 .---.
+ ( o.o )    VS         |[o_o]|
+  &gt; ^ &lt;              /|_===_|\
+   /|\                  /   \
+
+   ATK 028            ATK 032
+   SPD 092            DEF 026</pre>
+          <div class="showcase-log">
+            <span class="green">&gt;</span> BATTLE SYSTEM ONLINE<br>
+            <span class="green">&gt;</span> WAITING FOR NEW CHALLENGER<span class="blink">_</span>
+          </div>
+          <p class="muted">[ CREATE ] → [ ANALYZE ] → [ AUTO BATTLE ]</p>
+        </div>
+        <div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div>
+      </section>
+    </main>
+
+    <main id="game-view" class="hidden">
+      <nav class="main-nav" aria-label="ゲームメニュー">
+        <button class="nav-button active" data-tab="create">[ 01 / 作成 ]</button>
+        <button class="nav-button" data-tab="arena">[ 02 / 対戦 ]</button>
+        <button class="nav-button" data-tab="collection">[ 03 / 図鑑 ]</button>
+        <button class="nav-button" data-tab="history">[ 04 / 戦績 ]</button>
+        <button id="logout" class="nav-button logout">[ LOGOUT ]</button>
+      </nav>
+
+      <section id="tab-create" class="tab-page creation-grid">
+        <div class="ascii-frame">
+          <div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div>
+          <div class="ascii-content">
+            <div class="panel-heading"><span class="number">01</span> CHARACTER FORGE</div>
+            <h2>文字から生命を作る。</h2>
+            <p class="muted">記号・スペース・改行を使って好きなキャラクターを描こう。</p>
+            <form id="fighter-form" class="stack">
+              <label for="fighter-name">CHARACTER NAME</label>
+              <input id="fighter-name" required maxlength="24" placeholder="キャラクター名">
+              <div class="label-row"><label for="art-editor">ASCII ART EDITOR</label><small id="art-size">0 / 1600</small></div>
+              <textarea id="art-editor" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off" rows="13" maxlength="1600" aria-describedby="art-hint"> /\_/\
+( o.o )
+ &gt; ^ &lt;</textarea>
+              <div id="art-hint" class="fineprint">最大20行・1行52文字。半角スペースと「\」はそのまま保持されます。</div>
+              <button id="generate-button" type="submit" class="primary-button">&gt;&gt; GENERATE FIGHTER</button>
+            </form>
+          </div>
+          <div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div>
+        </div>
+        <div class="ascii-frame preview-panel">
+          <div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div>
+          <div class="ascii-content">
+            <div class="panel-heading"><span class="number">02</span> LIVE PREVIEW</div>
+            <div class="preview-canvas"><pre id="art-preview"></pre></div>
+            <div id="generation-result" class="generation-result">
+              <p class="muted">ここに作成されたキャラクターの能力が表示されます。</p>
+            </div>
+          </div>
+          <div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div>
+        </div>
+      </section>
+
+      <section id="tab-arena" class="tab-page hidden">
+        <div class="arena-heading">
+          <div><div class="panel-heading"><span class="number">02</span> ONLINE ARENA</div><h2>全自動の文字戦争。</h2></div>
+          <div class="small-badge">MATCH TYPE : 1 VS 1</div>
+        </div>
+        <section class="ascii-frame">
+          <div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div>
+          <div class="ascii-content">
+            <div id="queue-controls" class="queue-controls">
+              <label for="selected-fighter">使用キャラクター</label>
+              <select id="selected-fighter" aria-label="使用キャラクター"></select>
+              <button id="join-queue" class="primary-button">&gt;&gt; FIND OPPONENT</button>
+              <button id="leave-queue" class="secondary-button hidden">[ キャンセル ]</button>
+            </div>
+            <p id="queue-status" class="muted" role="status">自分のキャラクターを選択し、オンライン対戦を開始してください。</p>
+            <div id="battle-stage" class="hidden">
+              <div class="battle-meta"><span id="battle-id">MATCH --</span><span id="battle-turn">TURN 00</span></div>
+              <div class="battle-columns">
+                <div class="battle-fighter">
+                  <div id="battle-name-a" class="combat-name">CHALLENGER A</div>
+                  <div class="hp-track"><span id="hp-a" class="hp-fill"></span></div>
+                  <div id="battle-hp-a" class="combat-hp">-- / -- HP</div>
+                  <div class="combat-art"><pre id="battle-art-a"></pre></div>
+                </div>
+                <div class="versus">VS</div>
+                <div class="battle-fighter">
+                  <div id="battle-name-b" class="combat-name">CHALLENGER B</div>
+                  <div class="hp-track"><span id="hp-b" class="hp-fill"></span></div>
+                  <div id="battle-hp-b" class="combat-hp">-- / -- HP</div>
+                  <div class="combat-art"><pre id="battle-art-b"></pre></div>
+                </div>
+              </div>
+              <div class="log-heading">// LIVE COMBAT LOG</div>
+              <div id="battle-log" class="battle-log" aria-live="polite"></div>
+            </div>
+          </div>
+          <div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div>
+        </section>
+      </section>
+
+      <section id="tab-collection" class="tab-page hidden">
+        <div class="panel-heading"><span class="number">03</span> ARCHIVE</div>
+        <h2>MY CHARACTERS</h2>
+        <div id="fighter-list" class="fighter-grid"></div>
+      </section>
+
+      <section id="tab-history" class="tab-page hidden">
+        <div class="panel-heading"><span class="number">04</span> BATTLE RECORDS</div>
+        <h2>対戦履歴</h2>
+        <div class="stats-summary"><span id="record-wins">WIN 0</span><span id="record-losses">LOSE 0</span></div>
+        <div id="match-history" class="history-list"></div>
+      </section>
+    </main>
+
+    <footer><span>ASCII BATTLE / 2026</span><span>EVERY CHARACTER HAS A STORY_</span></footer>
+  </div>
+</body>
+</html>

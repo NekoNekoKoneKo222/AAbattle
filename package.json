@@ -1,0 +1,21 @@
+{
+  "name": "aabattle",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ASCII-art arena with locally generated or AI-generated fighters and real-time multiplayer",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "argon2": "^0.44.0",
+    "express": "^5.1.0",
+    "pg": "^8.16.3",
+    "ws": "^8.18.3"
+  }
+}
