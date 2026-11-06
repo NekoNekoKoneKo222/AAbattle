@@ -47,19 +47,19 @@ AI解析を利用するにはRenderの環境変数などで `OPENAI_API_KEY` を
 
 AIの出力を直接コードとして実行することはありません。AIが提案した名前・説明・効果をバトル用の限られた能力形式に変換し、威力やステータスをサーバーで制限します。
 
-## Render デプロイ
+## 長期保存用データベース + Render デプロイ
 
-リポジトリ直下の `render.yaml` はSingaporeリージョンのWeb ServiceとPostgresを構成します。
+リポジトリ直下の `render.yaml` はSingaporeリージョンのRender Web Serviceを構成します。**期限付きのRender無料Postgresは作成しません。** アカウントや対戦履歴は外部の長期保存向けPostgreSQL（例：Neon）に保存します。
 
-1. GitHubリポジトリの `main` に変更を反映する。
-2. Renderの [Blueprint作成画面](https://dashboard.render.com/blueprint/new?repo=https://github.com/NekoNekoKoneKo222/AAbattle) を開く。
-3. 内容を確認し、Web ServiceとPostgresを作成する。
-4. AI生成が必要ならWeb ServiceのEnvironmentに `OPENAI_API_KEY` を安全に設定する。
-5. `/api/health` が `{"ok":true}` を返すか確認する。
+1. [Neon](https://neon.com/) などでPostgreSQLデータベースを作成する。Neonの無料プランは2026年10月現在1プロジェクトあたり1GBのストレージ枠がありますが、無料プランの内容や利用規約は将来変更され得ます。
+2. データベースのTLS接続文字列を用意する。Neonでは `sslmode=require` を含む接続文字列を使用してください。**接続文字列をGitHubやチャットに公開しないでください。**
+3. GitHubリポジトリの `main` に変更を反映する。
+4. Renderの [Blueprint作成画面](https://dashboard.render.com/blueprint/new?repo=https://github.com/NekoNekoKoneKo222/AAbattle) を開く。
+5. Blueprintの初回適用時に、必要な秘密環境変数 `DATABASE_URL` に接続文字列を設定する。
+6. AI生成が必要ならWeb ServiceのEnvironmentに `OPENAI_API_KEY` を安全に設定する。
+7. `/api/health` が `{"ok":true}` を返すか確認する。別々のアカウントで登録・対戦し、再起動後も戦績が残ることを確認する。
 
-**注意：Renderの無料Postgresは作成から30日で期限切れになります。期限後14日以内に有料プランへ移行しなければデータ削除となります。無料Web Serviceもアイドル時に停止することがあります。本番運用には長期保存できるデータベースを選んでください。**
-
-無料プランは試験公開用の設定です。勝敗・アカウントの永続性が必要な場合は有料Postgresまたは別の永続データベースを使用してください。
+**注意：**Renderの無料Web Serviceはアクセスがないと停止することがあり、接続中の試合も再起動時に中断されます。PostgreSQLのデータ自体はWeb Serviceの再起動では消えませんが、無料データベースに完全な永続性や無制限の可用性が保証されるわけではありません。重要なデータは定期的に別の保存先にバックアップしてください。
 
 ## プロジェクト構成
 
