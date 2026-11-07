@@ -17,14 +17,30 @@ function decorateFrames() {
 }
 
 async function api(endpoint, options = {}) {
-  const response = await fetch(`/api/${endpoint}`, {
-    credentials: 'same-origin',
-    ...options,
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `サーバーエラー: ${response.status}`);
-  return data;
+  const { timeoutMs = 45000, ...requestOptions } = options;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`/api/${endpoint}`, {
+      credentials: 'same-origin',
+      ...requestOptions,
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', ...(requestOptions.headers || {}) }
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `サーバーエラー: ${response.status}`);
+    return data;
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new Error('サーバーの応答がタイムアウトしました。無料サーバーが起動中の可能性があります。再接続してください。');
+    }
+    if (error instanceof TypeError) {
+      throw new Error('サーバーへ接続できませんでした。通信状態を確認して再接続してください。');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function notify(message, error = false) {
@@ -270,6 +286,8 @@ $('auth-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const button = $('auth-submit');
   button.disabled = true;
+  const originalText = button.textContent;
+  button.textContent = '>>> CONNECTING...';
   try {
     const result = await api(app.authMode === 'register' ? 'register' : 'login', {
       method: 'POST', body: JSON.stringify({ username: $('username').value, password: $('password').value })
@@ -278,7 +296,7 @@ $('auth-form').addEventListener('submit', async (event) => {
     await showGame(result.user);
     notify(`ようこそ、${result.user.username}！`);
   } catch (error) { notify(error.message, true); }
-  finally { button.disabled = false; }
+  finally { button.disabled = false; button.textContent = originalText; }
 });
 $('logout').addEventListener('click', async () => {
   try { await api('logout', { method: 'POST', body: '{}' }); } catch (_) {}
@@ -318,7 +336,30 @@ $('join-queue').addEventListener('click', () => {
 });
 $('leave-queue').addEventListener('click', () => app.ws?.send(JSON.stringify({ type: 'queue:leave' })));
 
-Promise.all([api('me'), api('config')]).then(async ([{ user }, config]) => {
-  $('mode-badge').textContent = config.generationMode === 'ai' ? 'GENERATOR : AI ACTIVE' : 'GENERATOR : LOCAL DEMO';
-  if (user) await showGame(user);
-}).catch((error) => notify(error.message, true));
+async function initialize() {
+  const status = $('boot-status');
+  const message = $('boot-message');
+  const retry = $('boot-retry');
+  status.classList.remove('hidden', 'error');
+  retry.classList.add('hidden');
+  message.textContent = '> サーバーとの接続を確認しています…';
+  const slowTimer = setTimeout(() => {
+    message.textContent = '> サーバーを起動中です。無料プランでは起動に1分ほどかかる場合があります…';
+  }, 8000);
+  try {
+    const [{ user }, config] = await Promise.all([api('me'), api('config')]);
+    $('mode-badge').textContent = config.generationMode === 'ai' ? 'GENERATOR : AI ACTIVE' : 'GENERATOR : LOCAL DEMO';
+    if (user) await showGame(user);
+    status.classList.add('hidden');
+  } catch (error) {
+    status.classList.add('error');
+    $('mode-badge').textContent = 'SERVER : CONNECTION FAILED';
+    message.textContent = `> ${error.message}`;
+    retry.classList.remove('hidden');
+    notify(error.message, true);
+  } finally {
+    clearTimeout(slowTimer);
+  }
+}
+$('boot-retry').addEventListener('click', initialize);
+initialize();

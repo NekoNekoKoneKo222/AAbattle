@@ -25,6 +25,10 @@
     </header>
 
     <div id="notification" class="notification hidden" role="status"></div>
+    <div id="boot-status" class="boot-status" role="status" aria-live="polite">
+      <span id="boot-message">&gt; サーバーとの接続を確認しています…</span>
+      <button id="boot-retry" class="secondary-button hidden" type="button">[ 再接続 ]</button>
+    </div>
 
     <main id="auth-view" class="auth-layout">
       <section class="ascii-frame auth-panel">

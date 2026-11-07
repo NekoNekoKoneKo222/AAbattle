@@ -62,7 +62,17 @@ export class MemoryStore {
 
 class PostgresStore {
   constructor(connectionString) {
-    this.pool = new pg.Pool({ connectionString, max: 8 });
+    // Neon compute may sleep while Render is idle. Bound connection and query
+    // waits so the browser receives a recoverable error instead of hanging.
+    this.pool = new pg.Pool({
+      connectionString,
+      max: 8,
+      connectionTimeoutMillis: 10000,
+      idleTimeoutMillis: 30000,
+      query_timeout: 15000,
+      statement_timeout: 15000,
+      keepAlive: true
+    });
   }
   async init() {
     const { rows } = await this.pool.query("SELECT to_regclass('public.users') AS users, to_regclass('public.sessions') AS sessions, to_regclass('public.fighters') AS fighters, to_regclass('public.matches') AS matches");
