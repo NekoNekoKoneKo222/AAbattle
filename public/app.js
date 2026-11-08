@@ -1,5 +1,6 @@
 const $ = (id) => document.getElementById(id);
 const app = { user: null, fighters: [], selected: null, ws: null, authMode: 'login', battle: null, waiting: false };
+const effectLabels = { damage: '攻撃', heal: '回復', shield: '防護', weaken: '弱体', poison: '毒', burn: '火傷', drain: '吸収', boost: '強化', cleanse: '浄化', stun: '気絶' };
 
 // Actual ASCII pipe characters form both vertical sides, including panels that resize.
 function decorateFrames() {
@@ -127,6 +128,9 @@ function renderDefinition(definition, target) {
   for (const skill of definition.skills) {
     const row = node('div', 'skill-row');
     row.append(node('b', '', `${skill.name} [CD:${skill.cooldown}]`), node('small', '', skill.description));
+    if (skill.effects?.length) {
+      row.append(node('small', '', skill.effects.map((effect) => `${effectLabels[effect.type] || effect.type} ${effect.power} / ${effect.chance}%`).join(' + ')));
+    }
     list.append(row);
   }
   const passive = node('div', 'skill-row');
@@ -144,7 +148,7 @@ function renderCollection() {
   }
   for (const fighter of app.fighters) {
     const card = node('article', 'fighter-card');
-    card.append(node('div', 'small-badge', fighter.generation_mode === 'ai' ? 'AI GENERATED' : 'LOCAL GENERATED'));
+    card.append(node('div', 'small-badge', fighter.generation_mode === 'gemini' ? 'GEMINI GENERATED' : fighter.generation_mode === 'ai' ? 'AI GENERATED' : 'LOCAL GENERATED'));
     card.append(node('h3', '', fighter.name));
     card.append(node('p', 'muted', fighter.definition.archetype));
     card.append(node('pre', '', fighter.art));
@@ -323,7 +327,7 @@ $('fighter-form').addEventListener('submit', async (event) => {
     await loadFighters();
     app.selected = fighter.id;
     $('selected-fighter').value = fighter.id;
-    notify(`${fighter.name}が誕生しました！ ${fighter.generation_mode === 'ai' ? 'AI' : 'ローカル'}生成完了。`);
+    notify(`${fighter.name}が誕生しました！ ${fighter.generation_mode === 'gemini' ? 'Gemini AI' : 'ローカル'}生成完了。`);
   } catch (error) { notify(error.message, true); }
   finally { button.disabled = false; button.textContent = '>> GENERATE FIGHTER'; }
 });
@@ -348,7 +352,7 @@ async function initialize() {
   }, 8000);
   try {
     const [{ user }, config] = await Promise.all([api('me'), api('config')]);
-    $('mode-badge').textContent = config.generationMode === 'ai' ? 'GENERATOR : AI ACTIVE' : 'GENERATOR : LOCAL DEMO';
+    $('mode-badge').textContent = config.generationMode === 'gemini' ? 'GENERATOR : GEMINI AI' : 'GENERATOR : LOCAL (GEMINI KEY REQUIRED)';
     if (user) await showGame(user);
     status.classList.add('hidden');
   } catch (error) {

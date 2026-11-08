@@ -85,7 +85,7 @@ function credentials(body) {
 }
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
-app.get('/api/config', (_req, res) => res.json({ generationMode: process.env.OPENAI_API_KEY ? 'ai' : 'local' }));
+app.get('/api/config', (_req, res) => res.json({ generationMode: process.env.GEMINI_API_KEY ? 'gemini' : 'local' }));
 
 app.post('/api/register', wrap(async (req, res) => {
   if (!limit(authFailures, `reg:${req.ip}`, 6, 30 * 60 * 1000)) return res.status(429).json({ error: '登録回数が多すぎます。しばらく待ってください。' });
@@ -134,7 +134,14 @@ app.post('/api/fighters', wrap(async (req, res) => {
   let art;
   try { art = validateArt(req.body?.art); } catch (error) { return res.status(400).json({ error: error.message }); }
   let generated;
-  try { generated = await generateFighter(art, name); }
+  try {
+    const existing = await store.listFighters(user.id);
+    const existingNames = existing.flatMap((fighter) => [
+      ...(fighter.definition?.skills || []).map((skill) => skill.name),
+      fighter.definition?.passive?.name
+    ]).filter(Boolean);
+    generated = await generateFighter(art, name, existingNames);
+  }
   catch (error) { return res.status(502).json({ error: error.message.slice(0, 180) }); }
   const fighter = await store.saveFighter(user.id, name, art, generated.definition, generated.mode);
   res.status(201).json({ fighter });
@@ -249,7 +256,7 @@ server.on('upgrade', async (req, socket, head) => {
 const port = Number(process.env.PORT || 3000);
 await store.init();
 server.listen(port, '0.0.0.0', () => {
-  console.log(`AABattle listening on ${port}; generation: ${process.env.OPENAI_API_KEY ? 'AI' : 'local'}`);
+  console.log(`AABattle listening on ${port}; generation: ${process.env.GEMINI_API_KEY ? 'Gemini' : 'local'}`);
 });
 
 async function shutdown() {
