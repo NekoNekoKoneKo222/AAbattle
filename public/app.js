@@ -1,6 +1,19 @@
 const $ = (id) => document.getElementById(id);
 const app = { user: null, fighters: [], selected: null, ws: null, authMode: 'login', battle: null, waiting: false, tradeTarget: null, pveEnemies: [], pvePlayback: null, generationMode: 'local', model: null, pendingGenerations: 0, pendingGenerationInputs: new Set(), pollingJobIds: new Set(), aiStatusTimer: null, aiStatusChecking: false };
-const effectLabels = { damage: '攻撃', heal: '回復', shield: '防護', weaken: '弱体', poison: '毒', burn: '火傷', drain: '吸収', boost: '強化', cleanse: '浄化', stun: '気絶' };
+const effectLabels = { damage: '攻撃', heal: '回復', shield: '防護', weaken: '弱体', poison: '毒', burn: '火傷', drain: '吸収', boost: '強化', cleanse: '浄化', stun: '気絶', bleed: '出血', rupture: '破裂', silence: '沈黙', counter_stance: '反撃態勢' };
+
+function effectSummary(effect) {
+  if (effect.type === 'bleed') return `出血 毎ターン${effect.power}ダメージ / 付与${effect.chance}%`;
+  if (effect.type === 'rupture') return `破裂 実ダメージの10%を追加 / 付与${effect.chance}%`;
+  if (effect.type === 'silence') return `沈黙 行動不能${effect.chance}%`;
+  if (effect.type === 'counter_stance') return `反撃態勢 ${effect.power}ダメージ / 反撃${effect.chance}%`;
+  return `${effectLabels[effect.type] || effect.type} ${effect.power} / ${effect.chance}%`;
+}
+
+function battleStatus(fighter) {
+  const active = [fighter.bleed && '出血', fighter.rupture && '破裂', fighter.silence && '沈黙', fighter.counterStance && '反撃態勢'].filter(Boolean);
+  return active.length ? ` / ${active.join('・')}` : '';
+}
 
 // Actual ASCII pipe characters form both vertical sides, including panels that resize.
 function decorateFrames() {
@@ -178,7 +191,7 @@ function renderDefinition(definition, target) {
     const row = node('div', 'skill-row');
     row.append(node('b', '', `${skill.name} [CD:${skill.cooldown}]`), node('small', '', skill.description));
     if (skill.effects?.length) {
-      row.append(node('small', '', skill.effects.map((effect) => `${effectLabels[effect.type] || effect.type} ${effect.power} / ${effect.chance}%`).join(' + ')));
+      row.append(node('small', '', skill.effects.map(effectSummary).join(' + ')));
     }
     list.append(row);
   }
@@ -321,7 +334,7 @@ function replayPveTurn(turn) {
   $('pve-battle-turn').textContent = `TURN ${String(turn.turn).padStart(2, '0')}`;
   turn.fighters.forEach((fighter, i) => {
     const side = i ? 'b' : 'a';
-    $(`pve-battle-hp-${side}`).textContent = `${fighter.hp} / ${fighter.maxHp} HP${fighter.shield ? ` / SHIELD ${fighter.shield}` : ''}`;
+    $(`pve-battle-hp-${side}`).textContent = `${fighter.hp} / ${fighter.maxHp} HP${fighter.shield ? ` / SHIELD ${fighter.shield}` : ''}${battleStatus(fighter)}`;
     $(`pve-hp-${side}`).style.width = `${Math.round(100 * fighter.hp / fighter.maxHp)}%`;
     $(`pve-battle-art-${side}`).style.color = turn.attackerId === fighter.userId ? '#8ef4c7' : '#a9dedb';
   });
@@ -604,7 +617,7 @@ function updateBattle(msg) {
   $('battle-turn').textContent = `TURN ${String(msg.turn).padStart(2, '0')}`;
   msg.fighters.forEach((fighter, i) => {
     const key = i ? 'b' : 'a';
-    $(`battle-hp-${key}`).textContent = `${fighter.hp} / ${fighter.maxHp} HP${fighter.shield ? ` / SHIELD ${fighter.shield}` : ''}`;
+    $(`battle-hp-${key}`).textContent = `${fighter.hp} / ${fighter.maxHp} HP${fighter.shield ? ` / SHIELD ${fighter.shield}` : ''}${battleStatus(fighter)}`;
     $(`hp-${key}`).style.width = `${Math.round(100 * fighter.hp / fighter.maxHp)}%`;
     const element = $(`battle-art-${key}`);
     element.style.color = msg.attackerId === fighter.userId ? '#8ef4c7' : '#a9dedb';

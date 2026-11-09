@@ -22,6 +22,27 @@ test('generated abilities are within the safe battle vocabulary and budget', () 
   assert.equal(generated.passive.kind, 'dodge');
 });
 
+test('new status values are bounded and last stand remains an ultra-rare passive', () => {
+  const input = {
+    stats: { hp: 200, atk: 30, def: 15, speed: 50 },
+    skills: [
+      { name: '血の印', effects: [{ type: 'bleed', power: 99, chance: 130, duration: 4 }] },
+      { name: '断絶', effects: [{ type: 'silence', power: 40, chance: 95, duration: 2 }] },
+      { name: '逆襲', effects: [{ type: 'counter_stance', power: 99, chance: 100, duration: 2 }] }
+    ],
+    passive: { name: '最後の意地', kind: 'laststand', chance: 100 }
+  };
+  const rare = normalizeDefinition(input, 'テスト', () => 0);
+  assert.equal(rare.skills[0].effects[0].power, 5);
+  assert.equal(rare.skills[0].effects[0].chance, 100);
+  assert.equal(rare.skills[1].effects[0].chance, 50);
+  assert.equal(rare.skills[2].effects[0].power, 30);
+  assert.equal(rare.skills[2].effects[0].chance, 80);
+  assert.equal(rare.passive.kind, 'laststand');
+  assert.equal(rare.passive.chance, 1);
+  assert.equal(normalizeDefinition(input, 'テスト', () => 0.5).passive.kind, 'dodge');
+});
+
 test('without API credentials, fighter generation is explicitly local', async () => {
   const previous = process.env.GEMINI_API_KEY;
   delete process.env.GEMINI_API_KEY;

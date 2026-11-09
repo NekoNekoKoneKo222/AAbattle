@@ -7,7 +7,9 @@ function combatant(user, fighter) {
     userId: user.id, username: user.username, fighterId: fighter.id,
     name: fighter.name, art: fighter.art, definition: fighter.definition,
     hp: fighter.definition.stats.hp, maxHp: fighter.definition.stats.hp,
-    shield: 0, poison: 0, burn: 0, weak: 0, boost: 0, stun: 0, cooldowns: [0, 0, 0]
+    shield: 0, poison: 0, burn: 0, bleed: 0, bleedDamage: 0,
+    rupture: 0, silence: 0, silenceChance: 0, counterStance: 0, counterChance: 0, counterDamage: 0,
+    weak: 0, boost: 0, stun: 0, lastStandUsed: false, cooldowns: [0, 0, 0]
   };
 }
 
@@ -29,7 +31,7 @@ function chooseMove(attacker, defender, rng) {
     if (rescue) return rescue;
   }
   if (personality === 'cautious' && defender.hp / defender.maxHp > 0.5) {
-    const defense = available.find(({ move }) => hasEffect(move, 'shield') && attacker.shield < 15);
+    const defense = available.find(({ move }) => hasEffect(move, 'shield', 'counter_stance') && attacker.shield < 15);
     if (defense) return defense;
   }
   if (defender.hp / defender.maxHp < 0.35) {
@@ -37,7 +39,7 @@ function chooseMove(attacker, defender, rng) {
     if (finisher) return finisher;
   }
   if (personality === 'aggressive') {
-    const damaging = available.filter(({ move }) => hasEffect(move, 'damage', 'drain', 'burn', 'poison'));
+    const damaging = available.filter(({ move }) => hasEffect(move, 'damage', 'drain', 'burn', 'poison', 'bleed', 'rupture', 'silence'));
     if (damaging.length) return damaging[Math.floor(rng() * damaging.length)];
   }
   return available[Math.floor(rng() * available.length)];
@@ -46,6 +48,13 @@ function chooseMove(attacker, defender, rng) {
 function hasEffect(move, ...types) {
   return (Array.isArray(move.effects) && move.effects.length ? move.effects.map((effect) => effect.type) : [move.kind])
     .some((type) => types.includes(type));
+}
+
+function reviveIfLastStand(fighter, lines) {
+  if (fighter.hp > 0 || fighter.lastStandUsed || fighter.definition.passive.kind !== 'laststand') return;
+  fighter.lastStandUsed = true;
+  fighter.hp = Math.max(1, Math.round(fighter.maxHp * 0.01));
+  lines.push(`${fighter.name}の「${fighter.definition.passive.name}」！最大HPの1%で復活した！`);
 }
 
 export function stepBattle(battle) {
@@ -66,31 +75,45 @@ export function stepBattle(battle) {
     a.hp = Math.max(0, a.hp - dot);
     a.poison--;
     lines.push(`${a.name}は毒で${dot}ダメージ`);
+    reviveIfLastStand(a, lines);
   }
   if (a.burn > 0) {
     const dot = Math.max(2, Math.round(a.maxHp * 0.027));
     a.hp = Math.max(0, a.hp - dot);
     a.burn--;
     lines.push(`${a.name}は火傷で${dot}ダメージ`);
+    reviveIfLastStand(a, lines);
   }
-  if (a.definition.passive.kind === 'cleanser' && (a.poison || a.burn || a.weak) && rng() < a.definition.passive.chance) {
-    a.poison = 0; a.burn = 0; a.weak = 0;
+  if (a.bleed > 0) {
+    const dot = clamp(a.bleedDamage, 1, 5);
+    a.hp = Math.max(0, a.hp - dot);
+    a.bleed--;
+    if (!a.bleed) a.bleedDamage = 0;
+    lines.push(`${a.name}は出血で${dot}ダメージ`);
+    reviveIfLastStand(a, lines);
+  }
+  if (a.definition.passive.kind === 'cleanser' && (a.poison || a.burn || a.bleed || a.rupture || a.silence || a.weak) && rng() < a.definition.passive.chance) {
+    a.poison = 0; a.burn = 0; a.bleed = 0; a.bleedDamage = 0; a.rupture = 0; a.silence = 0; a.silenceChance = 0; a.weak = 0;
     lines.push(`${a.name}の「${a.definition.passive.name}」！状態異常を取り除いた`);
   }
-  if (a.definition.passive.kind === 'fortify') {
+  if (a.hp > 0 && a.definition.passive.kind === 'fortify') {
     const gain = Math.max(1, Math.round(a.definition.passive.chance * 35));
     a.shield = clamp(a.shield + gain, 0, 100);
     lines.push(`${a.name}の「${a.definition.passive.name}」でシールド+${gain}`);
   }
-  if (a.definition.passive.kind === 'regen') {
+  if (a.hp > 0 && a.definition.passive.kind === 'regen') {
     const amount = Math.max(1, Math.round(a.maxHp * a.definition.passive.chance / 3));
     const healed = Math.min(a.maxHp - a.hp, amount);
     a.hp += healed;
     if (healed) lines.push(`${a.name}の「${a.definition.passive.name}」で${healed}回復`);
   }
+  const silenced = a.silence > 0 && rng() * 100 < a.silenceChance;
+  if (a.silence > 0) a.silence--;
   if (a.hp > 0 && a.stun > 0) {
     a.stun = 0;
     lines.push(`${a.name}は気絶して行動できない！`);
+  } else if (a.hp > 0 && silenced) {
+    lines.push(`${a.name}は沈黙で行動できない！`);
   } else if (a.hp > 0) {
     const { move, index } = chooseMove(a, d, rng);
     if (index >= 0) a.cooldowns[index] = move.cooldown + 1;
@@ -99,7 +122,7 @@ export function stepBattle(battle) {
     const scale = effects.length > 1 ? 0.65 : 1;
     for (const effect of effects) {
       if (a.hp <= 0 || d.hp <= 0) break;
-      if (rng() * 100 >= (effect.chance ?? 100)) { lines.push('追加効果は発動しなかった'); continue; }
+      if (!['silence', 'counter_stance'].includes(effect.type) && rng() * 100 >= (effect.chance ?? 100)) { lines.push('追加効果は発動しなかった'); continue; }
       const power = clamp(effect.power ?? move.power ?? 50, 15, 90) * scale;
       const duration = clamp(effect.duration ?? 3, 1, 3);
       if (effect.type === 'heal') {
@@ -114,11 +137,33 @@ export function stepBattle(battle) {
         a.boost = Math.max(a.boost, duration + 1);
         lines.push(`${a.name}の攻撃性能が上昇した`);
       } else if (effect.type === 'cleanse') {
-        a.poison = 0; a.burn = 0; a.weak = 0;
+        a.poison = 0; a.burn = 0; a.bleed = 0; a.bleedDamage = 0; a.rupture = 0; a.silence = 0; a.silenceChance = 0; a.weak = 0;
         lines.push(`${a.name}は状態異常を取り除いた`);
+      } else if (effect.type === 'counter_stance') {
+        a.counterStance = Math.max(a.counterStance, duration + 1);
+        a.counterChance = clamp(effect.chance ?? 30, 5, 80);
+        a.counterDamage = clamp(effect.power ?? 10, 1, 30);
+        lines.push(`${a.name}は反撃態勢になった（反撃${a.counterChance}% / ${a.counterDamage}ダメージ）`);
       } else {
         if (d.definition.passive.kind === 'dodge' && rng() < d.definition.passive.chance) {
           lines.push(`${d.name}の「${d.definition.passive.name}」！回避した！`);
+          continue;
+        }
+        if (effect.type === 'bleed') {
+          d.bleed = Math.max(d.bleed, duration);
+          d.bleedDamage = Math.max(d.bleedDamage, clamp(effect.power ?? 1, 1, 5));
+          lines.push(`${d.name}は出血した（毎ターン${d.bleedDamage}ダメージ）`);
+          continue;
+        }
+        if (effect.type === 'rupture') {
+          d.rupture = Math.max(d.rupture, duration + 1);
+          lines.push(`${d.name}は破裂状態になった`);
+          continue;
+        }
+        if (effect.type === 'silence') {
+          d.silence = Math.max(d.silence, duration);
+          d.silenceChance = clamp(effect.chance ?? 25, 5, 50);
+          lines.push(`${d.name}は沈黙した（行動不能${d.silenceChance}%）`);
           continue;
         }
         const lowHpBoost = a.definition.passive.kind === 'berserk' && a.hp / a.maxHp < 0.45 ? 1 + a.definition.passive.chance : 1;
@@ -129,32 +174,53 @@ export function stepBattle(battle) {
         const absorbed = Math.min(d.shield, damage);
         d.shield -= absorbed;
         damage -= absorbed;
+        const beforeHp = d.hp;
         d.hp = Math.max(0, d.hp - damage);
-        lines.push(`${d.name}に${damage}ダメージ${absorbed ? `（シールドが${absorbed}吸収）` : ''}`);
+        const actualDamage = beforeHp - d.hp;
+        lines.push(`${d.name}に${actualDamage}ダメージ${absorbed ? `（シールドが${absorbed}吸収）` : ''}`);
+        if (d.rupture > 0 && actualDamage >= 10) {
+          const extra = Math.round(actualDamage / 10);
+          d.hp = Math.max(0, d.hp - extra);
+          lines.push(`${d.name}の破裂で追加${extra}ダメージ`);
+        }
+        reviveIfLastStand(d, lines);
         if (effect.type === 'poison') { d.poison = Math.max(d.poison, duration); lines.push(`${d.name}は毒状態になった`); }
         if (effect.type === 'weaken') { d.weak = Math.max(d.weak, duration); lines.push(`${d.name}の攻撃性能が低下した`); }
         if (effect.type === 'burn') { d.burn = Math.max(d.burn, duration); lines.push(`${d.name}は火傷した`); }
         if (effect.type === 'stun') { d.stun = 1; lines.push(`${d.name}は気絶した`); }
-        if (effect.type === 'drain' && damage > 0) {
-          const healed = Math.min(a.maxHp - a.hp, Math.round(damage * 0.35));
+        if (effect.type === 'drain' && actualDamage > 0) {
+          const healed = Math.min(a.maxHp - a.hp, Math.round(actualDamage * 0.35));
           a.hp += healed;
           lines.push(`${a.name}は${healed}HP吸収した`);
         }
-        if (a.definition.passive.kind === 'lifesteal' && damage > 0) {
-          const healed = Math.min(a.maxHp - a.hp, Math.max(1, Math.round(damage * a.definition.passive.chance)));
+        if (a.definition.passive.kind === 'lifesteal' && actualDamage > 0) {
+          const healed = Math.min(a.maxHp - a.hp, Math.max(1, Math.round(actualDamage * a.definition.passive.chance)));
           a.hp += healed;
           lines.push(`${a.name}の「${a.definition.passive.name}」で${healed}回復`);
         }
-        if (damage > 0 && (d.definition.passive.kind === 'counter' || d.definition.passive.kind === 'thorns') && rng() < d.definition.passive.chance) {
+        let reacted = false;
+        if (d.hp > 0 && d.counterStance > 0 && rng() * 100 < d.counterChance) {
+          const counterAbsorbed = Math.min(a.shield, d.counterDamage);
+          a.shield -= counterAbsorbed;
+          const counter = d.counterDamage - counterAbsorbed;
+          a.hp = Math.max(0, a.hp - counter);
+          lines.push(`${d.name}の反撃態勢！${counter}反撃ダメージ`);
+          reviveIfLastStand(a, lines);
+          reacted = true;
+        }
+        if (!reacted && d.hp > 0 && actualDamage > 0 && (d.definition.passive.kind === 'counter' || d.definition.passive.kind === 'thorns') && rng() < d.definition.passive.chance) {
           const counter = Math.max(2, Math.round(d.definition.stats.atk * 0.35));
           a.hp = Math.max(0, a.hp - counter);
           lines.push(`${d.name}の「${d.definition.passive.name}」！${counter}反撃ダメージ`);
+          reviveIfLastStand(a, lines);
         }
       }
     }
   }
   if (a.weak > 0) a.weak--;
   if (a.boost > 0) a.boost--;
+  if (a.rupture > 0) a.rupture--;
+  if (a.counterStance > 0) a.counterStance--;
   if (fighters.some((f) => f.hp <= 0) || battle.turn >= 48) {
     battle.ended = true;
     const [f0, f1] = fighters;
@@ -165,7 +231,8 @@ export function stepBattle(battle) {
   }
   const state = {
     type: 'battle:turn', id: battle.id, turn: battle.turn, attackerId: a.userId,
-    fighters: fighters.map(({ userId, hp, maxHp, shield, poison, burn, weak, boost, stun }) => ({ userId, hp, maxHp, shield, poison, burn, weak, boost, stun })),
+    fighters: fighters.map(({ userId, hp, maxHp, shield, poison, burn, bleed, bleedDamage, rupture, silence, silenceChance, counterStance, counterChance, counterDamage, weak, boost, stun, lastStandUsed }) =>
+      ({ userId, hp, maxHp, shield, poison, burn, bleed, bleedDamage, rupture, silence, silenceChance, counterStance, counterChance, counterDamage, weak, boost, stun, lastStandUsed })),
     lines, ended: battle.ended, winnerId: battle.winnerId
   };
   battle.log.push(state);

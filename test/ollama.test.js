@@ -62,6 +62,8 @@ test('Ollama schema request retries invalid output and generated skills work in 
     assert.equal(requests[0].body.stream, false);
     assert.equal(requests[0].body.model, 'qwen2.5:3b');
     assert.equal(requests[0].body.format.properties.skills.minItems, 3);
+    assert.ok(requests[0].body.format.properties.skills.items.properties.effects.items.properties.type.enum.includes('bleed'));
+    assert.ok(requests[0].body.format.properties.passive.properties.kind.enum.includes('laststand'));
     assert.match(requests[0].body.messages[1].content, /過去の技/);
     const fighter = { id: 'a', name: 'ねこ', art: 'cat', definition: result.definition };
     const enemy = { ...fighter, id: 'b', name: '敵' };
