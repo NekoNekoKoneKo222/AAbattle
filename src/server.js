@@ -214,12 +214,18 @@ app.post('/api/fighters/generate', wrap(async (req, res) => {
   let art;
   try { art = validateArt(req.body?.art); } catch (error) { return res.status(400).json({ error: error.message }); }
   pruneFighterJobs();
+  const fingerprint = digest(`${user.id}\0${name}\0${art}`);
+  const existingJob = [...fighterJobs.entries()].find(([, job]) =>
+    job.userId === user.id && job.fingerprint === fingerprint &&
+    (job.state === 'queued' || job.state === 'running' ||
+      (job.state === 'done' && Date.now() - job.completedAt < 10_000)));
+  if (existingJob) return res.status(202).json({ jobId: existingJob[0], reused: true });
   if (pendingFighterJobs >= MAX_PENDING_FIGHTER_JOBS || fighterJobs.size >= 128) {
     return res.status(429).json({ error: '生成待ちが満杯です。少し待って再試行してください。' });
   }
   if (!limit(creations, user.id, 120, 60 * 60 * 1000)) return res.status(429).json({ error: '生成上限は1時間に120体です。' });
   const jobId = randomBytes(32).toString('hex');
-  const job = { userId: user.id, state: 'queued', createdAt: Date.now() };
+  const job = { userId: user.id, fingerprint, state: 'queued', createdAt: Date.now() };
   fighterJobs.set(jobId, job);
   pendingFighterJobs++;
   res.status(202).json({ jobId });

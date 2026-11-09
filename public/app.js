@@ -1,5 +1,5 @@
 const $ = (id) => document.getElementById(id);
-const app = { user: null, fighters: [], selected: null, ws: null, authMode: 'login', battle: null, waiting: false, tradeTarget: null, pveEnemies: [], pvePlayback: null, generationMode: 'local', model: null, pendingGenerations: 0, aiStatusTimer: null, aiStatusChecking: false };
+const app = { user: null, fighters: [], selected: null, ws: null, authMode: 'login', battle: null, waiting: false, tradeTarget: null, pveEnemies: [], pvePlayback: null, generationMode: 'local', model: null, pendingGenerations: 0, pendingGenerationInputs: new Set(), aiStatusTimer: null, aiStatusChecking: false };
 const effectLabels = { damage: '攻撃', heal: '回復', shield: '防護', weaken: '弱体', poison: '毒', burn: '火傷', drain: '吸収', boost: '強化', cleanse: '浄化', stun: '気絶' };
 
 // Actual ASCII pipe characters form both vertical sides, including panels that resize.
@@ -618,7 +618,7 @@ function updateGenerationStatus(message = '') {
     ? `AI生成中・順番待ち: ${app.pendingGenerations}体${message ? ` / ${message}` : ''}`
     : message;
 }
-async function pollGeneration(jobId, name) {
+async function pollGeneration(jobId, name, inputKey) {
   let finalMessage = '';
   try {
     const started = Date.now();
@@ -641,6 +641,7 @@ async function pollGeneration(jobId, name) {
     finalMessage = `${name}の生成に失敗しました: ${error.message}`;
     notify(error.message, true);
   } finally {
+    app.pendingGenerationInputs.delete(inputKey);
     app.pendingGenerations--;
     updateGenerationStatus(finalMessage);
     void refreshAiStatus();
@@ -648,11 +649,17 @@ async function pollGeneration(jobId, name) {
 }
 $('fighter-form').addEventListener('submit', async (event) => {
   event.preventDefault();
+  const name = $('fighter-name').value;
+  const art = $('art-editor').value;
+  const inputKey = JSON.stringify([name.trim(), art]);
+  if (app.pendingGenerationInputs.has(inputKey)) {
+    notify('同じキャラクターはすでに生成中です。別の名前やAAなら続けて送信できます。');
+    return;
+  }
+  app.pendingGenerationInputs.add(inputKey);
   const button = $('generate-button');
   button.disabled = true;
   button.textContent = '>>> ANALYZING...';
-  const name = $('fighter-name').value;
-  const art = $('art-editor').value;
   try {
     const { jobId } = await api('fighters/generate', {
       method: 'POST',
@@ -662,8 +669,8 @@ $('fighter-form').addEventListener('submit', async (event) => {
     app.pendingGenerations++;
     updateGenerationStatus();
     void refreshAiStatus();
-    void pollGeneration(jobId, name);
-  } catch (error) { updateGenerationStatus(`生成に失敗しました: ${error.message}`); notify(error.message, true); }
+    void pollGeneration(jobId, name, inputKey);
+  } catch (error) { app.pendingGenerationInputs.delete(inputKey); updateGenerationStatus(`生成に失敗しました: ${error.message}`); notify(error.message, true); }
   finally { button.disabled = false; button.textContent = '>> GENERATE FIGHTER'; }
 });
 $('selected-fighter').addEventListener('change', (e) => { app.selected = e.target.value; });

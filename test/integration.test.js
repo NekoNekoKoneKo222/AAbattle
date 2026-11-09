@@ -126,6 +126,10 @@ test('account registration, authentication, character saving and online matchmak
     request('fighters/generate', { name: '追加猫2', art: '(>_<)' }, ac)
   ]);
   assert.deepEqual(generatedJobs.map((job) => job.status), [202, 202]);
+  const repeatedJob = await request('fighters/generate', { name: '追加猫1', art: '(=^.^=)' }, ac);
+  assert.equal(repeatedJob.status, 202);
+  assert.equal(repeatedJob.body.jobId, generatedJobs[0].body.jobId);
+  assert.equal(repeatedJob.body.reused, true);
   for (const accepted of generatedJobs) {
     const id = accepted.body.jobId;
     assert.match(id, /^[a-f0-9]{64}$/);
@@ -142,6 +146,7 @@ test('account registration, authentication, character saving and online matchmak
     }
     assert.ok(done, 'accepted generation job did not finish');
   }
+  assert.equal((await request('fighters', null, ac)).body.fighters.length, 3);
   const logout = await request('logout', {}, ac);
   assert.equal(logout.status, 200);
   assert.equal((await request('me', null, ac)).body.user, null);
