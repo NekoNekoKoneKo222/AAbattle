@@ -7,22 +7,30 @@ export const gatewayConfigured = () => Boolean(process.env.OLLAMA_GATEWAY_URL);
 function configuration() {
   const raw = process.env.OLLAMA_GATEWAY_URL;
   if (!raw) throw new Error('OLLAMA_GATEWAY_URLが設定されていません。');
+  const auth = process.env.OLLAMA_GATEWAY_AUTH || 'cloudflare';
+  if (auth !== 'cloudflare' && auth !== 'tailscale') {
+    throw new Error('OLLAMA_GATEWAY_AUTHが不正です。');
+  }
   let url;
   try { url = new URL(raw); } catch { throw new Error('OLLAMA_GATEWAY_URLが不正です。'); }
   if (url.protocol !== 'https:' || !url.hostname || url.username || url.password ||
-      url.pathname !== '/' || url.search || url.hash || url.port) {
+      url.pathname !== '/' || url.search || url.hash ||
+      (auth === 'cloudflare' && url.port) ||
+      (auth === 'tailscale' && (url.port !== '8443' || !url.hostname.endsWith('.ts.net')))) {
     throw new Error('OLLAMA_GATEWAY_URLにはHTTPSのホスト名だけを設定してください。');
   }
   const token = process.env.OLLAMA_GATEWAY_TOKEN;
   const clientId = process.env.CF_ACCESS_CLIENT_ID;
   const clientSecret = process.env.CF_ACCESS_CLIENT_SECRET;
-  if (!token || !clientId || !clientSecret) {
-    throw new Error('OllamaゲートウェイまたはCloudflare Accessの認証情報が不足しています。');
+  if (!token || (auth === 'cloudflare' && (!clientId || !clientSecret))) {
+    throw new Error('AIゲートウェイの認証情報が不足しています。');
   }
   return { origin: url.origin, headers: {
     Authorization: `Bearer ${token}`,
-    'CF-Access-Client-Id': clientId,
-    'CF-Access-Client-Secret': clientSecret
+    ...(auth === 'cloudflare' ? {
+      'CF-Access-Client-Id': clientId,
+      'CF-Access-Client-Secret': clientSecret
+    } : {})
   } };
 }
 
@@ -57,10 +65,10 @@ async function request(path, method = 'GET', body) {
       body: body ? JSON.stringify(body) : undefined
     });
   } catch {
-    throw new Error('AIゲートウェイへ接続できません。PCとCloudflare Tunnelを確認してください。');
+    throw new Error('AIゲートウェイへ接続できません。PCと公開トンネルを確認してください。');
   }
   if (response.status === 401 || response.status === 403) {
-    throw new Error('AIゲートウェイの認証に失敗しました。AccessとBearerトークンを確認してください。');
+    throw new Error('AIゲートウェイの認証に失敗しました。認証設定とBearerトークンを確認してください。');
   }
   if (response.status === 429) throw new Error('AIゲートウェイが混雑しています。少し待って再試行してください。');
   if (response.status === 524 || response.status === 504) throw new Error('AIゲートウェイがタイムアウトしました。');

@@ -55,7 +55,7 @@ test('gateway accepts only authenticated, bounded generation jobs and status rea
 });
 
 test('gateway client requires a fixed HTTPS host and sends both Access and Bearer credentials', async () => {
-  const old = Object.fromEntries(['OLLAMA_GATEWAY_URL', 'OLLAMA_GATEWAY_TOKEN', 'CF_ACCESS_CLIENT_ID', 'CF_ACCESS_CLIENT_SECRET']
+  const old = Object.fromEntries(['OLLAMA_GATEWAY_URL', 'OLLAMA_GATEWAY_TOKEN', 'OLLAMA_GATEWAY_AUTH', 'CF_ACCESS_CLIENT_ID', 'CF_ACCESS_CLIENT_SECRET']
     .map((key) => [key, process.env[key]]));
   const oldFetch = globalThis.fetch;
   try {
@@ -65,6 +65,7 @@ test('gateway client requires a fixed HTTPS host and sends both Access and Beare
       CF_ACCESS_CLIENT_ID: 'client-id',
       CF_ACCESS_CLIENT_SECRET: 'client-secret'
     });
+    delete process.env.OLLAMA_GATEWAY_AUTH;
     await assert.rejects(gatewayGenerate(valid), /HTTPS/);
     process.env.OLLAMA_GATEWAY_URL = 'https://ai.example.com';
     let calls = 0;
@@ -84,6 +85,36 @@ test('gateway client requires a fixed HTTPS host and sends both Access and Beare
     assert.deepEqual(await gatewayStatus('qwen2.5:3b'), { connected: true, installed: true, model: 'qwen2.5:3b' });
     assert.equal((await gatewayGenerate(valid)).title, '猫');
     assert.equal(calls, 3);
+  } finally {
+    globalThis.fetch = oldFetch;
+    for (const [key, value] of Object.entries(old)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  }
+});
+
+test('gateway client permits the separate Tailscale Funnel port with Bearer only', async () => {
+  const old = Object.fromEntries(['OLLAMA_GATEWAY_URL', 'OLLAMA_GATEWAY_TOKEN', 'OLLAMA_GATEWAY_AUTH', 'CF_ACCESS_CLIENT_ID', 'CF_ACCESS_CLIENT_SECRET']
+    .map((key) => [key, process.env[key]]));
+  const oldFetch = globalThis.fetch;
+  try {
+    Object.assign(process.env, {
+      OLLAMA_GATEWAY_AUTH: 'tailscale',
+      OLLAMA_GATEWAY_URL: 'https://nekoneko-pc.tail877793.ts.net:8443',
+      OLLAMA_GATEWAY_TOKEN: token
+    });
+    delete process.env.CF_ACCESS_CLIENT_ID;
+    delete process.env.CF_ACCESS_CLIENT_SECRET;
+    globalThis.fetch = async (url, init) => {
+      assert.equal(url, 'https://nekoneko-pc.tail877793.ts.net:8443/v1/status');
+      assert.deepEqual(init.headers, { Authorization: `Bearer ${token}` });
+      return new Response(JSON.stringify({ connected: true, installed: true }), { status: 200 });
+    };
+    assert.equal((await gatewayStatus('qwen2.5:3b')).connected, true);
+    process.env.OLLAMA_GATEWAY_URL = 'https://attacker.example.com:8443';
+    await assert.rejects(gatewayGenerate(valid), /HTTPS/);
+    process.env.OLLAMA_GATEWAY_URL = 'https://nekoneko-pc.tail877793.ts.net:443';
+    await assert.rejects(gatewayGenerate(valid), /HTTPS/);
   } finally {
     globalThis.fetch = oldFetch;
     for (const [key, value] of Object.entries(old)) {

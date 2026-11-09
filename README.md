@@ -121,6 +121,16 @@ render.yaml    Render配備設定
 
 ## 第2段階: RenderからPCのOllamaへ安全に接続
 
+### 既存のBlueStacks公開URLを使う無料経路
+
+BlueStacksのプロジェクトと443番の既存Funnelは変更しません。同じTailscaleホストの8443番だけをAIゲートウェイ `127.0.0.1:8787` に割り当てます。公開されるAPIはBearer認証と入力・回数制限を備えたゲートウェイだけで、Ollamaの11434番は公開しません。FunnelのURLは誰でも到達できるため、Bearerトークンは十分長い乱数にし、RenderとPCのみに保存します。
+
+`https://nekoneko-pc.tail877793.ts.net/game` は既存BlueStacksのトップページへ、`https://nekoneko-pc.tail877793.ts.net/AAbattle` はRenderのゲームへ302転送します。転送先でブラウザーのURLが変わります。入口用の小さなローカルサーバーは `npm run routes` で起動し、それぞれ `127.0.0.1:8790` と `127.0.0.1:8791` にだけ待ち受けます。443番のFunnelに `--set-path=/game` と `--set-path=/AAbattle` の経路を追加します。既存の `/` 経路はそのままです。
+
+Renderでは `OLLAMA_GATEWAY_AUTH=tailscale`、`OLLAMA_GATEWAY_URL=https://nekoneko-pc.tail877793.ts.net:8443`、PCと同じ `OLLAMA_GATEWAY_TOKEN`、`AI_PROVIDER=ollama` を設定します。Tailscale経路ではCloudflare Accessの環境変数は使用しません。公開後は匿名・誤ったBearerトークンで401、正しいBearerトークンで `/v1/status` が応答することを確認します。Tailscale Funnelは[公式ドキュメント](https://tailscale.com/docs/features/tailscale-funnel)で8443番をサポートしています。
+
+### Cloudflare Accessを使う経路
+
 通信経路は Render → HTTPS → Cloudflare Access → Cloudflare Tunnel → PCの `127.0.0.1:8787` ゲートウェイ → `127.0.0.1:11434` Ollama です。ルーターのポート開放、Ollamaの直接公開、`OLLAMA_HOST=0.0.0.0`、認証なしQuick Tunnelは使いません。通常の公開TunnelにはCloudflareで管理するドメインの安定したホスト名が必要です。
 
 **ドメインを持たない場合の無料経路:** Cloudflare Workers VPC（現在ベータ）で名前付きTunnelをWorkerのVPC Serviceに接続し、無料の `workers.dev` ホスト名をCloudflare Accessで保護できます。この場合の経路は Render → Access → Worker → Workers VPC → Tunnel → PCゲートウェイです。`cloudflare/worker.js` は必要な3種類のAPI経路だけを転送し、Bearer以外の秘密ヘッダーはPCへ渡しません。Workers VPCのベータ期間中の無料枠とWorkers Freeの利用制限は[公式のVPC手順](https://developers.cloudflare.com/workers-vpc/get-started/)、[公式料金表](https://developers.cloudflare.com/workers/platform/pricing/)で確認してください。ベータ機能の提供条件は変更される可能性があります。
