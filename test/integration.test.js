@@ -121,6 +121,27 @@ test('account registration, authentication, character saving and online matchmak
   assert.ok(messagesA.some((x) => x.type === 'battle:turn'));
   assert.equal((await request('history', null, ac)).body.matches.length, 1);
   assert.equal((await request('history', null, bc)).body.matches.length, 1);
+  const generatedJobs = await Promise.all([
+    request('fighters/generate', { name: '追加猫1', art: '(=^.^=)' }, ac),
+    request('fighters/generate', { name: '追加猫2', art: '(>_<)' }, ac)
+  ]);
+  assert.deepEqual(generatedJobs.map((job) => job.status), [202, 202]);
+  for (const accepted of generatedJobs) {
+    const id = accepted.body.jobId;
+    assert.match(id, /^[a-f0-9]{64}$/);
+    assert.equal((await request(`fighters/jobs/${id}`, null, bc)).status, 404);
+    let done = false;
+    for (let i = 0; i < 40; i++) {
+      const result = await request(`fighters/jobs/${id}`, null, ac);
+      if (result.body.status === 'done') {
+        assert.equal(result.body.fighter.generation_mode, 'local');
+        done = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    assert.ok(done, 'accepted generation job did not finish');
+  }
   const logout = await request('logout', {}, ac);
   assert.equal(logout.status, 200);
   assert.equal((await request('me', null, ac)).body.user, null);

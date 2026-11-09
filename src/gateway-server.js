@@ -6,6 +6,8 @@ import { generateOllamaDraft, localOllamaStatus, validateArt } from './generator
 const BODY_LIMIT = 6 * 1024;
 const OUTPUT_LIMIT = 24 * 1024;
 const JOB_TTL_MS = 10 * 60 * 1000;
+const MAX_PENDING_JOBS = 4;
+const HOURLY_LIMIT = 120;
 const JOB_PATH = /^\/v1\/skills\/jobs\/([a-f0-9]{64})$/;
 const hash = (value) => createHash('sha256').update(value).digest();
 
@@ -54,7 +56,23 @@ export function createGateway({
   const expected = hash(token);
   const jobs = new Map();
   const starts = [];
+  const queue = [];
   let active = 0;
+  function runNext() {
+    if (active || !queue.length) return;
+    const { input, job } = queue.shift();
+    active = 1;
+    job.state = 'running';
+    Promise.resolve().then(() => generate(input.art, input.name, input.avoidNames)).then((draft) => {
+      const encoded = JSON.stringify(draft);
+      if (Buffer.byteLength(encoded) > OUTPUT_LIMIT) throw new Error('生成結果が長すぎます。');
+      job.draft = draft;
+      job.state = 'done';
+    }).catch((error) => {
+      job.error = typeof error?.message === 'string' ? error.message.slice(0, 180) : 'AI生成に失敗しました。';
+      job.state = 'failed';
+    }).finally(() => { active = 0; job.completedAt = Date.now(); runNext(); });
+  }
   const server = http.createServer(async (req, res) => {
     const supplied = /^Bearer (.+)$/.exec(String(req.headers.authorization || ''))?.[1] || '';
     if (!timingSafeEqual(hash(supplied), expected)) return send(res, 401, { error: '認証が必要です。' });
@@ -69,7 +87,7 @@ export function createGateway({
     if (match) {
       const job = jobs.get(match[1]);
       if (!job) return send(res, 404, { error: '生成ジョブが見つかりません。' });
-      if (job.state === 'running') return send(res, 202, { status: 'running' });
+      if (job.state === 'running' || job.state === 'queued') return send(res, 202, { status: job.state });
       if (job.state === 'failed') return send(res, 502, { error: job.error });
       return send(res, 200, { draft: job.draft });
     }
@@ -82,23 +100,15 @@ export function createGateway({
     catch (error) { return send(res, error.message.includes('大きすぎ') ? 413 : 400, { error: error.message }); }
     const now = Date.now();
     while (starts.length && starts[0] < now - 60 * 60 * 1000) starts.shift();
-    if (starts.length >= 30) return send(res, 429, { error: '生成回数の上限に達しました。' });
-    if (active >= 1) return send(res, 429, { error: '別の生成が進行中です。' });
+    if (starts.length >= HOURLY_LIMIT) return send(res, 429, { error: '生成回数の上限に達しました。' });
+    if (active + queue.length >= MAX_PENDING_JOBS) return send(res, 429, { error: '生成待ちが満杯です。少し待って再試行してください。' });
     starts.push(now);
-    active++;
     const jobId = randomBytes(32).toString('hex');
-    const job = { state: 'running', createdAt: now };
+    const job = { state: 'queued', createdAt: now };
     jobs.set(jobId, job);
     send(res, 202, { jobId });
-    Promise.resolve().then(() => generate(input.art, input.name, input.avoidNames)).then((draft) => {
-      const encoded = JSON.stringify(draft);
-      if (Buffer.byteLength(encoded) > OUTPUT_LIMIT) throw new Error('生成結果が長すぎます。');
-      job.draft = draft;
-      job.state = 'done';
-    }).catch((error) => {
-      job.error = typeof error?.message === 'string' ? error.message.slice(0, 180) : 'AI生成に失敗しました。';
-      job.state = 'failed';
-    }).finally(() => { active--; job.completedAt = Date.now(); });
+    queue.push({ input, job });
+    runNext();
   });
   server.requestTimeout = 10000;
   server.headersTimeout = 5000;

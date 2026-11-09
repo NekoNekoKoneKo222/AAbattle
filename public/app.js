@@ -1,5 +1,5 @@
 const $ = (id) => document.getElementById(id);
-const app = { user: null, fighters: [], selected: null, ws: null, authMode: 'login', battle: null, waiting: false, tradeTarget: null, pveEnemies: [], pvePlayback: null, generationMode: 'local', model: null };
+const app = { user: null, fighters: [], selected: null, ws: null, authMode: 'login', battle: null, waiting: false, tradeTarget: null, pveEnemies: [], pvePlayback: null, generationMode: 'local', model: null, pendingGenerations: 0 };
 const effectLabels = { damage: '攻撃', heal: '回復', shield: '防護', weaken: '弱体', poison: '毒', burn: '火傷', drain: '吸収', boost: '強化', cleanse: '浄化', stun: '気絶' };
 
 // Actual ASCII pipe characters form both vertical sides, including panels that resize.
@@ -588,25 +588,55 @@ $('art-editor').addEventListener('input', () => {
 });
 $('art-editor').dispatchEvent(new Event('input'));
 decorateFrames();
+function updateGenerationStatus(message = '') {
+  $('generation-time').textContent = app.pendingGenerations
+    ? `AI生成中・順番待ち: ${app.pendingGenerations}体${message ? ` / ${message}` : ''}`
+    : message;
+}
+async function pollGeneration(jobId, name) {
+  let finalMessage = '';
+  try {
+    const started = Date.now();
+    while (Date.now() - started < 21 * 60 * 1000) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const result = await api(`fighters/jobs/${jobId}`, { timeoutMs: 15000 });
+      if (result.status === 'running' || result.status === 'queued') continue;
+      if (result.status === 'failed') throw new Error(result.error || '生成に失敗しました。');
+      if (result.status !== 'done' || !result.fighter) throw new Error('生成結果が不正です。');
+      renderDefinition(result.fighter.definition, $('generation-result'));
+      await loadFighters();
+      app.selected = result.fighter.id;
+      $('selected-fighter').value = result.fighter.id;
+      notify(`${name}が誕生しました！ ${result.fighter.generation_mode === 'ollama' ? 'Ollama AI' : result.fighter.generation_mode === 'gemini' ? 'Gemini AI' : 'ローカル'}生成完了。`);
+      finalMessage = `生成時間: ${(result.generationMs / 1000).toFixed(1)}秒`;
+      return;
+    }
+    throw new Error('生成待ちがタイムアウトしました。キャラクター一覧を確認してください。');
+  } catch (error) {
+    finalMessage = `${name}の生成に失敗しました: ${error.message}`;
+    notify(error.message, true);
+  } finally {
+    app.pendingGenerations--;
+    updateGenerationStatus(finalMessage);
+  }
+}
 $('fighter-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const button = $('generate-button');
   button.disabled = true;
   button.textContent = '>>> ANALYZING...';
-  $('generation-time').textContent = 'AI生成中…';
+  const name = $('fighter-name').value;
+  const art = $('art-editor').value;
   try {
-    const { fighter, generationMs } = await api('fighters', {
+    const { jobId } = await api('fighters/generate', {
       method: 'POST',
-      timeoutMs: 290000,
-      body: JSON.stringify({ name: $('fighter-name').value, art: $('art-editor').value })
+      body: JSON.stringify({ name, art })
     });
-    $('generation-time').textContent = `生成時間: ${(generationMs / 1000).toFixed(1)}秒`;
-    renderDefinition(fighter.definition, $('generation-result'));
-    await loadFighters();
-    app.selected = fighter.id;
-    $('selected-fighter').value = fighter.id;
-    notify(`${fighter.name}が誕生しました！ ${fighter.generation_mode === 'ollama' ? 'Ollama AI' : fighter.generation_mode === 'gemini' ? 'Gemini AI' : 'ローカル'}生成完了。`);
-  } catch (error) { $('generation-time').textContent = '生成に失敗しました。再試行できます。'; notify(error.message, true); }
+    if (!/^[a-f0-9]{64}$/.test(jobId || '')) throw new Error('生成ジョブ番号が不正です。');
+    app.pendingGenerations++;
+    updateGenerationStatus();
+    void pollGeneration(jobId, name);
+  } catch (error) { updateGenerationStatus(`生成に失敗しました: ${error.message}`); notify(error.message, true); }
   finally { button.disabled = false; button.textContent = '>> GENERATE FIGHTER'; }
 });
 $('selected-fighter').addEventListener('change', (e) => { app.selected = e.target.value; });

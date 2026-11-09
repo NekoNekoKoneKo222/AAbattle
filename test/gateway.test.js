@@ -39,6 +39,17 @@ test('gateway accepts only authenticated, bounded generation jobs and status rea
   const { jobId } = await started.json();
   assert.match(jobId, /^[a-f0-9]{64}$/);
   assert.equal((await request(`/v1/skills/jobs/${jobId}`)).status, 202);
+  const second = await request('/v1/skills/generate', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(valid)
+  });
+  assert.equal(second.status, 202);
+  const secondJobId = (await second.json()).jobId;
+  assert.equal((await (await request(`/v1/skills/jobs/${secondJobId}`)).json()).status, 'queued');
+  for (let i = 0; i < 2; i++) {
+    assert.equal((await request('/v1/skills/generate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(valid)
+    })).status, 202);
+  }
   assert.equal((await request('/v1/skills/generate', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(valid)
   })).status, 429);
@@ -47,7 +58,15 @@ test('gateway accepts only authenticated, bounded generation jobs and status rea
     const result = await request(`/v1/skills/jobs/${jobId}`);
     if (result.status === 200) {
       assert.equal((await result.json()).draft.title, '猫');
-      return;
+      for (let j = 0; j < 20; j++) {
+        const queued = await request(`/v1/skills/jobs/${secondJobId}`);
+        if (queued.status === 200) {
+          assert.equal((await queued.json()).draft.title, '猫');
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      assert.fail('queued job did not finish');
     }
     await new Promise((resolve) => setTimeout(resolve, 10));
   }

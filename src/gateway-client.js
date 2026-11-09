@@ -1,5 +1,5 @@
 const MAX_RESPONSE_BYTES = 32 * 1024;
-const JOB_TIMEOUT_MS = 285000;
+const JOB_TIMEOUT_MS = 20 * 60 * 1000;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const gatewayConfigured = () => Boolean(process.env.OLLAMA_GATEWAY_URL);

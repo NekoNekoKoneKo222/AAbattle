@@ -20,7 +20,12 @@ const trading = new Set();
 const pveRunning = new Set();
 const authFailures = new Map();
 const creations = new Map();
-let generationRunning = false;
+const fighterJobs = new Map();
+const fighterJobQueue = [];
+let pendingFighterJobs = 0;
+let activeFighterJob = false;
+const MAX_PENDING_FIGHTER_JOBS = 4;
+const FIGHTER_JOB_TTL_MS = 30 * 60 * 1000;
 const tradeRequests = new Map();
 const pveAttempts = new Map();
 const SESSION_AGE = 7 * 24 * 60 * 60 * 1000;
@@ -70,6 +75,39 @@ function limit(map, key, max, duration) {
     for (const [k, v] of map) if (!v.length || v[v.length - 1] < now - duration) map.delete(k);
   }
   return arr.length <= max;
+}
+function pruneFighterJobs() {
+  const now = Date.now();
+  for (const [id, job] of fighterJobs) {
+    if (job.completedAt && now - job.completedAt > FIGHTER_JOB_TTL_MS) fighterJobs.delete(id);
+  }
+}
+function runNextFighterJob() {
+  if (activeFighterJob || !fighterJobQueue.length) return;
+  const { job, userId, name, art } = fighterJobQueue.shift();
+  activeFighterJob = true;
+  job.state = 'running';
+  void (async () => {
+    try {
+      const existing = await store.listFighters(userId);
+      const existingNames = existing.flatMap((fighter) => [
+        ...(fighter.definition?.skills || []).map((skill) => skill.name),
+        fighter.definition?.passive?.name
+      ]).filter(Boolean);
+      const generated = await generateFighter(art, name, existingNames);
+      job.fighter = await store.saveFighter(userId, name, art, generated.definition, generated.mode);
+      job.generationMs = generated.generationMs;
+      job.state = 'done';
+    } catch (error) {
+      job.error = typeof error?.message === 'string' ? error.message.slice(0, 180) : '生成に失敗しました。';
+      job.state = 'failed';
+    } finally {
+      job.completedAt = Date.now();
+      pendingFighterJobs--;
+      activeFighterJob = false;
+      runNextFighterJob();
+    }
+  })();
 }
 function wrap(callback) {
   return (req, res) => Promise.resolve(callback(req, res)).catch((error) => {
@@ -137,17 +175,13 @@ app.get('/api/me', wrap(async (req, res) => {
 app.post('/api/fighters', wrap(async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
-  if (!limit(creations, user.id, 12, 60 * 60 * 1000)) return res.status(429).json({ error: '生成上限は1時間に12体です。' });
+  if (!limit(creations, user.id, 120, 60 * 60 * 1000)) return res.status(429).json({ error: '生成上限は1時間に120体です。' });
   const name = String(req.body?.name || '').trim();
   if (name.length < 1 || name.length > 24 || /[\u0000-\u001f]/.test(name)) {
     return res.status(400).json({ error: '名前は1～24文字にしてください。' });
   }
   let art;
   try { art = validateArt(req.body?.art); } catch (error) { return res.status(400).json({ error: error.message }); }
-  if (generationMode() === 'ollama' && generationRunning) {
-    return res.status(429).json({ error: 'Ollamaは別のキャラクターを生成中です。完了後に再試行してください。' });
-  }
-  if (generationMode() === 'ollama') generationRunning = true;
   let generated;
   try {
     const existing = await store.listFighters(user.id);
@@ -158,9 +192,44 @@ app.post('/api/fighters', wrap(async (req, res) => {
     generated = await generateFighter(art, name, existingNames);
   }
   catch (error) { return res.status(502).json({ error: error.message.slice(0, 180) }); }
-  finally { generationRunning = false; }
   const fighter = await store.saveFighter(user.id, name, art, generated.definition, generated.mode);
   res.status(201).json({ fighter, generationMs: generated.generationMs });
+}));
+
+app.post('/api/fighters/generate', wrap(async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const name = String(req.body?.name || '').trim();
+  if (name.length < 1 || name.length > 24 || /[\u0000-\u001f]/.test(name)) {
+    return res.status(400).json({ error: '名前は1～24文字にしてください。' });
+  }
+  let art;
+  try { art = validateArt(req.body?.art); } catch (error) { return res.status(400).json({ error: error.message }); }
+  pruneFighterJobs();
+  if (pendingFighterJobs >= MAX_PENDING_FIGHTER_JOBS || fighterJobs.size >= 128) {
+    return res.status(429).json({ error: '生成待ちが満杯です。少し待って再試行してください。' });
+  }
+  if (!limit(creations, user.id, 120, 60 * 60 * 1000)) return res.status(429).json({ error: '生成上限は1時間に120体です。' });
+  const jobId = randomBytes(32).toString('hex');
+  const job = { userId: user.id, state: 'queued', createdAt: Date.now() };
+  fighterJobs.set(jobId, job);
+  pendingFighterJobs++;
+  res.status(202).json({ jobId });
+  fighterJobQueue.push({ job, userId: user.id, name, art });
+  runNextFighterJob();
+}));
+
+app.get('/api/fighters/jobs/:id', wrap(async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const id = String(req.params.id || '');
+  if (!/^[a-f0-9]{64}$/.test(id)) return res.status(404).json({ error: '生成ジョブが見つかりません。' });
+  pruneFighterJobs();
+  const job = fighterJobs.get(id);
+  if (!job || job.userId !== user.id) return res.status(404).json({ error: '生成ジョブが見つかりません。' });
+  if (job.state === 'running' || job.state === 'queued') return res.status(202).json({ status: job.state });
+  if (job.state === 'failed') return res.json({ status: 'failed', error: job.error });
+  res.json({ status: 'done', fighter: job.fighter, generationMs: job.generationMs });
 }));
 
 app.get('/api/fighters', wrap(async (req, res) => {
