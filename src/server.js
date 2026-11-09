@@ -6,7 +6,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { createStore, TradeError } from './store.js';
-import { validateArt, generateFighter } from './generator.js';
+import { validateArt, generateFighter, generationMode, ollamaStatus, ollamaModel } from './generator.js';
 import { createBattle, stepBattle } from './battle.js';
 import { listPveEnemies, PVE_DIFFICULTIES, runPveBattle } from './pve.js';
 
@@ -20,6 +20,7 @@ const trading = new Set();
 const pveRunning = new Set();
 const authFailures = new Map();
 const creations = new Map();
+let generationRunning = false;
 const tradeRequests = new Map();
 const pveAttempts = new Map();
 const SESSION_AGE = 7 * 24 * 60 * 60 * 1000;
@@ -90,7 +91,12 @@ function credentials(body) {
 }
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
-app.get('/api/config', (_req, res) => res.json({ generationMode: process.env.GEMINI_API_KEY ? 'gemini' : 'local' }));
+app.get('/api/config', (_req, res) => res.json({ generationMode: generationMode(), model: generationMode() === 'ollama' ? ollamaModel() : null }));
+app.get('/api/ai/status', wrap(async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  res.json(generationMode() === 'ollama' ? await ollamaStatus() : { connected: null, model: null, installed: null });
+}));
 
 app.post('/api/register', wrap(async (req, res) => {
   if (!limit(authFailures, `reg:${req.ip}`, 6, 30 * 60 * 1000)) return res.status(429).json({ error: '登録回数が多すぎます。しばらく待ってください。' });
@@ -138,6 +144,10 @@ app.post('/api/fighters', wrap(async (req, res) => {
   }
   let art;
   try { art = validateArt(req.body?.art); } catch (error) { return res.status(400).json({ error: error.message }); }
+  if (generationMode() === 'ollama' && generationRunning) {
+    return res.status(429).json({ error: 'Ollamaは別のキャラクターを生成中です。完了後に再試行してください。' });
+  }
+  if (generationMode() === 'ollama') generationRunning = true;
   let generated;
   try {
     const existing = await store.listFighters(user.id);
@@ -148,8 +158,9 @@ app.post('/api/fighters', wrap(async (req, res) => {
     generated = await generateFighter(art, name, existingNames);
   }
   catch (error) { return res.status(502).json({ error: error.message.slice(0, 180) }); }
+  finally { generationRunning = false; }
   const fighter = await store.saveFighter(user.id, name, art, generated.definition, generated.mode);
-  res.status(201).json({ fighter });
+  res.status(201).json({ fighter, generationMs: generated.generationMs });
 }));
 
 app.get('/api/fighters', wrap(async (req, res) => {
@@ -385,7 +396,7 @@ server.on('upgrade', async (req, socket, head) => {
 const port = Number(process.env.PORT || 3000);
 await store.init();
 server.listen(port, '0.0.0.0', () => {
-  console.log(`AABattle listening on ${port}; generation: ${process.env.GEMINI_API_KEY ? 'Gemini' : 'local'}`);
+  console.log(`AABattle listening on ${port}; generation: ${generationMode()}`);
 });
 
 async function shutdown() {

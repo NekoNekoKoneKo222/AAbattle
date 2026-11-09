@@ -18,7 +18,7 @@ test('account registration, authentication, character saving and online matchmak
   const port = await freePort();
   const url = `http://127.0.0.1:${port}`;
   const server = spawn(process.execPath, ['src/server.js'], {
-    cwd: process.cwd(), env: { ...process.env, NODE_ENV: 'development', PORT: String(port), DATABASE_URL: '', GEMINI_API_KEY: '' }, stdio: ['ignore', 'pipe', 'pipe']
+    cwd: process.cwd(), env: { ...process.env, NODE_ENV: 'development', PORT: String(port), DATABASE_URL: '', GEMINI_API_KEY: '', AI_PROVIDER: 'local' }, stdio: ['ignore', 'pipe', 'pipe']
   });
   let output = '';
   server.stderr.on('data', (d) => { output += d.toString(); });
@@ -49,6 +49,8 @@ test('account registration, authentication, character saving and online matchmak
   const bc = bob.cookie.split(';')[0];
   assert.equal((await request('login', { username: 'AliceTest', password: 'wrong-password' })).status, 401);
   assert.equal((await request('me')).body.user, null);
+  assert.equal((await request('ai/status')).status, 401);
+  assert.equal((await request('config')).body.generationMode, 'local');
   assert.equal((await request('me', null, ac)).body.user.username, 'AliceTest');
 
   const art = ' /\\_/\\\n( o.o )\n > ^ <';

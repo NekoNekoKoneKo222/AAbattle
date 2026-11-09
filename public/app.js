@@ -1,5 +1,5 @@
 const $ = (id) => document.getElementById(id);
-const app = { user: null, fighters: [], selected: null, ws: null, authMode: 'login', battle: null, waiting: false, tradeTarget: null, pveEnemies: [], pvePlayback: null };
+const app = { user: null, fighters: [], selected: null, ws: null, authMode: 'login', battle: null, waiting: false, tradeTarget: null, pveEnemies: [], pvePlayback: null, generationMode: 'local', model: null };
 const effectLabels = { damage: '攻撃', heal: '回復', shield: '防護', weaken: '弱体', poison: '毒', burn: '火傷', drain: '吸収', boost: '強化', cleanse: '浄化', stun: '気絶' };
 
 // Actual ASCII pipe characters form both vertical sides, including panels that resize.
@@ -103,6 +103,14 @@ async function showGame(user) {
   switchTab('create');
   await loadFighters();
   connect();
+  if (app.generationMode === 'ollama') {
+    try {
+      const state = await api('ai/status', { timeoutMs: 5000 });
+      $('ai-status').textContent = `Ollama: ${state.connected ? state.installed ? '接続済み' : '接続済み・モデル未導入' : '未接続'} / モデル: ${state.model}`;
+    } catch {
+      $('ai-status').textContent = `Ollama: 状態確認に失敗 / モデル: ${app.model}`;
+    }
+  }
 }
 
 async function loadFighters() {
@@ -160,7 +168,7 @@ function renderCollection() {
   }
   for (const fighter of app.fighters) {
     const card = node('article', 'fighter-card');
-    card.append(node('div', 'small-badge', fighter.generation_mode === 'gemini' ? 'GEMINI GENERATED' : fighter.generation_mode === 'ai' ? 'AI GENERATED' : 'LOCAL GENERATED'));
+    card.append(node('div', 'small-badge', fighter.generation_mode === 'ollama' ? 'OLLAMA GENERATED' : fighter.generation_mode === 'gemini' ? 'GEMINI GENERATED' : fighter.generation_mode === 'ai' ? 'AI GENERATED' : 'LOCAL GENERATED'));
     card.append(node('h3', '', fighter.name));
     card.append(node('p', 'muted', fighter.definition.archetype));
     card.append(node('pre', '', fighter.art));
@@ -585,17 +593,20 @@ $('fighter-form').addEventListener('submit', async (event) => {
   const button = $('generate-button');
   button.disabled = true;
   button.textContent = '>>> ANALYZING...';
+  $('generation-time').textContent = 'AI生成中…';
   try {
-    const { fighter } = await api('fighters', {
+    const { fighter, generationMs } = await api('fighters', {
       method: 'POST',
+      timeoutMs: 290000,
       body: JSON.stringify({ name: $('fighter-name').value, art: $('art-editor').value })
     });
+    $('generation-time').textContent = `生成時間: ${(generationMs / 1000).toFixed(1)}秒`;
     renderDefinition(fighter.definition, $('generation-result'));
     await loadFighters();
     app.selected = fighter.id;
     $('selected-fighter').value = fighter.id;
-    notify(`${fighter.name}が誕生しました！ ${fighter.generation_mode === 'gemini' ? 'Gemini AI' : 'ローカル'}生成完了。`);
-  } catch (error) { notify(error.message, true); }
+    notify(`${fighter.name}が誕生しました！ ${fighter.generation_mode === 'ollama' ? 'Ollama AI' : fighter.generation_mode === 'gemini' ? 'Gemini AI' : 'ローカル'}生成完了。`);
+  } catch (error) { $('generation-time').textContent = '生成に失敗しました。再試行できます。'; notify(error.message, true); }
   finally { button.disabled = false; button.textContent = '>> GENERATE FIGHTER'; }
 });
 $('selected-fighter').addEventListener('change', (e) => { app.selected = e.target.value; });
@@ -667,7 +678,12 @@ async function initialize() {
   }, 8000);
   try {
     const [{ user }, config] = await Promise.all([api('me'), api('config')]);
-    $('mode-badge').textContent = config.generationMode === 'gemini' ? 'GENERATOR : GEMINI AI' : 'GENERATOR : LOCAL (GEMINI KEY REQUIRED)';
+    app.generationMode = config.generationMode;
+    app.model = config.model;
+    $('mode-badge').textContent = config.generationMode === 'ollama' ? `GENERATOR : OLLAMA (${config.model})` : config.generationMode === 'gemini' ? 'GENERATOR : GEMINI AI' : 'GENERATOR : LOCAL RULES';
+    if (config.generationMode !== 'ollama') {
+      $('ai-status').textContent = config.generationMode === 'gemini' ? 'Gemini APIを使用' : 'ローカルルールを使用';
+    }
     if (user) await showGame(user);
     status.classList.add('hidden');
   } catch (error) {

@@ -105,3 +105,47 @@ render.yaml    Render配備設定
 ```
 
 同梱フォント：IBM Plex Mono（SIL Open Font License）。ライセンスは `public/fonts/OFL-LICENSE.txt` にあります。
+
+## 第1段階: Windows PCでのOllama生成
+
+この段階はローカル試験用です。Render、Cloudflare、Neonの設定は変更しません。
+ローカルで `DATABASE_URL` を設定しなければ、ゲームはメモリ保存を使います。試験用アカウントとキャラクターはサーバー再起動で消えます。
+
+1. [Ollama公式サイト](https://ollama.com/download/windows)からWindows版をインストールし、Ollamaを起動します。既にインストール済みなら再インストール不要です。
+2. PowerShellで `ollama pull qwen2.5:3b`、`ollama run qwen2.5:3b` を実行し、日本語で応答するか確認します。Ollamaは `127.0.0.1:11434` のまま使用し、`OLLAMA_HOST=0.0.0.0` は設定しません。
+3. リポジトリで `npm ci` を実行します。PowerShellで `$env:AI_PROVIDER='ollama'`、`$env:OLLAMA_MODEL='qwen2.5:3b'`、`npm start` の順に実行します。ブラウザーで `http://localhost:3000` を開いて試験用アカウントを登録します。
+4. 既存のAAエディターで猫、ロボット、剣などを入力し、`GENERATE FIGHTER` を押します。接続状態、モデル、生成時間、能力と技が表示されます。対戦画面で生成キャラクターを選択できます。
+5. `npm test` で自動テストを実行します。実機の3種生成と自動戦闘は、Ollamaを起動した状態で `$env:AI_PROVIDER='ollama'; node test/live-ollama.mjs` を実行します。HTTP経由の認証・保存は `node test/live-http.mjs` で確認できます。生成中はCPU環境で数十秒かかる場合があります。`ollama ps` の `PROCESSOR` 列でGPUかCPUかを確認できます。
+
+`AI_PROVIDER=gemini` は既存の `GEMINI_API_KEY` と任意の `GEMINI_MODEL` を使います。`AI_PROVIDER=local` は従来の固定ルールです。`AI_PROVIDER` を設定しない場合も、従来どおりGeminiキーがあればGemini、なければローカルルールです。Ollamaが停止している場合や応答が不正な場合、生成だけがエラーになり、ログインや対戦などは引き続き使えます。AIの応答はサーバー側で検証・補正し、コードとして実行しません。
+
+## 第2段階: RenderからPCのOllamaへ安全に接続
+
+通信経路は Render → HTTPS → Cloudflare Access → Cloudflare Tunnel → PCの `127.0.0.1:8787` ゲートウェイ → `127.0.0.1:11434` Ollama です。ルーターのポート開放、Ollamaの直接公開、`OLLAMA_HOST=0.0.0.0`、認証なしQuick Tunnelは使いません。Cloudflareで管理するドメインの安定したホスト名が必要です。
+
+### PC側
+
+1. Ollamaと `qwen2.5:3b` を起動します。Windows版 `cloudflared` を[Cloudflare公式のダウンロード案内](https://developers.cloudflare.com/tunnel/downloads/)に従って導入します。
+2. PCとRenderの両方に設定する、32文字以上のランダムなBearerトークンを作ります。例: `node -p "require('node:crypto').randomBytes(32).toString('hex')"`。この値は秘密として保存し、GitHub・チャット・ログへ貼り付けないでください。
+3. ゲートウェイを起動するPowerShellで `$env:OLLAMA_GATEWAY_TOKEN = Read-Host 'Gateway bearer token'` として値を入力し、`npm run gateway` を実行します。ゲートウェイは必ず `127.0.0.1:8787` にのみ待ち受けます。`node test/live-gateway.mjs` は別の一時トークンでPC内のBearer認証とOllama実生成を検証します。
+4. Cloudflareダッシュボードで名前付きTunnelを作成し、PCの `cloudflared` を接続します。Published application routeのホスト名を `ai.<管理ドメイン>` などにし、Service URLを `http://127.0.0.1:8787` に設定します。[公式Tunnel手順](https://developers.cloudflare.com/tunnel/get-started/)を参照してください。
+5. Cloudflare Accessでそのホスト名を対象にSelf-hosted applicationを作ります。Render専用のService Tokenを作成し、ポリシーはそのトークンをIncludeする **Service Auth** とします。認証なしのAllow・Bypassポリシーは追加しません。[公式Service Token手順](https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/)を参照してください。
+
+### Render側
+
+RenderのWeb Service `aabattle-vkc5` → **Environment** で次のキーを個別に設定します。秘密値は `render.yaml` や `.env.example` に書きません。既存の `DATABASE_URL`、`GEMINI_API_KEY`、`GEMINI_MODEL` は保持します。
+
+| キー | 値 |
+| --- | --- |
+| `AI_PROVIDER` | `ollama` |
+| `OLLAMA_GATEWAY_URL` | Cloudflare Accessで保護した固定の `https://ai.<管理ドメイン>` |
+| `OLLAMA_GATEWAY_TOKEN` | PCゲートウェイと同じBearerトークン |
+| `CF_ACCESS_CLIENT_ID` | Render専用Service TokenのClient ID |
+| `CF_ACCESS_CLIENT_SECRET` | 同Client Secret |
+| `OLLAMA_MODEL` | `qwen2.5:3b`（任意、既定値も同じ） |
+
+Tunnel・Access・ゲートウェイの動作確認後にRenderで **Save, rebuild, and deploy** を選びます。先に保存だけした場合、次のデプロイまで環境変数は実行中サービスに反映されません。[Render環境変数の公式手順](https://render.com/docs/configure-environment-variables)を参照してください。
+
+Renderからは固定HTTPSホストの `POST /v1/skills/generate` と `GET /v1/skills/jobs/<ID>`、`GET /v1/status` だけを使います。Cloudflare Accessの2ヘッダーと別のBearerトークンを毎回送信します。生成はジョブ化して短いポーリングで結果を取得するため、モデルの再試行でCloudflareの応答待ち上限を超えても単一のHTTPリクエストを保持しません。ゲートウェイは認証、6KBの入力制限、1時間30件の生成制限、同時1件、生成タイムアウト、24KBの出力制限を実装しています。秘密情報やAAをログに出しません。
+
+認証なしのアクセスと誤ったBearerトークンが拒否されることを確認してから、公開ゲームでログインし、AA生成とPvE/PvPでの使用を試します。PCやTunnelが停止した場合、生成はエラーになりますが、ログイン、既存キャラ、対戦、トレード、Neon保存は動作し続けます。Cloudflareの設定値はまだリポジトリには含まれません。
