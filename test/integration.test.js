@@ -18,7 +18,7 @@ test('account registration, authentication, character saving and online matchmak
   const port = await freePort();
   const url = `http://127.0.0.1:${port}`;
   const server = spawn(process.execPath, ['src/server.js'], {
-    cwd: process.cwd(), env: { ...process.env, NODE_ENV: 'development', PORT: String(port), DATABASE_URL: '', OPENAI_API_KEY: '' }, stdio: ['ignore', 'pipe', 'pipe']
+    cwd: process.cwd(), env: { ...process.env, NODE_ENV: 'development', PORT: String(port), DATABASE_URL: '', GEMINI_API_KEY: '' }, stdio: ['ignore', 'pipe', 'pipe']
   });
   let output = '';
   server.stderr.on('data', (d) => { output += d.toString(); });
@@ -58,6 +58,27 @@ test('account registration, authentication, character saving and online matchmak
   assert.equal(fighterB.status, 201, JSON.stringify(fighterB.body));
   assert.equal(fighterA.body.fighter.art, art);
   assert.equal((await request('fighters', null, ac)).body.fighters.length, 1);
+  assert.equal((await request('players/BobTest/fighters')).status, 401);
+  const publicBob = await request('players/BobTest/fighters', null, ac);
+  assert.equal(publicBob.status, 200);
+  assert.equal(publicBob.body.fighters[0].name, '猫2');
+  assert.ok(!Object.hasOwn(publicBob.body.fighters[0], 'owner_id'));
+  assert.equal((await request('trades', null, ac)).body.trades.length, 0);
+  assert.equal((await request('trades', { toUsername: 'BobTest', offeredFighterId: fighterB.body.fighter.id, requestedFighterId: fighterA.body.fighter.id }, ac)).status, 409);
+  const requestTrade = { toUsername: 'BobTest', offeredFighterId: fighterA.body.fighter.id, requestedFighterId: fighterB.body.fighter.id };
+  const pending = await request('trades', requestTrade, ac);
+  assert.equal(pending.status, 201, JSON.stringify(pending.body));
+  const tradeId = pending.body.trade.id;
+  assert.equal((await request('trades', requestTrade, ac)).status, 409);
+  assert.equal((await request(`trades/${tradeId}/accept`, {}, ac)).status, 403);
+  assert.equal((await request(`trades/${tradeId}/accept`, {})).status, 401);
+  const accepted = await request(`trades/${tradeId}/accept`, {}, bc);
+  assert.equal(accepted.status, 200, JSON.stringify(accepted.body));
+  assert.equal(accepted.body.trade.status, 'accepted');
+  assert.equal((await request('fighters', null, ac)).body.fighters[0].id, fighterB.body.fighter.id);
+  assert.equal((await request('fighters', null, bc)).body.fighters[0].id, fighterA.body.fighter.id);
+  assert.equal((await request(`trades/${tradeId}/accept`, {}, bc)).status, 409);
+  assert.equal((await request('trades', null, bc)).body.trades[0].status, 'accepted');
   const wsA = new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers: { Origin: url, Cookie: ac } });
   const wsB = new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers: { Origin: url, Cookie: bc } });
   t.after(() => { wsA.close(); wsB.close(); });
@@ -66,8 +87,8 @@ test('account registration, authentication, character saving and online matchmak
   wsA.on('message', (d) => messagesA.push(JSON.parse(d)));
   wsB.on('message', (d) => messagesB.push(JSON.parse(d)));
   await Promise.all([new Promise((r) => wsA.on('open', r)), new Promise((r) => wsB.on('open', r))]);
-  wsA.send(JSON.stringify({ type: 'queue:join', fighterId: fighterA.body.fighter.id }));
-  wsB.send(JSON.stringify({ type: 'queue:join', fighterId: fighterB.body.fighter.id }));
+  wsA.send(JSON.stringify({ type: 'queue:join', fighterId: fighterB.body.fighter.id }));
+  wsB.send(JSON.stringify({ type: 'queue:join', fighterId: fighterA.body.fighter.id }));
   let finished = false;
   for (let i = 0; i < 250; i++) {
     if (messagesA.some((x) => x.type === 'battle:finish') && messagesB.some((x) => x.type === 'battle:finish')) { finished = true; break; }

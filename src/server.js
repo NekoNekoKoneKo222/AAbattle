@@ -5,7 +5,7 @@ import argon2 from 'argon2';
 import { WebSocketServer, WebSocket } from 'ws';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { createStore } from './store.js';
+import { createStore, TradeError } from './store.js';
 import { validateArt, generateFighter } from './generator.js';
 import { createBattle, stepBattle } from './battle.js';
 
@@ -15,8 +15,10 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true, maxPayload: 4096 });
 const queued = new Map();
 const playing = new Set();
+const trading = new Set();
 const authFailures = new Map();
 const creations = new Map();
+const tradeRequests = new Map();
 const SESSION_AGE = 7 * 24 * 60 * 60 * 1000;
 const secure = process.env.NODE_ENV === 'production';
 const staticRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
@@ -153,6 +155,76 @@ app.get('/api/fighters', wrap(async (req, res) => {
   res.json({ fighters: await store.listFighters(user.id) });
 }));
 
+app.get('/api/players/:username/fighters', wrap(async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const key = String(req.params.username || '').normalize('NFKC').trim().toLocaleLowerCase('und');
+  if (!/^[\p{L}\p{N}_]{3,20}$/u.test(key)) return res.status(400).json({ error: 'プレイヤー名が不正です。' });
+  const result = await store.publicFighters(key);
+  if (!result) return res.status(404).json({ error: 'プレイヤーが見つかりません。' });
+  if (result.username.toLocaleLowerCase('und') === user.username.toLocaleLowerCase('und')) {
+    return res.status(400).json({ error: '交換相手には別のプレイヤーを指定してください。' });
+  }
+  res.json(result);
+}));
+
+app.get('/api/trades', wrap(async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  res.json({ trades: await store.listTrades(user.id) });
+}));
+
+app.post('/api/trades', wrap(async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  if (!limit(tradeRequests, user.id, 15, 60 * 60 * 1000)) {
+    return res.status(429).json({ error: '交換申請の上限は1時間に15件です。' });
+  }
+  const toUsername = String(req.body?.toUsername || '').normalize('NFKC').trim().toLocaleLowerCase('und');
+  const offeredId = String(req.body?.offeredFighterId || '');
+  const requestedId = String(req.body?.requestedFighterId || '');
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!/^[\p{L}\p{N}_]{3,20}$/u.test(toUsername) || !uuid.test(offeredId) || !uuid.test(requestedId) || offeredId === requestedId) {
+    return res.status(400).json({ error: '交換相手と交換する2体のキャラクターを指定してください。' });
+  }
+  try {
+    const trade = await store.createTrade(user.id, toUsername, offeredId, requestedId);
+    res.status(201).json({ trade });
+  } catch (error) {
+    if (error instanceof TradeError) return res.status(error.statusCode).json({ error: error.message });
+    throw error;
+  }
+}));
+
+app.post('/api/trades/:id/:action', wrap(async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const { id, action } = req.params;
+  if (!/^[0-9a-f-]{36}$/i.test(id) || !['accept', 'decline', 'cancel'].includes(action)) {
+    return res.status(400).json({ error: '操作が不正です。' });
+  }
+  try {
+    let busyIds = [];
+    if (action === 'accept') {
+      const existing = await store.getTrade(id);
+      if (!existing) return res.status(404).json({ error: '交換申請が見つかりません。' });
+      if (existing.recipient_id !== user.id) return res.status(403).json({ error: 'この交換申請を操作する権限がありません。' });
+      busyIds = [existing.sender_id, existing.recipient_id];
+      if (busyIds.some((userId) => playing.has(userId) || queued.has(userId) || trading.has(userId))) {
+        return res.status(409).json({ error: '対戦中またはマッチング中のプレイヤーがいるため交換を確定できません。' });
+      }
+      busyIds.forEach((userId) => trading.add(userId));
+    }
+    let trade;
+    try { trade = await store.decideTrade(id, user.id, action); }
+    finally { busyIds.forEach((userId) => trading.delete(userId)); }
+    res.json({ trade });
+  } catch (error) {
+    if (error instanceof TradeError) return res.status(error.statusCode).json({ error: error.message });
+    throw error;
+  }
+}));
+
 app.get('/api/history', wrap(async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
@@ -175,12 +247,24 @@ function pruneQueue() {
 }
 
 async function makeMatch(first, second) {
-  if (playing.has(first.user.id) || playing.has(second.user.id)) return;
+  if (playing.has(first.user.id) || playing.has(second.user.id) || trading.has(first.user.id) || trading.has(second.user.id)) return;
+  const [currentFirst, currentSecond] = await Promise.all([
+    store.getFighter(first.fighter.id), store.getFighter(second.fighter.id)
+  ]);
+  if (!currentFirst || currentFirst.owner_id !== first.user.id) {
+    queued.delete(first.user.id);
+    return send(first.ws, { type: 'error', message: '選択したキャラクターの所有者が変わりました。選び直してください。' });
+  }
+  if (!currentSecond || currentSecond.owner_id !== second.user.id) {
+    queued.delete(second.user.id);
+    return send(second.ws, { type: 'error', message: '選択したキャラクターの所有者が変わりました。選び直してください。' });
+  }
+  if (playing.has(first.user.id) || playing.has(second.user.id) || trading.has(first.user.id) || trading.has(second.user.id)) return;
   queued.delete(first.user.id);
   queued.delete(second.user.id);
   playing.add(first.user.id);
   playing.add(second.user.id);
-  const battle = createBattle(first.user, first.fighter, second.user, second.fighter);
+  const battle = createBattle(first.user, currentFirst, second.user, currentSecond);
   const match = { battle, sockets: [first.ws, second.ws] };
   broadcast(match, {
     type: 'battle:start', id: battle.id,
@@ -223,6 +307,7 @@ wss.on('connection', (ws, _request, user) => {
     }
     if (msg?.type !== 'queue:join') return;
     if (playing.has(user.id)) return send(ws, { type: 'error', message: '現在戦闘中です。' });
+    if (trading.has(user.id)) return send(ws, { type: 'error', message: '現在キャラクターを交換中です。' });
     if (queued.has(user.id)) return send(ws, { type: 'error', message: 'すでにマッチング待機中です。' });
     const fighterId = typeof msg.fighterId === 'string' ? msg.fighterId : '';
     const fighter = await store.getFighter(fighterId).catch(() => null);

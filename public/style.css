@@ -12,3 +12,34 @@
 @media(max-width:600px){.boot-status{flex-wrap:wrap}}
 .frame-pipes.left{left:0}.frame-pipes.right{right:0}
 body{font-variant-ligatures:none}
+
+/* Character inspection and consent-based AA trades. */
+.fighter-details{margin-top:11px;padding-top:9px;border-top:1px dashed #34515c}
+.fighter-details summary{cursor:pointer;color:var(--cyan);font-size:12px;list-style:none;user-select:none}
+.fighter-details summary::before{content:'+';margin-right:8px;color:var(--mint)}
+.fighter-details[open] summary::before{content:'-'}
+.definition-details{padding:9px 3px 0;font-size:12px}
+.definition-details .result-title{font-size:15px}
+.definition-details .skill-row{word-break:break-word}
+.trading-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.12fr);gap:24px;margin-top:24px;align-items:start}
+.trade-search-row{display:flex;gap:9px;align-items:stretch}
+.trade-search-row input{min-width:0;flex:1}
+.trade-search-row .secondary-button{padding:9px 12px;white-space:nowrap}
+.trade-preview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0}
+.trade-fighter{min-width:0;overflow:hidden;background:#08151c;border:1px dashed #365660;padding:11px}
+.trade-fighter .panel-heading{margin-bottom:7px;font-size:10px}
+.trade-fighter b{display:block;overflow-wrap:anywhere;color:var(--text)}
+.trade-fighter pre{min-height:90px;max-width:100%;overflow:auto;white-space:pre;font:12px/1.4 var(--mono);color:var(--mint);margin:9px 0}
+.trade-fighter small{display:block;overflow-wrap:anywhere}
+.trade-list-header{display:flex;justify-content:space-between;align-items:start;gap:8px}
+.trade-list-header .secondary-button{font-size:11px;padding:6px 9px;min-width:max-content}
+.trade-list{display:grid;gap:14px}
+.trade-entry{border:1px dashed var(--line);background:#091820;padding:15px;min-width:0}
+.trade-entry .small-badge{display:inline-block;margin-bottom:8px}
+.trade-status-accepted{color:var(--mint);border-color:var(--mint)}
+.trade-status-declined,.trade-status-cancelled,.trade-status-expired{color:var(--red);border-color:var(--red)}
+.trade-entry-title{font-weight:bold;font-size:12px;overflow-wrap:anywhere}
+.trade-actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:10px}
+.trade-actions button{flex:1;min-width:130px;font-size:12px;padding:10px 12px}
+@media(max-width:920px){.trading-grid{grid-template-columns:1fr}}
+@media(max-width:480px){.trade-preview{grid-template-columns:1fr}.trade-search-row{flex-wrap:wrap}.trade-search-row .secondary-button{flex:1}.trade-actions button{min-width:0}.trading-grid .ascii-content{padding:16px}}

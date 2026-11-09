@@ -79,6 +79,7 @@
         <button class="nav-button" data-tab="arena">[ 02 / 対戦 ]</button>
         <button class="nav-button" data-tab="collection">[ 03 / 図鑑 ]</button>
         <button class="nav-button" data-tab="history">[ 04 / 戦績 ]</button>
+        <button class="nav-button" data-tab="trades">[ 05 / トレード ]</button>
         <button id="logout" class="nav-button logout">[ LOGOUT ]</button>
       </nav>
 
@@ -166,6 +167,44 @@
         <h2>対戦履歴</h2>
         <div class="stats-summary"><span id="record-wins">WIN 0</span><span id="record-losses">LOSE 0</span></div>
         <div id="match-history" class="history-list"></div>
+      </section>
+
+      <section id="tab-trades" class="tab-page hidden">
+        <div class="panel-heading"><span class="number">05</span> TRADING TERMINAL</div>
+        <h2>AA同士を交換する。</h2>
+        <p class="muted">交換相手のプレイヤー名を検索し、「自分が渡すAA」と「相手から受け取るAA」を選びます。相手が承認すると、2体の所有者が同時に入れ替わります。</p>
+        <div class="trading-grid">
+          <section class="ascii-frame">
+            <div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div>
+            <div class="ascii-content">
+              <div class="panel-heading">// CREATE TRADE OFFER</div>
+              <form id="trade-form" class="stack">
+                <label for="trade-target">交換相手のプレイヤー名</label>
+                <div class="trade-search-row">
+                  <input id="trade-target" autocomplete="off" maxlength="20" required placeholder="相手のユーザー名">
+                  <button id="trade-search" type="button" class="secondary-button">[ 検索 ]</button>
+                </div>
+                <p id="trade-target-status" class="fineprint">相手を検索すると、そのプレイヤーのAAが選べます。</p>
+                <label for="trade-offer">自分が渡すAA</label>
+                <select id="trade-offer" required></select>
+                <label for="trade-request">相手から受け取るAA</label>
+                <select id="trade-request" required disabled><option value="">先に相手を検索してください</option></select>
+                <div id="trade-preview" class="trade-preview"></div>
+                <button id="trade-send" class="primary-button" type="submit">&gt;&gt; SEND TRADE OFFER</button>
+              </form>
+              <p class="fineprint">申請期限は7日間。成立前なら申請者はキャンセルでき、受信者は拒否できます。</p>
+            </div>
+            <div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div>
+          </section>
+          <section class="ascii-frame">
+            <div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div>
+            <div class="ascii-content">
+              <div class="trade-list-header"><div class="panel-heading">// TRADE INBOX / OUTBOX</div><button id="trade-refresh" class="secondary-button" type="button">[ 更新 ]</button></div>
+              <div id="trade-list" class="trade-list"><p class="muted">トレード画面を開くと申請が読み込まれます。</p></div>
+            </div>
+            <div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div>
+          </section>
+        </div>
       </section>
     </main>
 

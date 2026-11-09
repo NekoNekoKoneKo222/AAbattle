@@ -1,5 +1,5 @@
 const $ = (id) => document.getElementById(id);
-const app = { user: null, fighters: [], selected: null, ws: null, authMode: 'login', battle: null, waiting: false };
+const app = { user: null, fighters: [], selected: null, ws: null, authMode: 'login', battle: null, waiting: false, tradeTarget: null };
 const effectLabels = { damage: '攻撃', heal: '回復', shield: '防護', weaken: '弱体', poison: '毒', burn: '火傷', drain: '吸収', boost: '強化', cleanse: '浄化', stun: '気絶' };
 
 // Actual ASCII pipe characters form both vertical sides, including panels that resize.
@@ -73,12 +73,14 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-page').forEach((page) => page.classList.toggle('hidden', page.id !== `tab-${tab}`));
   document.querySelectorAll('.nav-button[data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
   if (tab === 'history') refreshHistory();
+  if (tab === 'trades') { loadFighters().catch((e) => notify(e.message, true)); refreshTrades(); }
 }
 
 function showAuth() {
   app.user = null;
   app.fighters = [];
   app.selected = null;
+  app.tradeTarget = null;
   $('auth-view').classList.remove('hidden');
   $('game-view').classList.add('hidden');
   $('user-badge').textContent = 'GUEST MODE';
@@ -111,6 +113,7 @@ async function loadFighters() {
   if (app.selected) select.value = app.selected;
   $('join-queue').disabled = fighters.length === 0;
   renderCollection();
+  renderTradeOwnOptions();
 }
 
 function renderDefinition(definition, target) {
@@ -154,6 +157,12 @@ function renderCollection() {
     card.append(node('pre', '', fighter.art));
     const stats = fighter.definition.stats;
     card.append(node('small', '', `HP ${stats.hp} / ATK ${stats.atk} / DEF ${stats.def} / SPD ${stats.speed}`));
+    const details = node('details', 'fighter-details');
+    details.append(node('summary', '', '[ ステータス・スキル・パッシブを見る ]'));
+    const definition = node('div', 'definition-details');
+    renderDefinition(fighter.definition, definition);
+    details.append(definition);
+    card.append(details);
     const b = node('button', 'secondary-button', '[ このキャラで対戦 ]');
     b.type = 'button';
     b.addEventListener('click', () => {
@@ -165,6 +174,128 @@ function renderCollection() {
     card.append(b);
     container.append(card);
   }
+}
+
+function renderTradeOwnOptions() {
+  const select = $('trade-offer');
+  const previous = select.value;
+  select.replaceChildren();
+  if (!app.fighters.length) select.append(node('option', '', 'キャラクターを先に作成してください'));
+  for (const fighter of app.fighters) {
+    const option = node('option', '', `${fighter.name} / ${fighter.definition.archetype}`);
+    option.value = fighter.id;
+    select.append(option);
+  }
+  select.disabled = app.fighters.length === 0;
+  if (app.fighters.some((fighter) => fighter.id === previous)) select.value = previous;
+  renderTradePreview();
+}
+
+function addTradeFighterPreview(container, fighter, heading) {
+  const card = node('div', 'trade-fighter');
+  card.append(node('div', 'panel-heading', heading));
+  if (!fighter) { card.append(node('p', 'muted', 'AAを選択してください。')); container.append(card); return; }
+  card.append(node('b', '', fighter.name));
+  card.append(node('pre', '', fighter.art));
+  const s = fighter.definition.stats;
+  card.append(node('small', '', `HP ${s.hp} / ATK ${s.atk} / DEF ${s.def} / SPD ${s.speed}`));
+  const details = node('details', 'fighter-details');
+  details.append(node('summary', '', '[ 技・パッシブ ]'));
+  const body = node('div', 'definition-details');
+  renderDefinition(fighter.definition, body);
+  details.append(body);
+  card.append(details);
+  container.append(card);
+}
+
+function renderTradePreview() {
+  const target = $('trade-preview');
+  target.replaceChildren();
+  const offered = app.fighters.find((fighter) => fighter.id === $('trade-offer').value);
+  const requested = app.tradeTarget?.fighters.find((fighter) => fighter.id === $('trade-request').value);
+  if (offered) addTradeFighterPreview(target, offered, 'YOU GIVE');
+  if (requested) addTradeFighterPreview(target, requested, 'YOU RECEIVE');
+}
+
+function resetTradeTarget() {
+  app.tradeTarget = null;
+  const select = $('trade-request');
+  select.replaceChildren(node('option', '', '先に相手を検索してください'));
+  select.disabled = true;
+  $('trade-target-status').textContent = 'プレイヤー名を検索してください。';
+  renderTradePreview();
+}
+
+async function searchTradeTarget() {
+  const username = $('trade-target').value.normalize('NFKC').trim();
+  if (!username) return notify('相手のプレイヤー名を入力してください。', true);
+  const button = $('trade-search');
+  button.disabled = true;
+  $('trade-target-status').textContent = '検索中…';
+  try {
+    const result = await api(`players/${encodeURIComponent(username)}/fighters`);
+    app.tradeTarget = result;
+    const select = $('trade-request');
+    select.replaceChildren();
+    if (!result.fighters.length) select.append(node('option', '', 'このプレイヤーはまだAAを持っていません'));
+    for (const fighter of result.fighters) {
+      const option = node('option', '', `${fighter.name} / ${fighter.definition.archetype}`);
+      option.value = fighter.id;
+      select.append(option);
+    }
+    select.disabled = result.fighters.length === 0;
+    $('trade-target-status').textContent = `@${result.username} : ${result.fighters.length}体のAAが見つかりました。`;
+    renderTradePreview();
+  } catch (error) { resetTradeTarget(); notify(error.message, true); }
+  finally { button.disabled = false; }
+}
+
+const tradeStatusLabels = { pending: '申請中', accepted: '交換成立', declined: '拒否', cancelled: 'キャンセル', expired: '期限切れ' };
+
+function renderTrades(trades) {
+  const list = $('trade-list');
+  list.replaceChildren();
+  if (!trades.length) { list.append(node('p', 'muted', '交換申請はまだありません。')); return; }
+  for (const trade of trades.slice().sort((a, b) => Number(b.status === 'pending') - Number(a.status === 'pending'))) {
+    const incoming = trade.recipient_id === app.user.id;
+    const card = node('article', 'trade-entry');
+    card.append(node('div', `small-badge trade-status-${trade.status}`, `${incoming ? 'RECEIVED' : 'SENT'} / ${tradeStatusLabels[trade.status] || trade.status}`));
+    card.append(node('div', 'trade-entry-title', `@${trade.sender_username} ↔ @${trade.recipient_username}`));
+    card.append(node('small', '', `${new Date(trade.created_at).toLocaleString('ja-JP')} / 期限 ${new Date(trade.expires_at).toLocaleString('ja-JP')}`));
+    const fighters = node('div', 'trade-preview');
+    addTradeFighterPreview(fighters, trade.offered_fighter, `@${trade.sender_username} GIVES`);
+    addTradeFighterPreview(fighters, trade.requested_fighter, `@${trade.recipient_username} GIVES`);
+    card.append(fighters);
+    if (trade.status === 'pending') {
+      const actions = node('div', 'trade-actions');
+      for (const [action, label] of incoming ? [['accept', '[ 交換を承認 ]'], ['decline', '[ 拒否 ]']] : [['cancel', '[ 申請を取消 ]']]) {
+        const button = node('button', action === 'accept' ? 'primary-button' : 'secondary-button', label);
+        button.type = 'button';
+        button.addEventListener('click', async () => {
+          if (action === 'accept' && !confirm(`「${trade.offered_fighter.name}」を受け取り、自分の「${trade.requested_fighter.name}」を相手に渡します。交換を確定しますか？`)) return;
+          button.disabled = true;
+          try {
+            await api(`trades/${trade.id}/${action}`, { method: 'POST', body: '{}' });
+            notify(action === 'accept' ? '交換成立！ AAの所有者が入れ替わりました。' : '交換申請を更新しました。');
+            if (action === 'accept') { resetTradeTarget(); await loadFighters(); }
+            await refreshTrades();
+          } catch (error) { notify(error.message, true); }
+          finally { button.disabled = false; }
+        });
+        actions.append(button);
+      }
+      card.append(actions);
+    }
+    list.append(card);
+  }
+}
+
+async function refreshTrades() {
+  if (!app.user) return;
+  try {
+    const { trades } = await api('trades');
+    renderTrades(trades);
+  } catch (error) { notify(error.message, true); }
 }
 
 async function refreshHistory() {
@@ -332,6 +463,31 @@ $('fighter-form').addEventListener('submit', async (event) => {
   finally { button.disabled = false; button.textContent = '>> GENERATE FIGHTER'; }
 });
 $('selected-fighter').addEventListener('change', (e) => { app.selected = e.target.value; });
+$('trade-offer').addEventListener('change', renderTradePreview);
+$('trade-request').addEventListener('change', renderTradePreview);
+$('trade-target').addEventListener('input', resetTradeTarget);
+$('trade-search').addEventListener('click', searchTradeTarget);
+$('trade-refresh').addEventListener('click', refreshTrades);
+$('trade-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const offered = $('trade-offer').value;
+  const requested = $('trade-request').value;
+  if (!app.tradeTarget || !offered || !requested) return notify('相手を検索し、交換する2体のAAを選んでください。', true);
+  const button = $('trade-send');
+  button.disabled = true;
+  try {
+    await api('trades', {
+      method: 'POST',
+      body: JSON.stringify({ toUsername: app.tradeTarget.username, offeredFighterId: offered, requestedFighterId: requested })
+    });
+    notify(`@${app.tradeTarget.username} に交換申請を送信しました！`);
+    await refreshTrades();
+  } catch (error) { notify(error.message, true); }
+  finally { button.disabled = false; }
+});
+setInterval(() => {
+  if (app.user && !$('tab-trades').classList.contains('hidden') && !document.hidden) refreshTrades();
+}, 20000);
 $('join-queue').addEventListener('click', () => {
   if (!app.selected) return notify('キャラクターを作ってください。', true);
   if (!app.ws || app.ws.readyState !== WebSocket.OPEN) { connect(); return notify('サーバーに接続中です。少し待ってもう一度押してください。', true); }
