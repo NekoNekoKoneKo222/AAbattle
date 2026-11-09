@@ -18,6 +18,9 @@ body{font-variant-ligatures:none}
 .ai-monitor[data-state="online"]{border-color:var(--mint)}
 .ai-monitor[data-state="busy"]{border-color:var(--amber)}
 .ai-monitor[data-state="offline"]{border-color:var(--red)}
+.generation-errors{display:grid;gap:8px;margin-top:12px}
+.generation-errors:empty{display:none}
+.generation-error{margin:0;padding:9px 11px;border-left:3px solid var(--red);background:#2a1a23;color:var(--red);font-size:12px;overflow-wrap:anywhere}
 
 /* Character inspection and consent-based AA trades. */
 .fighter-details{margin-top:11px;padding-top:9px;border-top:1px dashed #34515c}

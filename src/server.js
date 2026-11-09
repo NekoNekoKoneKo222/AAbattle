@@ -225,7 +225,7 @@ app.post('/api/fighters/generate', wrap(async (req, res) => {
   }
   if (!limit(creations, user.id, 120, 60 * 60 * 1000)) return res.status(429).json({ error: '生成上限は1時間に120体です。' });
   const jobId = randomBytes(32).toString('hex');
-  const job = { userId: user.id, fingerprint, state: 'queued', createdAt: Date.now() };
+  const job = { userId: user.id, fingerprint, name, state: 'queued', createdAt: Date.now() };
   fighterJobs.set(jobId, job);
   pendingFighterJobs++;
   res.status(202).json({ jobId });
@@ -244,6 +244,16 @@ app.get('/api/fighters/jobs/:id', wrap(async (req, res) => {
   if (job.state === 'running' || job.state === 'queued') return res.status(202).json({ status: job.state });
   if (job.state === 'failed') return res.json({ status: 'failed', error: job.error });
   res.json({ status: 'done', fighter: job.fighter, generationMs: job.generationMs });
+}));
+
+app.get('/api/fighters/jobs', wrap(async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  pruneFighterJobs();
+  const jobs = [...fighterJobs.entries()]
+    .filter(([, job]) => job.userId === user.id && (job.state === 'queued' || job.state === 'running'))
+    .map(([jobId, job]) => ({ jobId, name: job.name, status: job.state }));
+  res.json({ jobs });
 }));
 
 app.get('/api/fighters', wrap(async (req, res) => {

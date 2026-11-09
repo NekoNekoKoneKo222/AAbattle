@@ -50,6 +50,7 @@ test('account registration, authentication, character saving and online matchmak
   assert.equal((await request('login', { username: 'AliceTest', password: 'wrong-password' })).status, 401);
   assert.equal((await request('me')).body.user, null);
   assert.equal((await request('ai/status')).status, 401);
+  assert.equal((await request('fighters/jobs')).status, 401);
   assert.equal((await request('config')).body.generationMode, 'local');
   assert.equal((await request('me', null, ac)).body.user.username, 'AliceTest');
 
@@ -147,7 +148,22 @@ test('account registration, authentication, character saving and online matchmak
     assert.ok(done, 'accepted generation job did not finish');
   }
   assert.equal((await request('fighters', null, ac)).body.fighters.length, 3);
+  const backgroundJob = await request('fighters/generate', { name: '閉じた後の猫', art: '(=^_^=)' }, ac);
+  assert.equal(backgroundJob.status, 202);
   const logout = await request('logout', {}, ac);
   assert.equal(logout.status, 200);
   assert.equal((await request('me', null, ac)).body.user, null);
+  const loggedInAgain = await request('login', { username: 'AliceTest', password: 'safe-password-123' });
+  const newCookie = loggedInAgain.cookie.split(';')[0];
+  let savedInBackground = false;
+  for (let i = 0; i < 40; i++) {
+    const fighters = (await request('fighters', null, newCookie)).body.fighters;
+    if (fighters.some((fighter) => fighter.name === '閉じた後の猫')) {
+      savedInBackground = true;
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  assert.ok(savedInBackground, 'generation should save to the account without browser polling');
+  assert.deepEqual((await request('fighters/jobs', null, newCookie)).body.jobs, []);
 });

@@ -65,7 +65,9 @@ async function request(path, method = 'GET', body) {
       body: body ? JSON.stringify(body) : undefined
     });
   } catch {
-    throw new Error('AIゲートウェイへ接続できません。PCと公開トンネルを確認してください。');
+    const error = new Error('AIゲートウェイへ一時的に接続できません。PCと公開トンネルを確認してください。');
+    error.transient = true;
+    throw error;
   }
   if (response.status === 401 || response.status === 403) {
     throw new Error('AIゲートウェイの認証に失敗しました。認証設定とBearerトークンを確認してください。');
@@ -74,7 +76,15 @@ async function request(path, method = 'GET', body) {
   if (response.status === 524 || response.status === 504) throw new Error('AIゲートウェイがタイムアウトしました。');
   if (response.status === 502) {
     const data = await limitedJson(response).catch(() => ({}));
-    throw new Error(typeof data.error === 'string' ? data.error.slice(0, 180) : 'AIゲートウェイの生成に失敗しました。');
+    if (typeof data.error === 'string') throw new Error(data.error.slice(0, 180));
+    const error = new Error('公開トンネルが一時的に502を返しました。再接続中です。');
+    error.transient = true;
+    throw error;
+  }
+  if (response.status === 404 && path.startsWith('/v1/skills/jobs/')) {
+    const error = new Error('AIゲートウェイの生成ジョブが見つかりません。');
+    error.missingJob = true;
+    throw error;
   }
   if (!response.ok) throw new Error(`AIゲートウェイがHTTP ${response.status}を返しました。`);
   return { status: response.status, data: await limitedJson(response) };
@@ -89,14 +99,33 @@ export async function gatewayStatus(model) {
 }
 
 export async function gatewayGenerate({ art, name, avoidNames }) {
-  const { status, data } = await request('/v1/skills/generate', 'POST', { art, name, avoidNames });
-  if (status !== 202 || !/^[a-f0-9]{64}$/.test(data.jobId || '')) {
-    throw new Error('AIゲートウェイが不正なジョブ番号を返しました。');
+  async function submit() {
+    const { status, data } = await request('/v1/skills/generate', 'POST', { art, name, avoidNames });
+    if (status !== 202 || !/^[a-f0-9]{64}$/.test(data.jobId || '')) {
+      throw new Error('AIゲートウェイが不正なジョブ番号を返しました。');
+    }
+    return data.jobId;
   }
+  let jobId = await submit();
   const started = Date.now();
+  let lastConnection = started;
+  let resubmitted = false;
   while (Date.now() - started < JOB_TIMEOUT_MS) {
     await sleep(2000);
-    const result = await request(`/v1/skills/jobs/${data.jobId}`);
+    let result;
+    try {
+      result = await request(`/v1/skills/jobs/${jobId}`);
+      lastConnection = Date.now();
+    } catch (error) {
+      if (error.missingJob && !resubmitted) {
+        jobId = await submit();
+        resubmitted = true;
+        lastConnection = Date.now();
+        continue;
+      }
+      if (error.transient && Date.now() - lastConnection < 90_000) continue;
+      throw error;
+    }
     if (result.status === 202) continue;
     if (result.status !== 200 || !result.data.draft) throw new Error('AIゲートウェイの生成結果が不正です。');
     return result.data.draft;

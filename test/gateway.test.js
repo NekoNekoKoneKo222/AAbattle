@@ -144,3 +144,35 @@ test('gateway client permits the separate Tailscale Funnel port with Bearer only
     }
   }
 });
+
+test('gateway client recovers a job after a temporary tunnel 502 and gateway restart', async () => {
+  const old = Object.fromEntries(['OLLAMA_GATEWAY_URL', 'OLLAMA_GATEWAY_TOKEN', 'OLLAMA_GATEWAY_AUTH']
+    .map((key) => [key, process.env[key]]));
+  const oldFetch = globalThis.fetch;
+  try {
+    Object.assign(process.env, {
+      OLLAMA_GATEWAY_AUTH: 'tailscale',
+      OLLAMA_GATEWAY_URL: 'https://nekoneko-pc.tail877793.ts.net:8443',
+      OLLAMA_GATEWAY_TOKEN: token
+    });
+    let submissions = 0;
+    let polls = 0;
+    globalThis.fetch = async (url) => {
+      if (url.endsWith('/v1/skills/generate')) {
+        submissions++;
+        return new Response(JSON.stringify({ jobId: String(submissions).repeat(64) }), { status: 202 });
+      }
+      polls++;
+      if (polls === 1) return new Response('<html>proxy error</html>', { status: 502 });
+      if (polls === 2) return new Response('{}', { status: 404 });
+      return new Response(JSON.stringify({ draft: { title: '復旧した猫' } }), { status: 200 });
+    };
+    assert.equal((await gatewayGenerate(valid)).title, '復旧した猫');
+    assert.equal(submissions, 2);
+  } finally {
+    globalThis.fetch = oldFetch;
+    for (const [key, value] of Object.entries(old)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  }
+});
