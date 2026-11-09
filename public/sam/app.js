@@ -587,7 +587,7 @@ function renderArena() {
   for (const p of match.stage.platforms) { ctx.fillStyle = '#1c5165'; ctx.fillRect(p.x, p.y, p.w, p.h); ctx.fillStyle = '#6be5c7'; ctx.fillRect(p.x, p.y, p.w, 5); }
   for (const entity of match.entities || []) {
     ctx.save(); ctx.translate(entity.x, entity.y);
-    const art = entity.owner === 0 ? imageFrom(data.moveArt) : null;
+    const art = entity.owner === 0 && match.mode !== 'online' ? imageFrom(data.moveArt) : null;
     if (art?.complete && art.naturalWidth) { ctx.scale(entity.vx < 0 ? -1 : 1, 1); ctx.drawImage(art, -25, -25, 50, 50); }
     else { ctx.fillStyle = entity.owner ? '#ff9ca6' : '#79f0d1'; ctx.globalAlpha = .8; ctx.beginPath(); ctx.arc(0, 0, entity.kind === 'explosion' ? Math.min(entity.range, 70) : entity.kind === 'laser' ? 18 : 17, 0, Math.PI * 2); ctx.fill(); }
     if (entity.kind === 'laser') { ctx.strokeStyle = entity.owner ? '#ff9ca6' : '#79f0d1'; ctx.lineWidth = 8; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo((match.fighters[entity.owner].facing || 1) * entity.range, 0); ctx.stroke(); }
