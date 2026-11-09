@@ -80,6 +80,7 @@
         <button class="nav-button" data-tab="collection">[ 03 / 図鑑 ]</button>
         <button class="nav-button" data-tab="history">[ 04 / 戦績 ]</button>
         <button class="nav-button" data-tab="trades">[ 05 / トレード ]</button>
+        <button class="nav-button" data-tab="pve">[ 06 / PvE ]</button>
         <button id="logout" class="nav-button logout">[ LOGOUT ]</button>
       </nav>
 
@@ -205,6 +206,75 @@
             <div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div>
           </section>
         </div>
+      </section>
+
+      <section id="tab-pve" class="tab-page hidden">
+        <div class="arena-heading">
+          <div><div class="panel-heading"><span class="number">06</span> SOLO PVE ARENA</div><h2>ひとりで挑む文字の試練。</h2></div>
+          <div class="small-badge">MATCH TYPE : PLAYER VS CPU</div>
+        </div>
+        <div class="pve-layout">
+          <section class="ascii-frame">
+            <div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div>
+            <div class="ascii-content">
+              <div class="panel-heading">// ENEMY SELECT</div>
+              <form id="pve-form" class="stack">
+                <label for="pve-fighter">使用するAA</label>
+                <select id="pve-fighter" required></select>
+                <label for="pve-difficulty">難易度</label>
+                <select id="pve-difficulty" required>
+                  <option value="easy">EASY</option><option value="normal">NORMAL</option>
+                  <option value="hard">HARD</option><option value="boss">BOSS</option>
+                </select>
+                <div id="pve-enemy-preview" class="pve-enemy-preview">
+                  <div id="pve-enemy-name" class="result-title">ENEMY ...</div>
+                  <pre id="pve-enemy-art"></pre>
+                  <p id="pve-enemy-description" class="muted">敵データを読み込んでいます。</p>
+                  <div id="pve-enemy-stats" class="small-badge">--</div>
+                </div>
+                <div class="pve-actions">
+                  <button id="pve-start" type="submit" class="primary-button">&gt;&gt; START SOLO BATTLE</button>
+                  <button id="pve-skip" type="button" class="secondary-button hidden">[ 再生をスキップ ]</button>
+                </div>
+              </form>
+              <p id="pve-status" class="muted" role="status">AAと難易度を選択して挑戦してください。</p>
+            </div>
+            <div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div>
+          </section>
+          <section class="ascii-frame">
+            <div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div>
+            <div class="ascii-content">
+              <div class="panel-heading">// PVE BATTLE REPLAY</div>
+              <div id="pve-battle-stage" class="hidden">
+                <div class="battle-meta"><span id="pve-battle-id">SOLO --</span><span id="pve-battle-turn">TURN 00</span></div>
+                <div class="battle-columns">
+                  <div class="battle-fighter">
+                    <div id="pve-battle-name-a" class="combat-name">PLAYER</div>
+                    <div class="hp-track"><span id="pve-hp-a" class="hp-fill"></span></div>
+                    <div id="pve-battle-hp-a" class="combat-hp">-- / -- HP</div>
+                    <div class="combat-art"><pre id="pve-battle-art-a"></pre></div>
+                  </div>
+                  <div class="versus">VS</div>
+                  <div class="battle-fighter">
+                    <div id="pve-battle-name-b" class="combat-name">CPU</div>
+                    <div class="hp-track"><span id="pve-hp-b" class="hp-fill"></span></div>
+                    <div id="pve-battle-hp-b" class="combat-hp">-- / -- HP</div>
+                    <div class="combat-art"><pre id="pve-battle-art-b"></pre></div>
+                  </div>
+                </div>
+                <div class="log-heading">// AUTOMATIC BATTLE LOG</div>
+                <div id="pve-battle-log" class="battle-log" aria-live="polite"></div>
+              </div>
+              <p id="pve-placeholder" class="muted">戦闘を始めると、ここで全自動バトルが再生されます。</p>
+            </div>
+            <div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div>
+          </section>
+        </div>
+        <section class="pve-records">
+          <div class="panel-heading">// SOLO RECORDS</div>
+          <div class="stats-summary"><span id="pve-wins">PVE WIN 0</span><span id="pve-losses">PVE LOSE 0</span></div>
+          <div id="pve-history" class="history-list"></div>
+        </section>
       </section>
     </main>
 

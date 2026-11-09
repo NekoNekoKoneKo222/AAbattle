@@ -1,5 +1,5 @@
 const $ = (id) => document.getElementById(id);
-const app = { user: null, fighters: [], selected: null, ws: null, authMode: 'login', battle: null, waiting: false, tradeTarget: null };
+const app = { user: null, fighters: [], selected: null, ws: null, authMode: 'login', battle: null, waiting: false, tradeTarget: null, pveEnemies: [], pvePlayback: null };
 const effectLabels = { damage: '攻撃', heal: '回復', shield: '防護', weaken: '弱体', poison: '毒', burn: '火傷', drain: '吸収', boost: '強化', cleanse: '浄化', stun: '気絶' };
 
 // Actual ASCII pipe characters form both vertical sides, including panels that resize.
@@ -74,6 +74,10 @@ function switchTab(tab) {
   document.querySelectorAll('.nav-button[data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
   if (tab === 'history') refreshHistory();
   if (tab === 'trades') { loadFighters().catch((e) => notify(e.message, true)); refreshTrades(); }
+  if (tab === 'pve') {
+    if (!app.pveEnemies.length) loadPveEnemies();
+    refreshPveHistory();
+  }
 }
 
 function showAuth() {
@@ -81,6 +85,10 @@ function showAuth() {
   app.fighters = [];
   app.selected = null;
   app.tradeTarget = null;
+  if (app.pvePlayback?.timer) clearInterval(app.pvePlayback.timer);
+  app.pvePlayback = null;
+  $('pve-start').disabled = false;
+  $('pve-skip').classList.add('hidden');
   $('auth-view').classList.remove('hidden');
   $('game-view').classList.add('hidden');
   $('user-badge').textContent = 'GUEST MODE';
@@ -114,6 +122,7 @@ async function loadFighters() {
   $('join-queue').disabled = fighters.length === 0;
   renderCollection();
   renderTradeOwnOptions();
+  renderPveFighterOptions();
 }
 
 function renderDefinition(definition, target) {
@@ -174,6 +183,133 @@ function renderCollection() {
     card.append(b);
     container.append(card);
   }
+}
+
+function renderPveFighterOptions() {
+  const select = $('pve-fighter');
+  const selected = select.value;
+  select.replaceChildren();
+  if (!app.fighters.length) select.append(node('option', '', '先にAAを作成してください'));
+  for (const fighter of app.fighters) {
+    const option = node('option', '', `${fighter.name} / ${fighter.definition.archetype}`);
+    option.value = fighter.id;
+    select.append(option);
+  }
+  if (app.fighters.some((fighter) => fighter.id === selected)) select.value = selected;
+  else if (app.selected) select.value = app.selected;
+  select.disabled = !app.fighters.length;
+  $('pve-start').disabled = !app.fighters.length || !!app.pvePlayback;
+}
+
+async function loadPveEnemies() {
+  try {
+    const { enemies } = await api('pve/enemies');
+    app.pveEnemies = enemies;
+    const select = $('pve-difficulty');
+    const previous = select.value;
+    select.replaceChildren();
+    for (const enemy of enemies) {
+      const option = node('option', '', enemy.label);
+      option.value = enemy.key;
+      select.append(option);
+    }
+    if (enemies.some((enemy) => enemy.key === previous)) select.value = previous;
+    renderPveEnemyPreview();
+  } catch (error) { notify(error.message, true); }
+}
+
+function renderPveEnemyPreview() {
+  const enemy = app.pveEnemies.find((item) => item.key === $('pve-difficulty').value);
+  if (!enemy) return;
+  $('pve-enemy-name').textContent = enemy.name;
+  $('pve-enemy-art').textContent = enemy.art;
+  $('pve-enemy-description').textContent = enemy.description;
+  const { hp, atk, def, speed } = enemy.stats;
+  $('pve-enemy-stats').textContent = `HP ${hp} / ATK ${atk} / DEF ${def} / SPD ${speed}`;
+}
+
+async function refreshPveHistory() {
+  if (!app.user) return;
+  try {
+    const { wins, losses, matches } = await api('pve/history');
+    $('pve-wins').textContent = `PVE WIN ${wins}`;
+    $('pve-losses').textContent = `PVE LOSE ${losses}`;
+    const list = $('pve-history');
+    list.replaceChildren();
+    if (!matches.length) list.append(node('p', 'muted', 'まだPvEに挑戦していません。'));
+    for (const match of matches) {
+      const card = node('div', `history-item ${match.won ? 'win' : 'loss'}`);
+      const details = node('div', 'pve-history-details');
+      details.append(node('b', '', `${match.won ? '[ CLEAR ]' : '[ DEFEAT ]'} ${match.enemy_name}`));
+      details.append(node('small', '', `${match.fighter_name} / ${match.enemy_key.toUpperCase()} / ${match.turns}ターン`));
+      card.append(details, node('span', 'muted', new Date(match.created_at).toLocaleString('ja-JP')));
+      list.append(card);
+    }
+  } catch (error) { notify(error.message, true); }
+}
+
+function appendPveLog(text, highlight = false) {
+  const box = $('pve-battle-log');
+  box.append(node('div', highlight ? 'result' : '', text));
+  while (box.children.length > 150) box.firstChild.remove();
+  box.scrollTop = box.scrollHeight;
+}
+
+function replayPveTurn(turn) {
+  $('pve-battle-turn').textContent = `TURN ${String(turn.turn).padStart(2, '0')}`;
+  turn.fighters.forEach((fighter, i) => {
+    const side = i ? 'b' : 'a';
+    $(`pve-battle-hp-${side}`).textContent = `${fighter.hp} / ${fighter.maxHp} HP${fighter.shield ? ` / SHIELD ${fighter.shield}` : ''}`;
+    $(`pve-hp-${side}`).style.width = `${Math.round(100 * fighter.hp / fighter.maxHp)}%`;
+    $(`pve-battle-art-${side}`).style.color = turn.attackerId === fighter.userId ? '#8ef4c7' : '#a9dedb';
+  });
+  for (const line of turn.lines) appendPveLog(`[${String(turn.turn).padStart(2, '0')}] ${line}`, turn.ended && line.startsWith('勝者'));
+}
+
+function finishPvePlayback(playback) {
+  if (app.pvePlayback !== playback) return;
+  clearInterval(playback.timer);
+  app.pvePlayback = null;
+  $('pve-skip').classList.add('hidden');
+  $('pve-start').disabled = !app.fighters.length;
+  $('pve-status').textContent = playback.battle.won ? '>>> PVE CLEAR! 勝利を保存しました。' : '>>> DEFEAT. 次の挑戦を待っています。';
+  refreshPveHistory();
+}
+
+function playPveReplay(battle) {
+  if (app.pvePlayback?.timer) clearInterval(app.pvePlayback.timer);
+  $('pve-placeholder').classList.add('hidden');
+  $('pve-battle-stage').classList.remove('hidden');
+  $('pve-battle-id').textContent = `SOLO ${battle.id.slice(0, 8).toUpperCase()}`;
+  $('pve-battle-turn').textContent = 'TURN 00';
+  $('pve-battle-log').replaceChildren();
+  for (let i = 0; i < 2; i++) {
+    const fighter = battle.fighters[i];
+    const side = i ? 'b' : 'a';
+    $(`pve-battle-name-${side}`).textContent = `${fighter.name} / ${fighter.username}`;
+    $(`pve-battle-art-${side}`).textContent = fighter.art;
+    $(`pve-battle-hp-${side}`).textContent = `${fighter.hp} / ${fighter.maxHp} HP`;
+    $(`pve-hp-${side}`).style.width = '100%';
+  }
+  appendPveLog('>>> SOLO BATTLE START!', true);
+  const playback = { battle, index: 0, timer: null };
+  app.pvePlayback = playback;
+  $('pve-skip').classList.remove('hidden');
+  $('pve-status').textContent = '>>> CPUとの自動戦闘を再生中…';
+  const tick = () => {
+    if (app.pvePlayback !== playback) return;
+    replayPveTurn(battle.log[playback.index++]);
+    if (playback.index >= battle.log.length) finishPvePlayback(playback);
+  };
+  playback.timer = setInterval(tick, 480);
+  tick();
+}
+
+function skipPveReplay() {
+  const playback = app.pvePlayback;
+  if (!playback) return;
+  while (playback.index < playback.battle.log.length) replayPveTurn(playback.battle.log[playback.index++]);
+  finishPvePlayback(playback);
 }
 
 function renderTradeOwnOptions() {
@@ -484,6 +620,29 @@ $('trade-form').addEventListener('submit', async (event) => {
     await refreshTrades();
   } catch (error) { notify(error.message, true); }
   finally { button.disabled = false; }
+});
+$('pve-difficulty').addEventListener('change', renderPveEnemyPreview);
+$('pve-skip').addEventListener('click', skipPveReplay);
+$('pve-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (app.pvePlayback) return;
+  const fighterId = $('pve-fighter').value;
+  const difficulty = $('pve-difficulty').value;
+  if (!fighterId) return notify('先にキャラクターを作ってください。', true);
+  const button = $('pve-start');
+  button.disabled = true;
+  $('pve-status').textContent = '>>> CPUとの戦闘を計算しています…';
+  try {
+    const { battle } = await api('pve/battle', {
+      method: 'POST', body: JSON.stringify({ fighterId, difficulty })
+    });
+    if (app.user) playPveReplay(battle);
+  } catch (error) {
+    notify(error.message, true);
+    $('pve-status').textContent = '> 戦闘を開始できませんでした。再試行してください。';
+  } finally {
+    if (!app.pvePlayback) button.disabled = !app.fighters.length;
+  }
 });
 setInterval(() => {
   if (app.user && !$('tab-trades').classList.contains('hidden') && !document.hidden) refreshTrades();

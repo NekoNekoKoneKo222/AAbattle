@@ -43,3 +43,18 @@ body{font-variant-ligatures:none}
 .trade-actions button{flex:1;min-width:130px;font-size:12px;padding:10px 12px}
 @media(max-width:920px){.trading-grid{grid-template-columns:1fr}}
 @media(max-width:480px){.trade-preview{grid-template-columns:1fr}.trade-search-row{flex-wrap:wrap}.trade-search-row .secondary-button{flex:1}.trade-actions button{min-width:0}.trading-grid .ascii-content{padding:16px}}
+
+/* Solo PvE - ASCII-framed difficulty selection, fight replay and persistent records. */
+.pve-layout{display:grid;grid-template-columns:minmax(0,.88fr) minmax(0,1.12fr);gap:22px;margin-top:24px;align-items:start}
+.pve-enemy-preview{margin:12px 0;padding:16px;background:#08151c;border:1px dashed var(--line);min-width:0}
+.pve-enemy-preview pre{font:15px/1.45 var(--mono);color:var(--amber);white-space:pre;max-width:100%;overflow:auto;margin:12px 0 16px}
+.pve-enemy-preview .small-badge{display:inline-block;white-space:normal}
+.pve-actions{display:flex;flex-wrap:wrap;gap:9px}
+.pve-actions button{flex:1 1 175px}
+.pve-records{margin-top:26px}
+.pve-history-details{display:grid;gap:5px}
+.pve-history-details b{color:var(--mint)}
+.pve-history-details small{color:var(--muted)}
+#pve-battle-stage{min-width:0}
+@media(max-width:900px){.pve-layout{grid-template-columns:1fr}}
+@media(max-width:520px){.pve-layout .ascii-content{padding:16px}.pve-records .history-item{flex-wrap:wrap}.pve-enemy-preview{padding:12px}}

@@ -8,6 +8,7 @@ import path from 'node:path';
 import { createStore, TradeError } from './store.js';
 import { validateArt, generateFighter } from './generator.js';
 import { createBattle, stepBattle } from './battle.js';
+import { listPveEnemies, PVE_DIFFICULTIES, runPveBattle } from './pve.js';
 
 const store = createStore();
 const app = express();
@@ -16,9 +17,11 @@ const wss = new WebSocketServer({ noServer: true, maxPayload: 4096 });
 const queued = new Map();
 const playing = new Set();
 const trading = new Set();
+const pveRunning = new Set();
 const authFailures = new Map();
 const creations = new Map();
 const tradeRequests = new Map();
+const pveAttempts = new Map();
 const SESSION_AGE = 7 * 24 * 60 * 60 * 1000;
 const secure = process.env.NODE_ENV === 'production';
 const staticRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
@@ -210,7 +213,7 @@ app.post('/api/trades/:id/:action', wrap(async (req, res) => {
       if (!existing) return res.status(404).json({ error: '交換申請が見つかりません。' });
       if (existing.recipient_id !== user.id) return res.status(403).json({ error: 'この交換申請を操作する権限がありません。' });
       busyIds = [existing.sender_id, existing.recipient_id];
-      if (busyIds.some((userId) => playing.has(userId) || queued.has(userId) || trading.has(userId))) {
+      if (busyIds.some((userId) => playing.has(userId) || queued.has(userId) || trading.has(userId) || pveRunning.has(userId))) {
         return res.status(409).json({ error: '対戦中またはマッチング中のプレイヤーがいるため交換を確定できません。' });
       }
       busyIds.forEach((userId) => trading.add(userId));
@@ -231,6 +234,46 @@ app.get('/api/history', wrap(async (req, res) => {
   res.json({ matches: await store.historyForUser(user.id) });
 }));
 
+app.get('/api/pve/enemies', wrap(async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  res.json({ enemies: listPveEnemies() });
+}));
+
+app.get('/api/pve/history', wrap(async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  res.json(await store.pveHistoryForUser(user.id));
+}));
+
+app.post('/api/pve/battle', wrap(async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const fighterId = String(req.body?.fighterId || '');
+  const difficulty = String(req.body?.difficulty || '');
+  if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(fighterId) || !PVE_DIFFICULTIES.includes(difficulty)) {
+    return res.status(400).json({ error: '使用AAとPvE難易度を正しく選択してください。' });
+  }
+  if (playing.has(user.id) || queued.has(user.id) || trading.has(user.id) || pveRunning.has(user.id)) {
+    return res.status(409).json({ error: 'ほかの対戦・マッチング・交換処理中はPvEを開始できません。' });
+  }
+  if (!limit(pveAttempts, user.id, 24, 60 * 60 * 1000)) {
+    return res.status(429).json({ error: 'PvEの上限は1時間に24回です。' });
+  }
+  pveRunning.add(user.id);
+  try {
+    const fighter = await store.getFighter(fighterId);
+    if (!fighter || fighter.owner_id !== user.id) {
+      return res.status(403).json({ error: '自分が所持しているAAを選んでください。' });
+    }
+    const battle = runPveBattle(user, fighter, difficulty);
+    const record = await store.savePveMatch(user.id, fighter, battle);
+    res.status(201).json({ battle, record: {
+      id: record.id, won: record.won, enemy_key: record.enemy_key, turns: record.turns, created_at: record.created_at
+    } });
+  } finally { pveRunning.delete(user.id); }
+}));
+
 app.use(express.static(staticRoot, { index: 'index.html', maxAge: 60000 }));
 app.use((err, _req, res, _next) => {
   res.status(err.status || 400).json({ error: 'リクエストを処理できませんでした。' });
@@ -247,7 +290,7 @@ function pruneQueue() {
 }
 
 async function makeMatch(first, second) {
-  if (playing.has(first.user.id) || playing.has(second.user.id) || trading.has(first.user.id) || trading.has(second.user.id)) return;
+  if (playing.has(first.user.id) || playing.has(second.user.id) || trading.has(first.user.id) || trading.has(second.user.id) || pveRunning.has(first.user.id) || pveRunning.has(second.user.id)) return;
   const [currentFirst, currentSecond] = await Promise.all([
     store.getFighter(first.fighter.id), store.getFighter(second.fighter.id)
   ]);
@@ -259,7 +302,7 @@ async function makeMatch(first, second) {
     queued.delete(second.user.id);
     return send(second.ws, { type: 'error', message: '選択したキャラクターの所有者が変わりました。選び直してください。' });
   }
-  if (playing.has(first.user.id) || playing.has(second.user.id) || trading.has(first.user.id) || trading.has(second.user.id)) return;
+  if (playing.has(first.user.id) || playing.has(second.user.id) || trading.has(first.user.id) || trading.has(second.user.id) || pveRunning.has(first.user.id) || pveRunning.has(second.user.id)) return;
   queued.delete(first.user.id);
   queued.delete(second.user.id);
   playing.add(first.user.id);
@@ -308,6 +351,7 @@ wss.on('connection', (ws, _request, user) => {
     if (msg?.type !== 'queue:join') return;
     if (playing.has(user.id)) return send(ws, { type: 'error', message: '現在戦闘中です。' });
     if (trading.has(user.id)) return send(ws, { type: 'error', message: '現在キャラクターを交換中です。' });
+    if (pveRunning.has(user.id)) return send(ws, { type: 'error', message: '現在PvEの結果を保存中です。' });
     if (queued.has(user.id)) return send(ws, { type: 'error', message: 'すでにマッチング待機中です。' });
     const fighterId = typeof msg.fighterId === 'string' ? msg.fighterId : '';
     const fighter = await store.getFighter(fighterId).catch(() => null);

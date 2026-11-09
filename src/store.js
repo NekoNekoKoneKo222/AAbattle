@@ -28,6 +28,7 @@ export class MemoryStore {
     this.sessions = new Map();
     this.fighters = new Map();
     this.matches = [];
+    this.pveMatches = [];
     this.trades = new Map();
   }
   async init() {}
@@ -135,6 +136,23 @@ export class MemoryStore {
   async historyForUser(userId) {
     return this.matches.filter((m) => m.player_a === userId || m.player_b === userId).slice(-20).reverse();
   }
+  async savePveMatch(userId, fighter, result) {
+    const record = {
+      id: result.id, user_id: userId, fighter_id: fighter.id, fighter_name: fighter.name,
+      enemy_key: result.difficulty, enemy_name: result.enemy, won: result.won,
+      turns: result.turns, transcript: result.log, created_at: new Date().toISOString()
+    };
+    this.pveMatches.push(record);
+    return record;
+  }
+  async pveHistoryForUser(userId) {
+    const all = this.pveMatches.filter((m) => m.user_id === userId);
+    return {
+      wins: all.filter((m) => m.won).length,
+      losses: all.filter((m) => !m.won).length,
+      matches: all.slice(-20).reverse().map(({ transcript, ...m }) => m)
+    };
+  }
 }
 
 class PostgresStore {
@@ -152,9 +170,9 @@ class PostgresStore {
     });
   }
   async init() {
-    const { rows } = await this.pool.query("SELECT to_regclass('public.users') AS users, to_regclass('public.sessions') AS sessions, to_regclass('public.fighters') AS fighters, to_regclass('public.matches') AS matches, to_regclass('public.trades') AS trades");
+    const { rows } = await this.pool.query("SELECT to_regclass('public.users') AS users, to_regclass('public.sessions') AS sessions, to_regclass('public.fighters') AS fighters, to_regclass('public.matches') AS matches, to_regclass('public.trades') AS trades, to_regclass('public.pve_matches') AS pve_matches");
     if (!rows[0] || Object.values(rows[0]).some((v) => v === null)) {
-      throw new Error('Database schema missing. Apply migrations/001_init.sql and migrations/002_trades.sql through a direct PostgreSQL connection first.');
+      throw new Error('Database schema missing. Apply migrations/001_init.sql through migrations/003_pve.sql through a direct PostgreSQL connection first.');
     }
   }
   async close() { await this.pool.end(); }
@@ -284,5 +302,21 @@ class PostgresStore {
   async historyForUser(userId) {
     return (await this.pool.query(
       'SELECT id,player_a,player_b,winner_id,created_at FROM matches WHERE player_a=$1 OR player_b=$1 ORDER BY created_at DESC LIMIT 20', [userId])).rows;
+  }
+  async savePveMatch(userId, fighter, result) {
+    const { rows } = await this.pool.query(
+      `INSERT INTO pve_matches (id,user_id,fighter_id,fighter_name,enemy_key,enemy_name,won,turns,transcript)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id,user_id,fighter_id,fighter_name,enemy_key,enemy_name,won,turns,created_at`,
+      [result.id, userId, fighter.id, fighter.name, result.difficulty, result.enemy, result.won, result.turns, JSON.stringify(result.log)]);
+    return rows[0];
+  }
+  async pveHistoryForUser(userId) {
+    const [list, totals] = await Promise.all([
+      this.pool.query(`SELECT id,user_id,fighter_id,fighter_name,enemy_key,enemy_name,won,turns,created_at
+        FROM pve_matches WHERE user_id=$1 ORDER BY created_at DESC LIMIT 20`, [userId]),
+      this.pool.query(`SELECT COUNT(*) FILTER (WHERE won) AS wins, COUNT(*) FILTER (WHERE NOT won) AS losses
+        FROM pve_matches WHERE user_id=$1`, [userId])
+    ]);
+    return { wins: Number(totals.rows[0].wins), losses: Number(totals.rows[0].losses), matches: list.rows };
   }
 }
