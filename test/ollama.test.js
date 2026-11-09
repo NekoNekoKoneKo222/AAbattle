@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { generateFighter, generationMode, ollamaStatus, validateAiDraft } from '../src/generator.js';
+import { generateFighter, generateOllamaDraft, generationMode, ollamaStatus, validateAiDraft } from '../src/generator.js';
 import { createBattle, stepBattle } from '../src/battle.js';
 
 const draft = {
@@ -72,6 +72,50 @@ test('Ollama schema request retries invalid output and generated skills work in 
     globalThis.fetch = previousFetch;
     if (old === undefined) delete process.env.AI_PROVIDER; else process.env.AI_PROVIDER = old;
   }
+});
+
+test('Ollama replaces only duplicate skill and passive while keeping unique abilities', async () => {
+  const previousFetch = globalThis.fetch;
+  const first = structuredClone(draft);
+  first.skills[1].name = '月影ノ爪';
+  first.passive.name = '月影の爪';
+  const second = structuredClone(draft);
+  second.skills[0].name = '勝手に変えた技';
+  second.skills[1].name = '星守りの羽';
+  second.skills[2].name = '別の歩幅';
+  second.passive.name = '星影の守護';
+  let calls = 0;
+  let repairPrompt = '';
+  globalThis.fetch = async (_url, init) => {
+    calls++;
+    if (calls === 2) repairPrompt = JSON.parse(init.body).messages[1].content;
+    return { ok: true, status: 200, json: async () => ({ message: { content: JSON.stringify(calls === 1 ? first : second) } }) };
+  };
+  try {
+    const result = await generateOllamaDraft('(=^.^=)', '星猫');
+    assert.equal(calls, 2);
+    assert.deepEqual(result.skills.map((skill) => skill.name), ['月影の爪', '星守りの羽', '夜風の歩幅']);
+    assert.equal(result.passive.name, '星影の守護');
+    assert.match(repairPrompt, /重複した項目/);
+    assert.match(repairPrompt, /夜風の歩幅/);
+    assert.match(repairPrompt, /重複した項目だけ/);
+  } finally { globalThis.fetch = previousFetch; }
+});
+
+test('Ollama replaces a repeated effect combination without changing other skills', async () => {
+  const previousFetch = globalThis.fetch;
+  const first = structuredClone(draft);
+  first.skills[2].effects = structuredClone(first.skills[1].effects);
+  const second = structuredClone(draft);
+  second.skills[0].name = '変更してはいけない技';
+  let calls = 0;
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ message: { content: JSON.stringify(++calls === 1 ? first : second) } }) });
+  try {
+    const result = await generateOllamaDraft('(=^.^=)', '星猫');
+    assert.equal(calls, 2);
+    assert.equal(result.skills[0].name, draft.skills[0].name);
+    assert.deepEqual(result.skills[2].effects, draft.skills[2].effects);
+  } finally { globalThis.fetch = previousFetch; }
 });
 
 test('Ollama stopped and missing model report clear failures', async () => {

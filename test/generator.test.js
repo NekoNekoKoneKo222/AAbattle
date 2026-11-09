@@ -101,13 +101,14 @@ test('Gemini regenerates a duplicate ability instead of storing it', async () =>
     calls++;
     return { ok: true, status: 200, json: async () => ({ candidates: [{ content: { parts: [{ text: JSON.stringify({
       ...draft,
-      skills: calls === 1 ? draft.skills : [{ ...draft.skills[0], name: '新しい技' }, ...draft.skills.slice(1)]
+      skills: calls === 1 ? draft.skills : [{ ...draft.skills[0], name: '新しい技' }, { ...draft.skills[1], name: '勝手に変えた羽' }, draft.skills[2]]
     }) }] } }] }) };
   };
   try {
     const result = await generateFighter('(@_@)', '羽', ['前の技']);
     assert.equal(result.mode, 'gemini');
     assert.equal(result.definition.skills[0].name, '新しい技');
+    assert.equal(result.definition.skills[1].name, '無敵の羽');
     assert.equal(calls, 2);
   } finally {
     globalThis.fetch = previousFetch;
