@@ -9,14 +9,16 @@ import { createStore, TradeError } from './store.js';
 import { validateArt, generateFighter, generationMode, ollamaStatus, ollamaModel } from './generator.js';
 import { createBattle, stepBattle } from './battle.js';
 import { listPveEnemies, PVE_DIFFICULTIES, runPveBattle } from './pve.js';
-import { createSamOnline } from './sam-online.js';
-import { generateSamMove } from './sam-ai.js';
+import { attachShiftArena } from '../shift-arena/apps/server/dist/index.js';
 
 const store = createStore();
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true, maxPayload: 4096 });
-const samOnline = createSamOnline();
+const shiftArena = attachShiftArena(server, async (cookie) => {
+  const user = await currentUser({ headers: { cookie } });
+  return user ? { id: user.id, username: user.username } : null;
+});
 const queued = new Map();
 const playing = new Set();
 const trading = new Set();
@@ -46,7 +48,6 @@ app.use((req, res, next) => {
   });
   next();
 });
-app.use('/sam/api/move/generate', express.json({ limit: '130kb', type: 'application/json' }));
 app.use(express.json({ limit: '12kb', type: 'application/json' }));
 
 const digest = (value) => createHash('sha256').update(value).digest('hex');
@@ -133,13 +134,6 @@ function credentials(body) {
 }
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
-app.get('/sam/api/config', (_req, res) => res.json({ geminiAvailable: Boolean(process.env.GEMINI_API_KEY) }));
-app.post('/sam/api/move/generate', wrap(async (req, res) => {
-  if (!process.env.GEMINI_API_KEY) return res.status(503).json({ error: 'Gemini APIキーが未設定です。ローカル推定を使用してください。' });
-  if (!limit(creations, `sam-ai:${req.ip}`, 8, 60 * 60 * 1000)) return res.status(429).json({ error: 'AI生成は1時間に8回までです。' });
-  try { res.json(await generateSamMove(req.body)); }
-  catch (error) { res.status(error.message.includes('PNG') ? 400 : 502).json({ error: error.message.slice(0, 180) }); }
-}));
 app.get('/api/config', (_req, res) => res.json({ generationMode: generationMode(), model: generationMode() === 'ollama' ? ollamaModel() : null }));
 app.get('/api/ai/status', wrap(async (req, res) => {
   const user = await requireUser(req, res);
@@ -520,10 +514,10 @@ server.on('upgrade', async (req, socket, head) => {
   try {
     const origin = req.headers.origin;
     const expectedHost = req.headers['x-forwarded-host'] || req.headers.host;
-    if (!origin || new URL(origin).host !== expectedHost || !['/ws', '/sam/ws'].includes(req.url)) {
+    if (!origin || new URL(origin).host !== expectedHost || (req.url !== '/ws' && !req.url?.startsWith('/sam/colyseus/'))) {
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); socket.destroy(); return;
     }
-    if (req.url === '/sam/ws') return samOnline.handleUpgrade(req, socket, head);
+    if (req.url.startsWith('/sam/colyseus/')) return shiftArena.upgrade(req, socket, head);
     const user = await currentUser(req);
     if (!user) { socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n'); socket.destroy(); return; }
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req, user));
@@ -532,16 +526,15 @@ server.on('upgrade', async (req, socket, head) => {
 
 const port = Number(process.env.PORT || 3000);
 await store.init();
-server.listen(port, '0.0.0.0', () => {
-  console.log(`AABattle listening on ${port}; generation: ${generationMode()}`);
-});
+await shiftArena.listen(port);
+console.log(`AABattle and SHIFT ARENA listening on ${port}; generation: ${generationMode()}`);
 
 async function shutdown() {
   wss.clients.forEach((c) => c.close());
-  samOnline.close();
-  server.close();
+  await shiftArena.shutdown();
   await store.close();
   process.exit(0);
 }
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
+

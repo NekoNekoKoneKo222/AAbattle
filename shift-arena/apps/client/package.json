@@ -1,0 +1,2 @@
+{"name":"@shift/client","version":"0.1.0","private":true,"type":"module","scripts":{"dev":"vite --host 0.0.0.0","build":"tsc --noEmit && vite build"},"dependencies":{"@shift/shared":"0.1.0","@colyseus/sdk":"^0.18.9","react":"^19.2.0","react-dom":"^19.2.0","three":"^0.181.0"},"devDependencies":{"@types/react":"^19.2.0","@types/react-dom":"^19.2.0","@types/three":"^0.181.0","@vitejs/plugin-react":"^5.1.0","typescript":"^5.9.3","vite":"^7.2.0"}}
+

@@ -1,0 +1,2 @@
+{"name":"@shift/server","version":"0.1.0","private":true,"type":"module","main":"dist/index.js","scripts":{"build":"tsc -p tsconfig.json"},"dependencies":{"@shift/shared":"0.1.0","@colyseus/core":"^0.18.27","@colyseus/ws-transport":"^0.18.4"},"devDependencies":{"typescript":"^5.9.3","@types/node":"^24.10.0"}}
+

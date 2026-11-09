@@ -4,7 +4,7 @@ services:
     runtime: node
     region: singapore
     plan: free
-    buildCommand: npm ci --omit=dev
+    buildCommand: npm ci && npm run build:shift
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
@@ -14,3 +14,4 @@ services:
         sync: false  # Neon PostgreSQL: enter the secret connection string on first deploy
       - key: AI_MODEL
         value: gpt-4.1-mini
+

@@ -2,5 +2,8 @@ node_modules/
 .env
 .DS_Store
 coverage/
+test-results/
+shift-arena/**/dist/
 *.log
 cloudflare/wrangler.jsonc
+

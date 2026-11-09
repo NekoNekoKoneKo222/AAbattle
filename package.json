@@ -4,12 +4,19 @@
   "private": true,
   "description": "ASCII-art arena with locally generated or AI-generated fighters and real-time multiplayer",
   "type": "module",
+  "workspaces": [
+    "shift-arena/apps/*",
+    "shift-arena/packages/*"
+  ],
   "scripts": {
     "start": "node src/server.js",
     "gateway": "node src/gateway-server.js",
     "routes": "node src/entry-routes.js",
     "dev": "node --watch src/server.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "pretest": "npm run build:shift",
+    "build:shift": "npm run build --workspace @shift/shared && npm run build --workspace @shift/client && npm run build --workspace @shift/server",
+    "test:shift": "npm run test --workspace @shift/shared"
   },
   "engines": {
     "node": ">=20"
@@ -19,5 +26,9 @@
     "express": "^5.1.0",
     "pg": "^8.16.3",
     "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.0"
   }
 }
+
