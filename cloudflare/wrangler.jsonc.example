@@ -1,0 +1,13 @@
+{
+  "$schema": "https://unpkg.com/wrangler/config-schema.json",
+  "name": "aabattle-ai-gateway",
+  "main": "./worker.js",
+  "compatibility_date": "2026-11-09",
+  "workers_dev": true,
+  "vpc_services": [
+    {
+      "binding": "GATEWAY",
+      "service_id": "REPLACE_WITH_VPC_SERVICE_ID"
+    }
+  ]
+}

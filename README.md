@@ -121,7 +121,9 @@ render.yaml    Render配備設定
 
 ## 第2段階: RenderからPCのOllamaへ安全に接続
 
-通信経路は Render → HTTPS → Cloudflare Access → Cloudflare Tunnel → PCの `127.0.0.1:8787` ゲートウェイ → `127.0.0.1:11434` Ollama です。ルーターのポート開放、Ollamaの直接公開、`OLLAMA_HOST=0.0.0.0`、認証なしQuick Tunnelは使いません。Cloudflareで管理するドメインの安定したホスト名が必要です。
+通信経路は Render → HTTPS → Cloudflare Access → Cloudflare Tunnel → PCの `127.0.0.1:8787` ゲートウェイ → `127.0.0.1:11434` Ollama です。ルーターのポート開放、Ollamaの直接公開、`OLLAMA_HOST=0.0.0.0`、認証なしQuick Tunnelは使いません。通常の公開TunnelにはCloudflareで管理するドメインの安定したホスト名が必要です。
+
+**ドメインを持たない場合の無料経路:** Cloudflare Workers VPC（現在ベータ）で名前付きTunnelをWorkerのVPC Serviceに接続し、無料の `workers.dev` ホスト名をCloudflare Accessで保護できます。この場合の経路は Render → Access → Worker → Workers VPC → Tunnel → PCゲートウェイです。`cloudflare/worker.js` は必要な3種類のAPI経路だけを転送し、Bearer以外の秘密ヘッダーはPCへ渡しません。Workers VPCのベータ期間中の無料枠とWorkers Freeの利用制限は[公式のVPC手順](https://developers.cloudflare.com/workers-vpc/get-started/)、[公式料金表](https://developers.cloudflare.com/workers/platform/pricing/)で確認してください。ベータ機能の提供条件は変更される可能性があります。
 
 ### PC側
 
@@ -145,6 +147,14 @@ RenderのWeb Service `aabattle-vkc5` → **Environment** で次のキーを個�
 | `OLLAMA_MODEL` | `qwen2.5:3b`（任意、既定値も同じ） |
 
 Tunnel・Access・ゲートウェイの動作確認後にRenderで **Save, rebuild, and deploy** を選びます。先に保存だけした場合、次のデプロイまで環境変数は実行中サービスに反映されません。[Render環境変数の公式手順](https://render.com/docs/configure-environment-variables)を参照してください。
+
+### ドメインなしでWorkers VPCを使う場合
+
+1. Cloudflareダッシュボードの **Workers VPC ベータ** で名前付きTunnelを作成し、PCの `cloudflared` を接続します。Tunnelの資格情報はGitHubに保存しません。
+2. VPC Serviceを作成し、そのTunnel、PC側ホスト `127.0.0.1`、HTTPポート `8787` を指定します。発行されたService IDを控えます。
+3. `cloudflare/wrangler.jsonc.example` を `cloudflare/wrangler.jsonc` にコピーし、`REPLACE_WITH_VPC_SERVICE_ID` を実際のService IDに置き換えます。`npx wrangler deploy --config cloudflare/wrangler.jsonc` でWorkerを作成します。Workerの `workers.dev` URLを控えます。
+4. Cloudflare Accessでその `workers.dev` ホスト名のSelf-hosted applicationを作り、Render専用Service Tokenだけを許可するService Authポリシーを設定します。[WorkersへのAccess設定手順](https://developers.cloudflare.com/workers/configuration/cloudflare-access/)を参照してください。
+5. Renderの `OLLAMA_GATEWAY_URL` にその固定 `https://...workers.dev` URLを設定します。他の環境変数と検証手順は上記と同じです。Access保護前にWorkerのURLを本番の接続先へ設定しないでください。
 
 Renderからは固定HTTPSホストの `POST /v1/skills/generate` と `GET /v1/skills/jobs/<ID>`、`GET /v1/status` だけを使います。Cloudflare Accessの2ヘッダーと別のBearerトークンを毎回送信します。生成はジョブ化して短いポーリングで結果を取得するため、モデルの再試行でCloudflareの応答待ち上限を超えても単一のHTTPリクエストを保持しません。ゲートウェイは認証、6KBの入力制限、1時間30件の生成制限、同時1件、生成タイムアウト、24KBの出力制限を実装しています。秘密情報やAAをログに出しません。
 
