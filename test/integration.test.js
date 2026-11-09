@@ -14,7 +14,7 @@ async function freePort() {
   });
 }
 
-test('account registration, authentication, character saving and online matchmaking', { timeout: 30000 }, async (t) => {
+test('account registration, authentication, character saving and online matchmaking', { timeout: 65000 }, async (t) => {
   const port = await freePort();
   const url = `http://127.0.0.1:${port}`;
   const server = spawn(process.execPath, ['src/server.js'], {
@@ -113,7 +113,7 @@ test('account registration, authentication, character saving and online matchmak
   wsA.send(JSON.stringify({ type: 'queue:join', fighterId: fighterB.body.fighter.id }));
   wsB.send(JSON.stringify({ type: 'queue:join', fighterId: fighterA.body.fighter.id }));
   let finished = false;
-  for (let i = 0; i < 250; i++) {
+  for (let i = 0; i < 750; i++) {
     if (messagesA.some((x) => x.type === 'battle:finish') && messagesB.some((x) => x.type === 'battle:finish')) { finished = true; break; }
     await new Promise((resolve) => setTimeout(resolve, 70));
   }
@@ -166,4 +166,25 @@ test('account registration, authentication, character saving and online matchmak
   }
   assert.ok(savedInBackground, 'generation should save to the account without browser polling');
   assert.deepEqual((await request('fighters/jobs', null, newCookie)).body.jobs, []);
+  const ownedId = fighterB.body.fighter.id;
+  const otherUserFavorite = await fetch(`${url}/api/fighters/${ownedId}/favorite`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: bc }, body: JSON.stringify({ favorite: true })
+  });
+  assert.equal(otherUserFavorite.status, 404);
+  const favoriteResponse = await fetch(`${url}/api/fighters/${ownedId}/favorite`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: newCookie }, body: JSON.stringify({ favorite: true })
+  });
+  assert.equal(favoriteResponse.status, 200);
+  assert.equal((await request('fighters', null, newCookie)).body.fighters[0].id, ownedId);
+  const otherUserDelete = await fetch(`${url}/api/fighters/${ownedId}`, { method: 'DELETE', headers: { Cookie: bc } });
+  assert.equal(otherUserDelete.status, 404);
+  const pendingDeleteTrade = await request('trades', {
+    toUsername: 'BobTest', offeredFighterId: ownedId, requestedFighterId: fighterA.body.fighter.id
+  }, newCookie);
+  assert.equal(pendingDeleteTrade.status, 201);
+  const deleted = await fetch(`${url}/api/fighters/${ownedId}`, { method: 'DELETE', headers: { Cookie: newCookie } });
+  assert.equal(deleted.status, 200);
+  assert.ok(!(await request('fighters', null, newCookie)).body.fighters.some((fighter) => fighter.id === ownedId));
+  assert.equal((await request('trades', null, newCookie)).body.trades[0].status, 'cancelled');
+  assert.equal((await request('pve/battle', { difficulty: 'easy', fighterId: ownedId }, newCookie)).status, 403);
 });

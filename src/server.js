@@ -262,6 +262,37 @@ app.get('/api/fighters', wrap(async (req, res) => {
   res.json({ fighters: await store.listFighters(user.id) });
 }));
 
+app.put('/api/fighters/:id/favorite', wrap(async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const id = String(req.params.id || '');
+  if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id) || typeof req.body?.favorite !== 'boolean') {
+    return res.status(400).json({ error: 'AAとお気に入り設定を正しく指定してください。' });
+  }
+  try { res.json({ fighter: await store.setFighterFavorite(user.id, id, req.body.favorite) }); }
+  catch (error) {
+    if (error instanceof TradeError) return res.status(error.statusCode).json({ error: error.message });
+    throw error;
+  }
+}));
+
+app.delete('/api/fighters/:id', wrap(async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const id = String(req.params.id || '');
+  if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id)) {
+    return res.status(400).json({ error: 'AAを正しく指定してください。' });
+  }
+  if (playing.has(user.id) || queued.has(user.id) || trading.has(user.id) || pveRunning.has(user.id)) {
+    return res.status(409).json({ error: '対戦・マッチング・交換処理中はAAを削除できません。' });
+  }
+  try { await store.deleteFighter(user.id, id); res.json({ ok: true }); }
+  catch (error) {
+    if (error instanceof TradeError) return res.status(error.statusCode).json({ error: error.message });
+    throw error;
+  }
+}));
+
 app.get('/api/players/:username/fighters', wrap(async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;

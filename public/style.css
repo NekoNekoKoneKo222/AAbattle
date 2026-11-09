@@ -21,6 +21,10 @@ body{font-variant-ligatures:none}
 .generation-errors{display:grid;gap:8px;margin-top:12px}
 .generation-errors:empty{display:none}
 .generation-error{margin:0;padding:9px 11px;border-left:3px solid var(--red);background:#2a1a23;color:var(--red);font-size:12px;overflow-wrap:anywhere}
+.fighter-card .fighter-actions{display:flex;gap:8px;margin-top:9px}
+.fighter-card .fighter-actions .secondary-button{width:auto;flex:1;margin-top:0;padding:8px 5px;font-size:11px}
+.fighter-card .favorite-button.active{border-color:var(--amber);color:var(--amber)}
+.fighter-card .delete-button{border-color:var(--red);color:var(--red)}
 
 /* Character inspection and consent-based AA trades. */
 .fighter-details{margin-top:11px;padding-top:9px;border-top:1px dashed #34515c}

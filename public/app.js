@@ -198,7 +198,7 @@ function renderCollection() {
   for (const fighter of app.fighters) {
     const card = node('article', 'fighter-card');
     card.append(node('div', 'small-badge', fighter.generation_mode === 'ollama' ? 'OLLAMA GENERATED' : fighter.generation_mode === 'gemini' ? 'GEMINI GENERATED' : fighter.generation_mode === 'ai' ? 'AI GENERATED' : 'LOCAL GENERATED'));
-    card.append(node('h3', '', fighter.name));
+    card.append(node('h3', '', `${fighter.is_favorite ? '★ ' : ''}${fighter.name}`));
     card.append(node('p', 'muted', fighter.definition.archetype));
     card.append(node('pre', '', fighter.art));
     const stats = fighter.definition.stats;
@@ -218,6 +218,31 @@ function renderCollection() {
       notify(`${fighter.name}を選択しました。`);
     });
     card.append(b);
+    const actions = node('div', 'fighter-actions');
+    const favorite = node('button', `secondary-button favorite-button ${fighter.is_favorite ? 'active' : ''}`, fighter.is_favorite ? '[ ★ お気に入り解除 ]' : '[ ☆ お気に入り ]');
+    favorite.type = 'button';
+    favorite.setAttribute('aria-pressed', String(Boolean(fighter.is_favorite)));
+    favorite.addEventListener('click', async () => {
+      favorite.disabled = true;
+      try {
+        await api(`fighters/${fighter.id}/favorite`, { method: 'PUT', body: JSON.stringify({ favorite: !fighter.is_favorite }) });
+        await loadFighters();
+        notify(`${fighter.name}のお気に入りを${fighter.is_favorite ? '解除' : '登録'}しました。`);
+      } catch (error) { favorite.disabled = false; notify(error.message, true); }
+    });
+    const remove = node('button', 'secondary-button delete-button', '[ 削除 ]');
+    remove.type = 'button';
+    remove.addEventListener('click', async () => {
+      if (!window.confirm(`${fighter.name}を図鑑から削除しますか？\n未完了の交換申請も取り消されます。`)) return;
+      remove.disabled = true;
+      try {
+        await api(`fighters/${fighter.id}`, { method: 'DELETE' });
+        await loadFighters();
+        notify(`${fighter.name}を削除しました。`);
+      } catch (error) { remove.disabled = false; notify(error.message, true); }
+    });
+    actions.append(favorite, remove);
+    card.append(actions);
     container.append(card);
   }
 }

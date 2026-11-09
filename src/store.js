@@ -53,14 +53,36 @@ export class MemoryStore {
   }
   async deleteSession(tokenHash) { this.sessions.delete(tokenHash); }
   async saveFighter(ownerId, name, art, definition, generationMode) {
-    const fighter = { id: randomUUID(), owner_id: ownerId, name, art, definition, generation_mode: generationMode, created_at: new Date().toISOString() };
+    const fighter = { id: randomUUID(), owner_id: ownerId, name, art, definition, generation_mode: generationMode, is_favorite: false, deleted_at: null, created_at: new Date().toISOString() };
     this.fighters.set(fighter.id, fighter);
     return fighter;
   }
   async listFighters(ownerId) {
-    return [...this.fighters.values()].filter((f) => f.owner_id === ownerId).sort((a, b) => b.created_at.localeCompare(a.created_at));
+    return [...this.fighters.values()].filter((f) => f.owner_id === ownerId && !f.deleted_at)
+      .sort((a, b) => Number(b.is_favorite) - Number(a.is_favorite) || b.created_at.localeCompare(a.created_at));
   }
-  async getFighter(id) { return this.fighters.get(id) || null; }
+  async getFighter(id) {
+    const fighter = this.fighters.get(id);
+    return fighter && !fighter.deleted_at ? fighter : null;
+  }
+  async setFighterFavorite(ownerId, id, favorite) {
+    const fighter = await this.getFighter(id);
+    if (!fighter || fighter.owner_id !== ownerId) throw new TradeError('AAが見つかりません。', 404);
+    fighter.is_favorite = favorite;
+    return fighter;
+  }
+  async deleteFighter(ownerId, id) {
+    const fighter = await this.getFighter(id);
+    if (!fighter || fighter.owner_id !== ownerId) throw new TradeError('AAが見つかりません。', 404);
+    fighter.deleted_at = new Date().toISOString();
+    fighter.is_favorite = false;
+    for (const trade of this.trades.values()) {
+      if (trade.status === 'pending' && (trade.offered_fighter_id === id || trade.requested_fighter_id === id)) {
+        trade.status = 'cancelled';
+        trade.decided_at = fighter.deleted_at;
+      }
+    }
+  }
   async publicFighters(usernameKey) {
     const user = await this.findUser(usernameKey);
     if (!user) return null;
@@ -80,8 +102,8 @@ export class MemoryStore {
     const recipient = await this.findUser(recipientKey);
     if (!recipient) throw new TradeError('交換相手のユーザーが見つかりません。', 404);
     if (recipient.id === senderId) throw new TradeError('自分自身とは交換できません。', 400);
-    const offered = this.fighters.get(offeredId);
-    const requested = this.fighters.get(requestedId);
+    const offered = await this.getFighter(offeredId);
+    const requested = await this.getFighter(requestedId);
     if (!offered || offered.owner_id !== senderId || !requested || requested.owner_id !== recipient.id) {
       throw new TradeError('キャラクターの所有者が変わりました。再検索してください。');
     }
@@ -112,13 +134,15 @@ export class MemoryStore {
     }
     if (tradeExpired(trade) || trade.status !== 'pending') throw new TradeError('交換申請は終了または期限切れです。');
     if (action === 'accept') {
-      const offered = this.fighters.get(trade.offered_fighter_id);
-      const requested = this.fighters.get(trade.requested_fighter_id);
+      const offered = await this.getFighter(trade.offered_fighter_id);
+      const requested = await this.getFighter(trade.requested_fighter_id);
       if (!offered || !requested || offered.owner_id !== trade.sender_id || requested.owner_id !== trade.recipient_id) {
         throw new TradeError('キャラクターの所有者が変わったため交換できません。');
       }
       offered.owner_id = trade.recipient_id;
       requested.owner_id = trade.sender_id;
+      offered.is_favorite = false;
+      requested.is_favorite = false;
     }
     trade.status = { accept: 'accepted', decline: 'declined', cancel: 'cancelled' }[action];
     trade.decided_at = new Date().toISOString();
@@ -170,9 +194,9 @@ class PostgresStore {
     });
   }
   async init() {
-    const { rows } = await this.pool.query("SELECT to_regclass('public.users') AS users, to_regclass('public.sessions') AS sessions, to_regclass('public.fighters') AS fighters, to_regclass('public.matches') AS matches, to_regclass('public.trades') AS trades, to_regclass('public.pve_matches') AS pve_matches");
-    if (!rows[0] || Object.values(rows[0]).some((v) => v === null)) {
-      throw new Error('Database schema missing. Apply migrations/001_init.sql through migrations/003_pve.sql through a direct PostgreSQL connection first.');
+    const { rows } = await this.pool.query("SELECT to_regclass('public.users') AS users, to_regclass('public.sessions') AS sessions, to_regclass('public.fighters') AS fighters, to_regclass('public.matches') AS matches, to_regclass('public.trades') AS trades, to_regclass('public.pve_matches') AS pve_matches, (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='fighters' AND column_name IN ('is_favorite','deleted_at')) AS library_columns");
+    if (!rows[0] || Object.values(rows[0]).some((v) => v === null) || Number(rows[0].library_columns) !== 2) {
+      throw new Error('Database schema missing. Apply migrations/001_init.sql through migrations/004_fighter_library.sql first.');
     }
   }
   async close() { await this.pool.end(); }
@@ -200,9 +224,28 @@ class PostgresStore {
     return rows[0];
   }
   async listFighters(ownerId) {
-    return (await this.pool.query('SELECT * FROM fighters WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 100', [ownerId])).rows;
+    return (await this.pool.query('SELECT * FROM fighters WHERE owner_id=$1 AND deleted_at IS NULL ORDER BY is_favorite DESC, created_at DESC LIMIT 100', [ownerId])).rows;
   }
-  async getFighter(id) { return (await this.pool.query('SELECT * FROM fighters WHERE id=$1', [id])).rows[0] || null; }
+  async getFighter(id) { return (await this.pool.query('SELECT * FROM fighters WHERE id=$1 AND deleted_at IS NULL', [id])).rows[0] || null; }
+  async setFighterFavorite(ownerId, id, favorite) {
+    const { rows } = await this.pool.query('UPDATE fighters SET is_favorite=$3 WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL RETURNING *',
+      [id, ownerId, favorite]);
+    if (!rows[0]) throw new TradeError('AAが見つかりません。', 404);
+    return rows[0];
+  }
+  async deleteFighter(ownerId, id) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query('UPDATE fighters SET deleted_at=NOW(), is_favorite=FALSE WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL RETURNING id', [id, ownerId]);
+      if (!rows[0]) throw new TradeError('AAが見つかりません。', 404);
+      await client.query("UPDATE trades SET status='cancelled', decided_at=NOW() WHERE status='pending' AND (offered_fighter_id=$1 OR requested_fighter_id=$1)", [id]);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally { client.release(); }
+  }
   async publicFighters(usernameKey) {
     const user = await this.findUser(usernameKey);
     if (!user) return null;
@@ -227,7 +270,7 @@ class PostgresStore {
       await client.query('BEGIN');
       await client.query("UPDATE trades SET status='cancelled', decided_at=NOW() WHERE status='pending' AND expires_at <= NOW() AND sender_id=$1", [senderId]);
       // Lock fighter rows in a stable order while checking their current owners.
-      const { rows } = await client.query('SELECT id, owner_id FROM fighters WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE', [[offeredId, requestedId]]);
+      const { rows } = await client.query('SELECT id, owner_id FROM fighters WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL ORDER BY id FOR UPDATE', [[offeredId, requestedId]]);
       if (rows.length !== 2 || !rows.some((f) => f.id === offeredId && f.owner_id === senderId) ||
           !rows.some((f) => f.id === requestedId && f.owner_id === recipient.id)) {
         throw new TradeError('キャラクターの所有者が変わりました。再検索してください。');
@@ -263,13 +306,13 @@ class PostgresStore {
         throw new TradeError('交換申請は終了または期限切れです。');
       }
       if (action === 'accept') {
-        const { rows: fighters } = await client.query('SELECT id, owner_id FROM fighters WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE',
+        const { rows: fighters } = await client.query('SELECT id, owner_id FROM fighters WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL ORDER BY id FOR UPDATE',
           [[trade.offered_fighter_id, trade.requested_fighter_id]]);
         if (fighters.length !== 2 || !fighters.some((f) => f.id === trade.offered_fighter_id && f.owner_id === trade.sender_id) ||
             !fighters.some((f) => f.id === trade.requested_fighter_id && f.owner_id === trade.recipient_id)) {
           throw new TradeError('キャラクターの所有者が変わったため交換できません。');
         }
-        await client.query(`UPDATE fighters SET owner_id = CASE
+        await client.query(`UPDATE fighters SET is_favorite=FALSE, owner_id = CASE
           WHEN id=$1 THEN $3::uuid WHEN id=$2 THEN $4::uuid ELSE owner_id END
           WHERE id IN ($1,$2)`, [trade.offered_fighter_id, trade.requested_fighter_id, trade.recipient_id, trade.sender_id]);
       }
