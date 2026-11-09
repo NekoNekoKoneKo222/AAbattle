@@ -133,7 +133,15 @@ app.get('/api/config', (_req, res) => res.json({ generationMode: generationMode(
 app.get('/api/ai/status', wrap(async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
-  res.json(generationMode() === 'ollama' ? await ollamaStatus() : { connected: null, model: null, installed: null });
+  const status = generationMode() === 'ollama'
+    ? await ollamaStatus()
+    : { connected: null, model: null, installed: null, active: 0, queued: 0 };
+  res.json({
+    ...status,
+    generating: activeFighterJob || Boolean(status.active),
+    waiting: Math.max(fighterJobQueue.length, Number(status.queued) || 0),
+    checkedAt: Date.now()
+  });
 }));
 
 app.post('/api/register', wrap(async (req, res) => {

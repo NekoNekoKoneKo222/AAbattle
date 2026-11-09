@@ -83,8 +83,9 @@ async function request(path, method = 'GET', body) {
 export async function gatewayStatus(model) {
   try {
     const { data } = await request('/v1/status');
-    return { connected: Boolean(data.connected), model, installed: Boolean(data.installed) };
-  } catch { return { connected: false, model, installed: false }; }
+    return { connected: Boolean(data.connected), model, installed: Boolean(data.installed),
+      active: Number(data.active) || 0, queued: Number(data.queued) || 0 };
+  } catch { return { connected: false, model, installed: false, active: 0, queued: 0 }; }
 }
 
 export async function gatewayGenerate({ art, name, avoidNames }) {

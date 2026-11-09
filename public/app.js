@@ -1,5 +1,5 @@
 const $ = (id) => document.getElementById(id);
-const app = { user: null, fighters: [], selected: null, ws: null, authMode: 'login', battle: null, waiting: false, tradeTarget: null, pveEnemies: [], pvePlayback: null, generationMode: 'local', model: null, pendingGenerations: 0 };
+const app = { user: null, fighters: [], selected: null, ws: null, authMode: 'login', battle: null, waiting: false, tradeTarget: null, pveEnemies: [], pvePlayback: null, generationMode: 'local', model: null, pendingGenerations: 0, aiStatusTimer: null, aiStatusChecking: false };
 const effectLabels = { damage: '攻撃', heal: '回復', shield: '防護', weaken: '弱体', poison: '毒', burn: '火傷', drain: '吸収', boost: '強化', cleanse: '浄化', stun: '気絶' };
 
 // Actual ASCII pipe characters form both vertical sides, including panels that resize.
@@ -81,6 +81,8 @@ function switchTab(tab) {
 }
 
 function showAuth() {
+  if (app.aiStatusTimer) clearInterval(app.aiStatusTimer);
+  app.aiStatusTimer = null;
   app.user = null;
   app.fighters = [];
   app.selected = null;
@@ -95,6 +97,35 @@ function showAuth() {
   if (app.ws) { app.ws.close(); app.ws = null; }
 }
 
+async function refreshAiStatus() {
+  if (!app.user || app.generationMode !== 'ollama' || app.aiStatusChecking) return;
+  app.aiStatusChecking = true;
+  $('ai-status-refresh').disabled = true;
+  try {
+    const state = await api('ai/status', { timeoutMs: 12000 });
+    const connection = !state.connected ? '未接続' : state.installed ? '接続済み' : 'モデル未導入';
+    const activity = state.generating ? '生成中' : '待機中';
+    const waiting = Number(state.waiting) || 0;
+    const checked = new Date(state.checkedAt || Date.now()).toLocaleTimeString('ja-JP');
+    $('ai-status').textContent = `Ollama: ${connection} / モデル: ${state.model || app.model} / 状態: ${activity} / 順番待ち: ${waiting}件 / 更新: ${checked}`;
+    $('ai-status').parentElement.dataset.state = !state.connected || !state.installed ? 'offline' : state.generating ? 'busy' : 'online';
+  } catch {
+    $('ai-status').textContent = `Ollama: 状態を確認できません / モデル: ${app.model}`;
+    $('ai-status').parentElement.dataset.state = 'offline';
+  } finally {
+    app.aiStatusChecking = false;
+    $('ai-status-refresh').disabled = false;
+  }
+}
+
+function startAiMonitor() {
+  if (app.aiStatusTimer) clearInterval(app.aiStatusTimer);
+  void refreshAiStatus();
+  app.aiStatusTimer = setInterval(() => {
+    if (app.user && !document.hidden) void refreshAiStatus();
+  }, 10000);
+}
+
 async function showGame(user) {
   app.user = user;
   $('auth-view').classList.add('hidden');
@@ -103,14 +134,7 @@ async function showGame(user) {
   switchTab('create');
   await loadFighters();
   connect();
-  if (app.generationMode === 'ollama') {
-    try {
-      const state = await api('ai/status', { timeoutMs: 5000 });
-      $('ai-status').textContent = `Ollama: ${state.connected ? state.installed ? '接続済み' : '接続済み・モデル未導入' : '未接続'} / モデル: ${state.model}`;
-    } catch {
-      $('ai-status').textContent = `Ollama: 状態確認に失敗 / モデル: ${app.model}`;
-    }
-  }
+  if (app.generationMode === 'ollama') startAiMonitor();
 }
 
 async function loadFighters() {
@@ -588,6 +612,7 @@ $('art-editor').addEventListener('input', () => {
 });
 $('art-editor').dispatchEvent(new Event('input'));
 decorateFrames();
+$('ai-status-refresh').addEventListener('click', () => { void refreshAiStatus(); });
 function updateGenerationStatus(message = '') {
   $('generation-time').textContent = app.pendingGenerations
     ? `AI生成中・順番待ち: ${app.pendingGenerations}体${message ? ` / ${message}` : ''}`
@@ -618,6 +643,7 @@ async function pollGeneration(jobId, name) {
   } finally {
     app.pendingGenerations--;
     updateGenerationStatus(finalMessage);
+    void refreshAiStatus();
   }
 }
 $('fighter-form').addEventListener('submit', async (event) => {
@@ -635,6 +661,7 @@ $('fighter-form').addEventListener('submit', async (event) => {
     if (!/^[a-f0-9]{64}$/.test(jobId || '')) throw new Error('生成ジョブ番号が不正です。');
     app.pendingGenerations++;
     updateGenerationStatus();
+    void refreshAiStatus();
     void pollGeneration(jobId, name);
   } catch (error) { updateGenerationStatus(`生成に失敗しました: ${error.message}`); notify(error.message, true); }
   finally { button.disabled = false; button.textContent = '>> GENERATE FIGHTER'; }
@@ -711,8 +738,10 @@ async function initialize() {
     app.generationMode = config.generationMode;
     app.model = config.model;
     $('mode-badge').textContent = config.generationMode === 'ollama' ? `GENERATOR : OLLAMA (${config.model})` : config.generationMode === 'gemini' ? 'GENERATOR : GEMINI AI' : 'GENERATOR : LOCAL RULES';
+    $('ai-status-refresh').classList.toggle('hidden', config.generationMode !== 'ollama');
     if (config.generationMode !== 'ollama') {
       $('ai-status').textContent = config.generationMode === 'gemini' ? 'Gemini APIを使用' : 'ローカルルールを使用';
+      $('ai-status').parentElement.dataset.state = 'online';
     }
     if (user) await showGame(user);
     status.classList.add('hidden');

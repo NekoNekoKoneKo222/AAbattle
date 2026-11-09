@@ -80,7 +80,10 @@ export function createGateway({
     if (req.method === 'GET' && path === '/v1/status') {
       try {
         const result = await status();
-        return send(res, 200, { connected: Boolean(result.connected), installed: Boolean(result.installed), model: result.model });
+        return send(res, 200, {
+          connected: Boolean(result.connected), installed: Boolean(result.installed), model: result.model,
+          active, queued: queue.length
+        });
       } catch { return send(res, 503, { error: 'Ollamaの状態を確認できません。' }); }
     }
     const match = req.method === 'GET' && JOB_PATH.exec(path);

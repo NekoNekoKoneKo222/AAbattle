@@ -45,6 +45,9 @@ test('gateway accepts only authenticated, bounded generation jobs and status rea
   assert.equal(second.status, 202);
   const secondJobId = (await second.json()).jobId;
   assert.equal((await (await request(`/v1/skills/jobs/${secondJobId}`)).json()).status, 'queued');
+  const busyStatus = await (await request('/v1/status')).json();
+  assert.equal(busyStatus.active, 1);
+  assert.equal(busyStatus.queued, 1);
   for (let i = 0; i < 2; i++) {
     assert.equal((await request('/v1/skills/generate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(valid)
@@ -101,7 +104,7 @@ test('gateway client requires a fixed HTTPS host and sends both Access and Beare
       }
       return new Response(JSON.stringify({ draft: { title: '猫' } }), { status: 200 });
     };
-    assert.deepEqual(await gatewayStatus('qwen2.5:3b'), { connected: true, installed: true, model: 'qwen2.5:3b' });
+    assert.deepEqual(await gatewayStatus('qwen2.5:3b'), { connected: true, installed: true, model: 'qwen2.5:3b', active: 0, queued: 0 });
     assert.equal((await gatewayGenerate(valid)).title, '猫');
     assert.equal(calls, 3);
   } finally {
