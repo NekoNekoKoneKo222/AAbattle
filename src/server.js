@@ -46,7 +46,7 @@ app.use((req, res, next) => {
   });
   next();
 });
-app.use('/sam/api/move/generate', express.json({ limit: '54kb', type: 'application/json' }));
+app.use('/sam/api/move/generate', express.json({ limit: '130kb', type: 'application/json' }));
 app.use(express.json({ limit: '12kb', type: 'application/json' }));
 
 const digest = (value) => createHash('sha256').update(value).digest('hex');

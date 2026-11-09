@@ -1,16 +1,21 @@
 import { STEP, WIDTH, HEIGHT, DEFAULT_STAGE, DEFAULT_MOVE, balanceMove, createMatch, cpuInput, stepMatch } from './engine.js';
+import { RasterEditor } from './raster-editor.js';
+import { ANIMATION_STATES, normalizeAnimations, animationFrameAt, fighterAnimationState } from './animation.js';
+import { loadProject, saveProject } from './storage.js';
 
 const $ = (id) => document.getElementById(id);
-const storageKey = 'draw-fighters-v1';
-const saved = (() => { try { return JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch { return {}; } })();
+const savedValue = await loadProject();
+const saved = savedValue && typeof savedValue === 'object' && !Array.isArray(savedValue) ? savedValue : {};
 const data = {
   name: typeof saved.name === 'string' ? saved.name.slice(0, 24) : 'MY FIGHTER',
   art: typeof saved.art === 'string' && saved.art.startsWith('data:image/png;base64,') ? saved.art : null,
+  layers: Array.isArray(saved.layers) ? saved.layers : null,
+  animations: normalizeAnimations(saved.animations),
   moveArt: typeof saved.moveArt === 'string' && saved.moveArt.startsWith('data:image/png;base64,') ? saved.moveArt : null,
   move: { ...DEFAULT_MOVE, ...(saved.move || {}) },
   stage: saved.stage?.platforms?.length <= 24 ? saved.stage : structuredClone(DEFAULT_STAGE)
 };
-function persist() { try { localStorage.setItem(storageKey, JSON.stringify(data)); toast('この端末に保存しました'); } catch { toast('保存容量が不足しています'); } }
+async function persist() { try { await saveProject(data); toast('この端末に保存しました'); } catch { toast('保存できませんでした。端末の空き容量を確認してください'); } }
 let toastTimer;
 function toast(message) { const el = $('toast'); el.textContent = message; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 2600); }
 
@@ -26,6 +31,7 @@ const paintCtx = paint.getContext('2d', { willReadFrequently: true });
 const movePaint = $('move-paint');
 const moveCtx = movePaint.getContext('2d', { willReadFrequently: true });
 const preview = $('character-preview');
+let characterEditor;
 let brushTool = 'pen';
 let painting = false;
 let drawingStart = null;
@@ -47,7 +53,7 @@ function updatePreview() {
   const ctx = preview.getContext('2d');
   ctx.clearRect(0, 0, 160, 160);
   ctx.imageSmoothingEnabled = $('draw-mode').value === 'smooth';
-  ctx.drawImage(paint, 0, 0, 160, 160);
+  ctx.drawImage(characterEditor ? characterEditor.composite() : paint, 0, 0, 160, 160);
 }
 function point(event, canvas) {
   const bounds = canvas.getBoundingClientRect();
@@ -133,27 +139,207 @@ function installPaint(canvas, ctx, isMove = false) {
   const stop = () => { painting = false; drawingBefore = null; updatePreview(); };
   canvas.addEventListener('pointerup', stop); canvas.addEventListener('pointercancel', stop);
 }
-installPaint(paint, paintCtx); installPaint(movePaint, moveCtx, true);
+installPaint(movePaint, moveCtx, true);
+function renderLayers() {
+  const list = $('layer-list'); list.replaceChildren();
+  for (let i = characterEditor.layers.length - 1; i >= 0; i--) {
+    const layer = characterEditor.layers[i]; const row = document.createElement('div');
+    row.className = `layer-row${i === characterEditor.active ? ' active' : ''}`;
+    const visible = document.createElement('button'); visible.textContent = layer.visible ? '👁' : '–';
+    visible.setAttribute('aria-label', layer.visible ? 'レイヤーを隠す' : 'レイヤーを表示');
+    visible.addEventListener('click', () => characterEditor.toggleLayer(i));
+    const label = document.createElement('span'); label.textContent = layer.name;
+    label.addEventListener('click', () => characterEditor.selectLayer(i));
+    row.append(visible, label); list.append(row);
+  }
+}
+characterEditor = new RasterEditor(paint, {
+  color: () => $('draw-color').value, size: () => $('brush-size').value,
+  onChange: () => { updatePreview(); renderLayers(); }
+});
+characterEditor.onPick = (value) => { $('draw-color').value = value; };
+await characterEditor.load(data.layers, data.art);
 document.querySelectorAll('[data-tool]').forEach((button) => button.addEventListener('click', () => {
   brushTool = button.dataset.tool;
+  characterEditor.setTool(brushTool);
   document.querySelectorAll('[data-tool]').forEach((item) => item.classList.toggle('selected', item === button));
 }));
 $('draw-mode').addEventListener('change', () => document.querySelector('.paint-wrap').classList.toggle('smooth', $('draw-mode').value === 'smooth'));
-$('undo-art').addEventListener('click', () => { if (undo.length) { snapshot(paint, redo); restore(paint, undo.pop(), updatePreview); } });
-$('redo-art').addEventListener('click', () => { if (redo.length) { snapshot(paint, undo); restore(paint, redo.pop(), updatePreview); } });
-$('clear-art').addEventListener('click', () => { snapshot(paint, undo); paintCtx.clearRect(0, 0, 64, 64); updatePreview(); });
+$('undo-art').addEventListener('click', () => characterEditor.undo());
+$('redo-art').addEventListener('click', () => characterEditor.redo());
+$('clear-art').addEventListener('click', () => characterEditor.clear());
 $('clear-move-art').addEventListener('click', () => moveCtx.clearRect(0, 0, 64, 64));
-$('save-character').addEventListener('click', () => { data.name = $('character-name').value.trim().slice(0, 24) || 'MY FIGHTER'; data.art = paint.toDataURL('image/png'); persist(); });
-$('export-character').addEventListener('click', () => { const link = document.createElement('a'); link.href = paint.toDataURL('image/png'); link.download = 'draw-fighter.png'; link.click(); });
+$('save-character').addEventListener('click', () => { data.name = $('character-name').value.trim().slice(0, 24) || 'MY FIGHTER'; data.layers = characterEditor.serialize(); data.art = characterEditor.png(); persist(); });
+$('export-character').addEventListener('click', () => { const link = document.createElement('a'); link.href = characterEditor.png(); link.download = 'draw-fighter.png'; link.click(); });
 $('import-character').addEventListener('change', async (event) => {
   const file = event.target.files?.[0];
-  if (!file || file.type !== 'image/png' || file.size > 4 * 1024 * 1024) { toast('4MB以下のPNGを選んでください'); return; }
-  try {
-    const bitmap = await createImageBitmap(file);
-    snapshot(paint, undo); paintCtx.clearRect(0, 0, 64, 64); paintCtx.drawImage(bitmap, 0, 0, 64, 64); bitmap.close(); updatePreview();
-  } catch { toast('PNGを読み込めませんでした'); }
+  if (!file) return;
+  try { await characterEditor.importPng(file); } catch (error) { toast(error.message || 'PNGを読み込めませんでした'); }
   event.target.value = '';
 });
+$('add-layer').addEventListener('click', () => { if (!characterEditor.addLayer()) toast('レイヤーは6枚までです'); });
+$('delete-layer').addEventListener('click', () => { if (!characterEditor.deleteLayer()) toast('最後のレイヤーは削除できません'); });
+$('layer-up').addEventListener('click', () => characterEditor.reorder(1));
+$('layer-down').addEventListener('click', () => characterEditor.reorder(-1));
+for (const [id, kind] of [['flip-art','flip'], ['rotate-art','rotate'], ['grow-art','grow'], ['shrink-art','shrink']])
+  $(id).addEventListener('click', () => characterEditor.transform(kind));
+document.querySelectorAll('[data-color]').forEach((button) => button.addEventListener('click', () => { $('draw-color').value = button.dataset.color; }));
+$('art-zoom').addEventListener('input', () => {
+  const zoom = Number($('art-zoom').value); paint.style.width = `${zoom * 100}%`; paint.style.height = 'auto';
+  paint.classList.toggle('zoomed', zoom > 1); paint.parentElement.style.justifyContent = zoom > 1 ? 'flex-start' : 'center';
+});
+
+const animationLabels = { idle: '待機', walk: '歩き', run: '走り', jump: 'ジャンプ', fall: '落下', attack: '攻撃',
+  special: '特殊', shield: '防御', dodge: '回避', hurt: '被弾', ko: 'KO', victory: '勝利' };
+for (const state of ANIMATION_STATES) {
+  const option = document.createElement('option'); option.value = state; option.textContent = `${animationLabels[state]} / ${state}`;
+  $('animation-state').append(option);
+}
+const animationCanvas = $('animation-paint');
+const animationPreview = $('animation-preview');
+let currentAnimation = 'idle';
+let currentFrame = 0;
+let animationPlaying = false;
+let animationStarted = 0;
+let animationDrafts = structuredClone(data.animations);
+const animationEditor = new RasterEditor(animationCanvas, {
+  color: () => $('animation-color').value, size: () => $('animation-brush').value,
+  onChange: () => { renderAnimationLayers(); if (!animationPlaying) renderAnimationPreview(); }
+});
+animationEditor.onPick = (value) => { $('animation-color').value = value; };
+function renderAnimationLayers() {
+  const list = $('animation-layer-list'); list.replaceChildren();
+  for (let i = animationEditor.layers.length - 1; i >= 0; i--) {
+    const layer = animationEditor.layers[i]; const row = document.createElement('div');
+    row.className = `layer-row${i === animationEditor.active ? ' active' : ''}`;
+    const visible = document.createElement('button'); visible.textContent = layer.visible ? '👁' : '–';
+    visible.addEventListener('click', () => animationEditor.toggleLayer(i));
+    const label = document.createElement('span'); label.textContent = layer.name;
+    label.addEventListener('click', () => animationEditor.selectLayer(i));
+    row.append(visible, label); list.append(row);
+  }
+}
+function blankFrame() { return { png: characterEditor.png(), layers: characterEditor.serialize(), pivot: { x: 32, y: 36 } }; }
+function currentClip() {
+  animationDrafts[currentAnimation] ||= { fps: 8, loop: true, frames: [blankFrame()] };
+  return animationDrafts[currentAnimation];
+}
+function captureFrame() {
+  const frame = currentClip().frames[currentFrame];
+  if (!frame) return;
+  frame.png = animationEditor.png(); frame.layers = animationEditor.serialize();
+  frame.pivot = { x: Math.max(0, Math.min(64, Number($('animation-pivot-x').value) || 0)),
+    y: Math.max(0, Math.min(64, Number($('animation-pivot-y').value) || 0)) };
+}
+function renderAnimationTimeline() {
+  const list = $('animation-timeline'); list.replaceChildren();
+  currentClip().frames.forEach((frame, index) => {
+    const button = document.createElement('button'); button.classList.toggle('active', index === currentFrame);
+    const img = document.createElement('img'); img.src = frame.png; img.alt = '';
+    const label = document.createElement('span'); label.textContent = `${index + 1} / ${currentClip().frames.length}`;
+    button.append(img, label); button.addEventListener('click', () => selectAnimationFrame(index)); list.append(button);
+  });
+}
+function updateOnion() {
+  const clip = currentClip();
+  animationEditor.setOnion($('animation-onion').checked && currentFrame > 0 ? clip.frames[currentFrame - 1].png : null);
+}
+async function selectAnimationFrame(index, capture = true) {
+  if (capture) captureFrame();
+  const clip = currentClip(); currentFrame = Math.max(0, Math.min(clip.frames.length - 1, index));
+  const frame = clip.frames[currentFrame];
+  await animationEditor.load(frame.layers, frame.png);
+  $('animation-pivot-x').value = frame.pivot?.x ?? 32;
+  $('animation-pivot-y').value = frame.pivot?.y ?? 36;
+  updateOnion(); renderAnimationTimeline(); renderAnimationPreview();
+}
+function renderAnimationPreview(index = currentFrame) {
+  const ctx = animationPreview.getContext('2d'); ctx.clearRect(0, 0, 160, 160);
+  ctx.imageSmoothingEnabled = $('draw-mode').value === 'smooth';
+  if (!animationPlaying || index === currentFrame) ctx.drawImage(animationEditor.composite(), 0, 0, 160, 160);
+  else {
+    const frame = currentClip().frames[index]; const img = imageFrom(frame?.png);
+    if (img?.complete && img.naturalWidth) ctx.drawImage(img, 0, 0, 160, 160);
+  }
+}
+$('animation-state').addEventListener('change', async () => {
+  captureFrame(); currentAnimation = $('animation-state').value; currentFrame = 0;
+  const clip = currentClip(); $('animation-fps').value = clip.fps; $('animation-loop').checked = clip.loop;
+  await selectAnimationFrame(0, false);
+});
+$('animation-fps').addEventListener('change', () => { currentClip().fps = Math.max(1, Math.min(30, Number($('animation-fps').value) || 8)); });
+$('animation-loop').addEventListener('change', () => { currentClip().loop = $('animation-loop').checked; });
+$('animation-onion').addEventListener('change', updateOnion);
+$('animation-zoom').addEventListener('input', () => {
+  const zoom = Number($('animation-zoom').value); animationCanvas.style.width = `${zoom * 100}%`; animationCanvas.style.height = 'auto';
+  animationCanvas.classList.toggle('zoomed', zoom > 1);
+  animationCanvas.parentElement.style.justifyContent = zoom > 1 ? 'flex-start' : 'center';
+});
+document.querySelectorAll('[data-anim-tool]').forEach((button) => button.addEventListener('click', () => {
+  animationEditor.setTool(button.dataset.animTool);
+  document.querySelectorAll('[data-anim-tool]').forEach((item) => item.classList.toggle('selected', item === button));
+}));
+$('animation-undo').addEventListener('click', () => animationEditor.undo());
+$('animation-redo').addEventListener('click', () => animationEditor.redo());
+$('animation-layer-add').addEventListener('click', () => { if (!animationEditor.addLayer()) toast('レイヤーは6枚までです'); });
+$('animation-layer-delete').addEventListener('click', () => { if (!animationEditor.deleteLayer()) toast('最後のレイヤーは削除できません'); });
+$('animation-layer-up').addEventListener('click', () => animationEditor.reorder(1));
+$('animation-layer-down').addEventListener('click', () => animationEditor.reorder(-1));
+$('animation-add').addEventListener('click', async () => {
+  captureFrame(); const clip = currentClip(); if (clip.frames.length >= 16) return toast('1つの動作は16フレームまでです');
+  clip.frames.splice(currentFrame + 1, 0, { png: blankFrame().png, layers: [], pivot: { x: 32, y: 36 } });
+  await selectAnimationFrame(currentFrame + 1, false);
+});
+$('animation-duplicate').addEventListener('click', async () => {
+  captureFrame(); const clip = currentClip(); if (clip.frames.length >= 16) return toast('1つの動作は16フレームまでです');
+  clip.frames.splice(currentFrame + 1, 0, structuredClone(clip.frames[currentFrame]));
+  await selectAnimationFrame(currentFrame + 1, false);
+});
+$('animation-delete').addEventListener('click', async () => {
+  const clip = currentClip(); if (clip.frames.length <= 1) return toast('最後のフレームは削除できません');
+  clip.frames.splice(currentFrame, 1); await selectAnimationFrame(Math.min(currentFrame, clip.frames.length - 1), false);
+});
+for (const [id, direction] of [['animation-left', -1], ['animation-right', 1]]) $(id).addEventListener('click', async () => {
+  captureFrame(); const clip = currentClip(); const next = currentFrame + direction;
+  if (next < 0 || next >= clip.frames.length) return;
+  [clip.frames[currentFrame], clip.frames[next]] = [clip.frames[next], clip.frames[currentFrame]];
+  await selectAnimationFrame(next, false);
+});
+$('animation-copy-base').addEventListener('click', async () => {
+  const frame = blankFrame(); currentClip().frames[currentFrame] = frame; await selectAnimationFrame(currentFrame, false);
+});
+$('animation-save').addEventListener('click', () => { captureFrame(); data.animations = normalizeAnimations(animationDrafts); persist(); renderAnimationTimeline(); });
+$('animation-play').addEventListener('click', () => { captureFrame(); animationPlaying = !animationPlaying; animationStarted = performance.now();
+  $('animation-play').textContent = animationPlaying ? '■ 停止' : '▶ 再生'; });
+$('animation-export').addEventListener('click', async () => {
+  captureFrame(); const frames = currentClip().frames; const sheet = document.createElement('canvas');
+  sheet.width = 64 * frames.length; sheet.height = 64; const ctx = sheet.getContext('2d');
+  for (let i = 0; i < frames.length; i++) ctx.drawImage(await imageFromReady(frames[i].png), i * 64, 0, 64, 64);
+  const link = document.createElement('a'); link.download = `${currentAnimation}-spritesheet.png`; link.href = sheet.toDataURL('image/png'); link.click();
+});
+function imageFromReady(src) { return new Promise((resolve, reject) => { const img = imageFrom(src); if (!img) return reject(new Error('画像がありません')); if (img.complete && img.naturalWidth) return resolve(img); img.onload = () => resolve(img); img.onerror = reject; }); }
+$('animation-import').addEventListener('change', async (event) => {
+  const file = event.target.files?.[0]; if (!file) return;
+  try {
+    if (file.type !== 'image/png' || file.size > 4 * 1024 * 1024) throw new Error('4MB以下のPNGを選んでください');
+    const bitmap = await createImageBitmap(file);
+    if (bitmap.height !== 64 || bitmap.width % 64 || bitmap.width < 64 || bitmap.width > 64 * 16) { bitmap.close(); throw new Error('高さ64px、幅は64px×1～16フレームのシートを選んでください'); }
+    const frames = []; const canvas = document.createElement('canvas'); canvas.width = canvas.height = 64; const ctx = canvas.getContext('2d');
+    for (let i = 0; i < bitmap.width / 64; i++) {
+      ctx.clearRect(0, 0, 64, 64); ctx.drawImage(bitmap, i * 64, 0, 64, 64, 0, 0, 64, 64);
+      frames.push({ png: canvas.toDataURL('image/png'), layers: [], pivot: { x: 32, y: 36 } });
+    }
+    bitmap.close(); currentClip().frames = frames; await selectAnimationFrame(0, false); toast('スプライトシートを読み込みました');
+  } catch (error) { toast(error.message || '読み込みに失敗しました'); }
+  event.target.value = '';
+});
+setInterval(() => {
+  if (!animationPlaying || !document.querySelector('#animation-screen.active')) return;
+  const clip = currentClip(); const elapsed = Math.floor((performance.now() - animationStarted) / 1000 * clip.fps);
+  if (!clip.loop && elapsed >= clip.frames.length) { animationPlaying = false; $('animation-play').textContent = '▶ 再生'; return; }
+  renderAnimationPreview(clip.loop ? elapsed % clip.frames.length : Math.min(elapsed, clip.frames.length - 1));
+}, 1000 / 30);
+await selectAnimationFrame(0, false);
 
 const moveFields = ['damage', 'knockback', 'range', 'startup', 'recovery', 'cooldown'];
 function readMove() {
@@ -290,6 +476,7 @@ let onlineSocket = null;
 let onlineSlot = null;
 let onlinePlayers = [null, null];
 let onlineCode = null;
+const animationClocks = [{ state: null, since: 0 }, { state: null, since: 0 }];
 let lastTime = 0;
 let accumulator = 0;
 let lastHitFrame = -1;
@@ -312,10 +499,15 @@ function drawFighter(f, index) {
   ctx.save(); ctx.translate(f.x, f.y);
   if (f.invincible && Math.floor(f.invincible / 5) % 2) ctx.globalAlpha = .4;
   ctx.fillStyle = '#07172899'; ctx.beginPath(); ctx.ellipse(0, 32, 28, 7, 0, 0, Math.PI * 2); ctx.fill();
-  const art = match?.mode === 'online' ? onlinePlayers[index]?.art : index === 0 ? data.art : null;
+  const ownAnimation = match?.mode === 'online' ? index === onlineSlot : index === 0;
+  const state = fighterAnimationState(f, match.winner === index ? index : null);
+  const clock = animationClocks[index];
+  if (clock.state !== state) { clock.state = state; clock.since = match.frame; }
+  const frame = ownAnimation ? animationFrameAt(data.animations, state, match.frame - clock.since) : null;
+  const art = frame?.png || (match?.mode === 'online' ? onlinePlayers[index]?.art : index === 0 ? data.art : null);
   if (art) {
     const img = imageFrom(art);
-    if (img?.complete && img.naturalWidth) { ctx.imageSmoothingEnabled = $('draw-mode').value === 'smooth'; ctx.drawImage(img, -30, -37, 60, 65); }
+    if (img?.complete && img.naturalWidth) { ctx.imageSmoothingEnabled = $('draw-mode').value === 'smooth'; ctx.drawImage(img, -(frame?.pivot?.x ?? 32) / 64 * 60, -(frame?.pivot?.y ?? 36) / 64 * 65, 60, 65); }
     else drawDefaultFighter(ctx, f);
   } else drawDefaultFighter(ctx, f);
   if (f.shield) { ctx.strokeStyle = '#a3d6ff'; ctx.lineWidth = 5; ctx.beginPath(); ctx.ellipse(0, 0, 33, 41, 0, 0, Math.PI * 2); ctx.stroke(); }
@@ -378,6 +570,7 @@ function loop(time) {
 $('start-match').addEventListener('click', () => {
   if ($('game-mode').value === 'online') { toast('オンラインルームを作成・参加してください'); return; }
   match = createMatch({ mode: $('game-mode').value, stage: data.stage, move: data.move, free: $('rule-mode').value === 'free' });
+  animationClocks.forEach((clock) => { clock.state = null; clock.since = 0; });
   paused = false; $('arena-overlay').classList.add('hidden'); $('pause-match').textContent = '一時停止'; toast('試合開始！');
 });
 $('pause-match').addEventListener('click', () => { if (!match || match.mode === 'online') return; paused = !paused; $('pause-match').textContent = paused ? '再開' : '一時停止'; $('arena-overlay').classList.toggle('hidden', !paused); $('arena-overlay').querySelector('span').textContent = paused ? '一時停止中' : '試合開始を押してプレイ'; });
@@ -398,6 +591,7 @@ function connectOnline(next) {
     if (message.type === 'room') { onlinePlayers = message.players; $('start-online').disabled = onlineSlot !== 0 || !message.canStart; onlineStatus(`ルーム ${message.code} · ${message.players.filter(Boolean).map((p) => p.name).join(' vs ')} · ${message.canStart ? '対戦準備完了' : '相手を待機中'}`); }
     if (message.type === 'started') {
       match = message.match; match.mode = 'online'; paused = false;
+      animationClocks.forEach((clock) => { clock.state = null; clock.since = 0; });
       $('arena-overlay').classList.add('hidden'); onlineStatus(`ルーム ${onlineCode} · 対戦中`); toast('オンライン試合開始！');
     }
     if (message.type === 'state') { match = message.match; match.mode = 'online'; }
@@ -422,6 +616,5 @@ $('character-name').value = data.name;
 for (const key of ['name', ...moveFields]) if ($(`move-${key}`)) $(`move-${key}`).value = data.move[key] ?? DEFAULT_MOVE[key];
 $('move-description').value = data.move.description || '';
 $('stage-name').value = data.stage.name;
-if (data.art) restore(paint, data.art, updatePreview);
 if (data.moveArt) restore(movePaint, data.moveArt);
 updatePreview(); comparison(); renderStage(); requestAnimationFrame(loop);

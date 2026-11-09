@@ -5,7 +5,7 @@ import { createMatch, stepMatch, DEFAULT_MOVE, DEFAULT_STAGE } from '../public/s
 const MAX_ROOMS = 12;
 const send = (ws, value) => { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(value)); };
 const cleanName = (value) => typeof value === 'string' ? value.trim().slice(0, 24) : 'FIGHTER';
-const cleanArt = (value) => typeof value === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/=]{1,22000}$/.test(value) ? value : null;
+const cleanArt = (value) => typeof value === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/=]{1,90000}$/.test(value) ? value : null;
 const number = (value, min, max, fallback) => Number.isFinite(Number(value)) ? Math.max(min, Math.min(max, Number(value))) : fallback;
 function cleanStage(stage) {
   if (!stage || !Array.isArray(stage.platforms)) return DEFAULT_STAGE;
@@ -30,7 +30,7 @@ function cleanInput(input) {
 }
 
 export function createSamOnline() {
-  const wss = new WebSocketServer({ noServer: true, maxPayload: 24 * 1024 });
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 128 * 1024 });
   const rooms = new Map();
   let tick = 0;
   const interval = setInterval(() => {

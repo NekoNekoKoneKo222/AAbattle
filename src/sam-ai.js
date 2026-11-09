@@ -10,10 +10,10 @@ const schema = {
   },
   required: ['name','description','damage','knockback','range','startup','recovery','cooldown']
 };
-function imageData(value) {
-  if (typeof value !== 'string' || !/^data:image\/png;base64,[A-Za-z0-9+/=]{1,25000}$/.test(value)) throw new Error('64×64のPNG画像を指定してください。');
+function imageData(value, maxCharacters = 25000) {
+  if (typeof value !== 'string' || !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(value) || value.length > maxCharacters + 22) throw new Error('PNG画像が大きすぎるか不正です。');
   const bytes = Buffer.from(value.slice('data:image/png;base64,'.length), 'base64');
-  if (bytes.length > 19000 || bytes.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') throw new Error('PNG画像が不正です。');
+  if (bytes.length > maxCharacters * 3 / 4 || bytes.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') throw new Error('PNG画像が不正です。');
   return value.slice('data:image/png;base64,'.length);
 }
 function validatedMove(value) {
@@ -32,7 +32,7 @@ export async function generateSamMove(body, { key = process.env.GEMINI_API_KEY,
   model = process.env.SAM_GEMINI_MODEL || 'gemini-2.5-flash-lite', fetcher = fetch } = {}) {
   if (!key) throw new Error('Gemini APIキーが未設定です。');
   const attack = imageData(body?.attackArt);
-  const character = body?.characterArt ? imageData(body.characterArt) : null;
+  const character = body?.characterArt ? imageData(body.characterArt, 90000) : null;
   const name = String(body?.name || '').trim().slice(0, 24);
   const description = String(body?.description || '').trim().slice(0, 140);
   const parts = [

@@ -27,3 +27,19 @@ test('Gemini move generation rejects missing credentials and invalid image data'
   await assert.rejects(generateSamMove({ attackArt: png }, { key: '' }), /キー/);
   await assert.rejects(generateSamMove({ attackArt: 'data:image/png;base64,AAAA' }, { key: 'test' }), /PNG/);
 });
+
+test('Gemini move generation accepts a larger character drawing alongside the move image', async () => {
+  const character = 'data:image/png;base64,' + Buffer.concat([
+    Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(30000)
+  ]).toString('base64');
+  const result = await generateSamMove({ attackArt: png, characterArt: character }, {
+    key: 'test', fetcher: async (_url, init) => {
+      const parts = JSON.parse(init.body).contents[0].parts;
+      assert.equal(parts.length, 3);
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({
+        name: '星', description: '光の攻撃', damage: 10, knockback: 6, range: 65, startup: 8, recovery: 18, cooldown: 12
+      }) }] } }] }), { status: 200 });
+    }
+  });
+  assert.equal(result.move.name, '星');
+});
