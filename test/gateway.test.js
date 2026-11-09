@@ -176,3 +176,62 @@ test('gateway client recovers a job after a temporary tunnel 502 and gateway res
     }
   }
 });
+
+test('gateway reuses the same job when a submission response is lost', async (t) => {
+  let generations = 0;
+  const gateway = createGateway({ token, generate: async () => {
+    generations++;
+    return { title: '猫', skills: [] };
+  } });
+  await new Promise((resolve) => gateway.listen(0, '127.0.0.1', resolve));
+  t.after(() => gateway.close());
+  const root = `http://127.0.0.1:${gateway.address().port}`;
+  const requestId = 'f'.repeat(64);
+  const submit = (body) => fetch(`${root}/v1/skills/generate`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const first = await submit({ ...valid, requestId });
+  const firstId = (await first.json()).jobId;
+  const second = await submit({ ...valid, requestId });
+  assert.equal(second.status, 202);
+  assert.deepEqual(await second.json(), { jobId: firstId, reused: true });
+  assert.equal((await submit({ ...valid, name: '別の猫', requestId })).status, 409);
+  assert.equal((await submit({ ...valid, requestId: 'bad' })).status, 400);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(generations, 1);
+});
+
+test('gateway client retries a temporary submission failure with the same request ID', async () => {
+  const old = Object.fromEntries(['OLLAMA_GATEWAY_URL', 'OLLAMA_GATEWAY_TOKEN', 'OLLAMA_GATEWAY_AUTH']
+    .map((key) => [key, process.env[key]]));
+  const oldFetch = globalThis.fetch;
+  try {
+    Object.assign(process.env, {
+      OLLAMA_GATEWAY_AUTH: 'tailscale',
+      OLLAMA_GATEWAY_URL: 'https://nekoneko-pc.tail877793.ts.net:8443',
+      OLLAMA_GATEWAY_TOKEN: token
+    });
+    let posts = 0;
+    let requestId;
+    globalThis.fetch = async (url, init) => {
+      if (url.endsWith('/v1/skills/generate')) {
+        posts++;
+        const body = JSON.parse(init.body);
+        if (requestId) assert.equal(body.requestId, requestId);
+        requestId = body.requestId;
+        if (posts === 1) return new Response('<html>temporary proxy error</html>', { status: 502 });
+        return new Response(JSON.stringify({ jobId: 'a'.repeat(64) }), { status: 202 });
+      }
+      return new Response(JSON.stringify({ draft: { title: '復旧した猫' } }), { status: 200 });
+    };
+    assert.equal((await gatewayGenerate(valid)).title, '復旧した猫');
+    assert.equal(posts, 2);
+    assert.match(requestId, /^[a-f0-9]{64}$/);
+  } finally {
+    globalThis.fetch = oldFetch;
+    for (const [key, value] of Object.entries(old)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  }
+});

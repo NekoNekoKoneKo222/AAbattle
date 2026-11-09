@@ -1,5 +1,9 @@
+import { randomBytes } from 'node:crypto';
+
 const MAX_RESPONSE_BYTES = 32 * 1024;
 const JOB_TIMEOUT_MS = 20 * 60 * 1000;
+const SUBMIT_RETRY_MS = 2 * 60 * 1000;
+const POLL_RECOVERY_MS = 5 * 60 * 1000;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const gatewayConfigured = () => Boolean(process.env.OLLAMA_GATEWAY_URL);
@@ -73,7 +77,11 @@ async function request(path, method = 'GET', body) {
     throw new Error('AIゲートウェイの認証に失敗しました。認証設定とBearerトークンを確認してください。');
   }
   if (response.status === 429) throw new Error('AIゲートウェイが混雑しています。少し待って再試行してください。');
-  if (response.status === 524 || response.status === 504) throw new Error('AIゲートウェイがタイムアウトしました。');
+  if (response.status === 524 || response.status === 504 || response.status === 503) {
+    const error = new Error('AIゲートウェイとの通信が一時的にタイムアウトしました。再接続中です。');
+    error.transient = true;
+    throw error;
+  }
   if (response.status === 502) {
     const data = await limitedJson(response).catch(() => ({}));
     if (typeof data.error === 'string') throw new Error(data.error.slice(0, 180));
@@ -100,11 +108,20 @@ export async function gatewayStatus(model) {
 
 export async function gatewayGenerate({ art, name, avoidNames }) {
   async function submit() {
-    const { status, data } = await request('/v1/skills/generate', 'POST', { art, name, avoidNames });
-    if (status !== 202 || !/^[a-f0-9]{64}$/.test(data.jobId || '')) {
-      throw new Error('AIゲートウェイが不正なジョブ番号を返しました。');
+    const requestId = randomBytes(32).toString('hex');
+    const started = Date.now();
+    while (true) {
+      try {
+        const { status, data } = await request('/v1/skills/generate', 'POST', { art, name, avoidNames, requestId });
+        if (status !== 202 || !/^[a-f0-9]{64}$/.test(data.jobId || '')) {
+          throw new Error('AIゲートウェイが不正なジョブ番号を返しました。');
+        }
+        return data.jobId;
+      } catch (error) {
+        if (!error.transient || Date.now() - started >= SUBMIT_RETRY_MS) throw error;
+        await sleep(2000);
+      }
     }
-    return data.jobId;
   }
   let jobId = await submit();
   const started = Date.now();
@@ -123,7 +140,7 @@ export async function gatewayGenerate({ art, name, avoidNames }) {
         lastConnection = Date.now();
         continue;
       }
-      if (error.transient && Date.now() - lastConnection < 90_000) continue;
+      if (error.transient && Date.now() - lastConnection < POLL_RECOVERY_MS) continue;
       throw error;
     }
     if (result.status === 202) continue;

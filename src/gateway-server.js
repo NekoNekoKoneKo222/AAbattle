@@ -9,6 +9,7 @@ const JOB_TTL_MS = 10 * 60 * 1000;
 const MAX_PENDING_JOBS = 4;
 const HOURLY_LIMIT = 120;
 const JOB_PATH = /^\/v1\/skills\/jobs\/([a-f0-9]{64})$/;
+const REQUEST_ID = /^[a-f0-9]{64}$/;
 const hash = (value) => createHash('sha256').update(value).digest();
 
 function send(res, status, body) {
@@ -55,6 +56,7 @@ export function createGateway({
   if (typeof token !== 'string' || token.length < 32) throw new Error('OLLAMA_GATEWAY_TOKENは32文字以上にしてください。');
   const expected = hash(token);
   const jobs = new Map();
+  const requests = new Map();
   const starts = [];
   const queue = [];
   let active = 0;
@@ -99,8 +101,21 @@ export function createGateway({
       return send(res, 415, { error: 'JSONのみ受け付けます。' });
     }
     let input;
-    try { input = inputFrom(await readBody(req)); }
+    let requestId;
+    try {
+      const body = await readBody(req);
+      input = inputFrom(body);
+      requestId = body.requestId;
+      if (requestId !== undefined && !REQUEST_ID.test(requestId)) throw new Error('依頼番号が不正です。');
+    }
     catch (error) { return send(res, error.message.includes('大きすぎ') ? 413 : 400, { error: error.message }); }
+    if (requestId && requests.has(requestId)) {
+      const previous = requests.get(requestId);
+      if (previous.fingerprint !== createHash('sha256').update(JSON.stringify(input)).digest('hex')) {
+        return send(res, 409, { error: '同じ依頼番号で異なる内容は送れません。' });
+      }
+      return send(res, 202, { jobId: previous.jobId, reused: true });
+    }
     const now = Date.now();
     while (starts.length && starts[0] < now - 60 * 60 * 1000) starts.shift();
     if (starts.length >= HOURLY_LIMIT) return send(res, 429, { error: '生成回数の上限に達しました。' });
@@ -109,6 +124,7 @@ export function createGateway({
     const jobId = randomBytes(32).toString('hex');
     const job = { state: 'queued', createdAt: now };
     jobs.set(jobId, job);
+    if (requestId) requests.set(requestId, { jobId, fingerprint: createHash('sha256').update(JSON.stringify(input)).digest('hex') });
     send(res, 202, { jobId });
     queue.push({ input, job });
     runNext();
@@ -121,6 +137,7 @@ export function createGateway({
     for (const [id, job] of jobs) {
       if (job.completedAt && now - job.completedAt > JOB_TTL_MS) jobs.delete(id);
     }
+    for (const [requestId, entry] of requests) if (!jobs.has(entry.jobId)) requests.delete(requestId);
   }, 60000);
   timer.unref();
   server.on('close', () => clearInterval(timer));
