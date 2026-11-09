@@ -9,11 +9,14 @@ import { createStore, TradeError } from './store.js';
 import { validateArt, generateFighter, generationMode, ollamaStatus, ollamaModel } from './generator.js';
 import { createBattle, stepBattle } from './battle.js';
 import { listPveEnemies, PVE_DIFFICULTIES, runPveBattle } from './pve.js';
+import { createSamOnline } from './sam-online.js';
+import { generateSamMove } from './sam-ai.js';
 
 const store = createStore();
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true, maxPayload: 4096 });
+const samOnline = createSamOnline();
 const queued = new Map();
 const playing = new Set();
 const trading = new Set();
@@ -43,6 +46,7 @@ app.use((req, res, next) => {
   });
   next();
 });
+app.use('/sam/api/move/generate', express.json({ limit: '54kb', type: 'application/json' }));
 app.use(express.json({ limit: '12kb', type: 'application/json' }));
 
 const digest = (value) => createHash('sha256').update(value).digest('hex');
@@ -129,6 +133,13 @@ function credentials(body) {
 }
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
+app.get('/sam/api/config', (_req, res) => res.json({ geminiAvailable: Boolean(process.env.GEMINI_API_KEY) }));
+app.post('/sam/api/move/generate', wrap(async (req, res) => {
+  if (!process.env.GEMINI_API_KEY) return res.status(503).json({ error: 'Gemini APIキーが未設定です。ローカル推定を使用してください。' });
+  if (!limit(creations, `sam-ai:${req.ip}`, 8, 60 * 60 * 1000)) return res.status(429).json({ error: 'AI生成は1時間に8回までです。' });
+  try { res.json(await generateSamMove(req.body)); }
+  catch (error) { res.status(error.message.includes('PNG') ? 400 : 502).json({ error: error.message.slice(0, 180) }); }
+}));
 app.get('/api/config', (_req, res) => res.json({ generationMode: generationMode(), model: generationMode() === 'ollama' ? ollamaModel() : null }));
 app.get('/api/ai/status', wrap(async (req, res) => {
   const user = await requireUser(req, res);
@@ -409,6 +420,7 @@ app.post('/api/pve/battle', wrap(async (req, res) => {
   } finally { pveRunning.delete(user.id); }
 }));
 
+app.get('/sam', (_req, res) => res.sendFile(path.join(staticRoot, 'sam', 'index.html')));
 app.use(express.static(staticRoot, { index: 'index.html', maxAge: 60000 }));
 app.use((err, _req, res, _next) => {
   res.status(err.status || 400).json({ error: 'リクエストを処理できませんでした。' });
@@ -508,9 +520,10 @@ server.on('upgrade', async (req, socket, head) => {
   try {
     const origin = req.headers.origin;
     const expectedHost = req.headers['x-forwarded-host'] || req.headers.host;
-    if (!origin || new URL(origin).host !== expectedHost || req.url !== '/ws') {
+    if (!origin || new URL(origin).host !== expectedHost || !['/ws', '/sam/ws'].includes(req.url)) {
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); socket.destroy(); return;
     }
+    if (req.url === '/sam/ws') return samOnline.handleUpgrade(req, socket, head);
     const user = await currentUser(req);
     if (!user) { socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n'); socket.destroy(); return; }
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req, user));
@@ -525,6 +538,7 @@ server.listen(port, '0.0.0.0', () => {
 
 async function shutdown() {
   wss.clients.forEach((c) => c.close());
+  samOnline.close();
   server.close();
   await store.close();
   process.exit(0);
