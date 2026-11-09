@@ -27,7 +27,11 @@ test('two guests can join a room while the server alone calculates combat', asyn
   t.after(() => { one.close(); two.close(); });
   await Promise.all([new Promise((resolve) => one.once('open', resolve)), new Promise((resolve) => two.once('open', resolve))]);
   const joinedOne = next(one, 'joined');
-  one.send(JSON.stringify({ type: 'create', name: 'DRAWER', stage: { name: 'TEST', platforms: [{ x: 120, y: 430, w: 720, h: 16 }] } }));
+  one.send(JSON.stringify({ type: 'create', name: 'DRAWER', stage: { name: 'TEST', platforms: [{ x: 120, y: 430, w: 720, h: 16 }] },
+    move: { name: 'FIRE', damage: 7, program: { nodes: [
+      { id: 'n1', kind: 'event', event: 'activate', next: 'n2' },
+      { id: 'n2', kind: 'action', action: 'projectile', value: 8, range: 120, duration: 70 }
+    ] } } }));
   const { code, slot } = await joinedOne;
   assert.equal(slot, 0);
   const joinedTwo = next(two, 'joined');
@@ -37,6 +41,7 @@ test('two guests can join a room while the server alone calculates combat', asyn
   one.send(JSON.stringify({ type: 'start' }));
   const first = await started;
   assert.equal(first.match.fighters[0].damage, 0);
+  assert.equal(first.match.program.nodes[1].action, 'projectile');
   const state = next(two, 'state');
   one.send(JSON.stringify({ type: 'input', input: { right: true }, damage: 999, winner: 0 }));
   const nextState = await state;

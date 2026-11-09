@@ -2,6 +2,7 @@ import { STEP, WIDTH, HEIGHT, DEFAULT_STAGE, DEFAULT_MOVE, balanceMove, createMa
 import { RasterEditor } from './raster-editor.js';
 import { ANIMATION_STATES, normalizeAnimations, animationFrameAt, fighterAnimationState } from './animation.js';
 import { loadProject, saveProject } from './storage.js';
+import { EVENTS, CONDITIONS, ACTIONS, KINDS, normalizeProgram } from './move-program.js';
 
 const $ = (id) => document.getElementById(id);
 const savedValue = await loadProject();
@@ -342,10 +343,60 @@ setInterval(() => {
 await selectAnimationFrame(0, false);
 
 const moveFields = ['damage', 'knockback', 'range', 'startup', 'recovery', 'cooldown'];
+let programDraft;
+try { programDraft = normalizeProgram(data.move.program); } catch { programDraft = normalizeProgram(); }
+const programLabels = { event: 'イベント', condition: '条件', action: '効果', wait: '待機', repeat: '繰り返し', random: 'ランダム分岐', parallel: '並列',
+  activate: '技を発動', hit: '攻撃が命中', miss: '攻撃が外れた', attacked: '被弾', land: '着地', ko: 'KO', timer: 'タイマー終了',
+  distance_lt: '敵との距離より短い', damage_gte: '自分のダメージ以上', airborne: '空中', enemy_airborne: '敵が空中', chance: '確率', enemy_burning: '敵が炎上',
+  damage: '追加ダメージ', projectile: '飛び道具', laser: 'レーザー', explosion: '爆発', mine: '地雷', turret: '砲台', summon: '召喚', teleport: '瞬間移動', heal: '回復', shield: 'シールド回復', push: '吹き飛ばし', pull: '引き寄せ', slow: '鈍足', burn: '炎上', silence: '沈黙', counter: '反撃', reflect: '反射', absorb: '吸収', buff: '強化', gravity: '重力', transform: '変身' };
+function programSelect(label, values, selected, onChange) {
+  const wrap = document.createElement('label'); wrap.textContent = label;
+  const select = document.createElement('select');
+  for (const [value, title] of values) { const option = document.createElement('option'); option.value = value; option.textContent = title; select.append(option); }
+  select.value = selected ?? ''; select.addEventListener('change', () => onChange(select.value)); wrap.append(select); return wrap;
+}
+function renderMoveProgram() {
+  const root = $('move-nodes'); root.replaceChildren();
+  for (const node of programDraft.nodes) {
+    const card = document.createElement('div'); card.className = 'move-node';
+    const title = document.createElement('strong'); title.textContent = node.id; card.append(title);
+    card.append(programSelect('種類', KINDS.map((kind) => [kind, programLabels[kind]]), node.kind, (value) => {
+      node.kind = value; node.event = 'activate'; node.test = 'distance_lt'; node.action = 'damage'; renderMoveProgram();
+    }));
+    const choices = node.kind === 'event' ? ['event', EVENTS] : node.kind === 'condition' ? ['test', CONDITIONS] : node.kind === 'action' ? ['action', ACTIONS] : null;
+    if (choices) card.append(programSelect(node.kind === 'event' ? 'きっかけ' : node.kind === 'condition' ? '判定' : '技の効果', choices[1].map((key) => [key, programLabels[key]]), node[choices[0]], (value) => { node[choices[0]] = value; }));
+    if (['action','condition','wait','repeat','random'].includes(node.kind)) {
+      const label = document.createElement('label'); label.textContent = node.kind === 'wait' ? '待機フレーム' : node.kind === 'repeat' ? '回数' : node.kind === 'random' ? '分岐確率 %' : '威力・条件値';
+      const input = document.createElement('input'); input.type = 'number'; input.min = '0'; input.max = '500'; input.value = node.value; input.addEventListener('input', () => { node.value = Number(input.value); }); label.append(input); card.append(label);
+    }
+    if (node.kind === 'action') for (const [key, label] of [['range','範囲'],['duration','持続フレーム'],['chance','発動確率 %']]) {
+      const wrap = document.createElement('label'); wrap.textContent = label; const input = document.createElement('input'); input.type = 'number'; input.min = '1'; input.max = '500'; input.value = node[key]; input.addEventListener('input', () => { node[key] = Number(input.value); }); wrap.append(input); card.append(wrap);
+    }
+    const links = [['', '終了'], ...programDraft.nodes.filter((entry) => entry.id !== node.id).map((entry) => [entry.id, entry.id])];
+    card.append(programSelect('次へ', links, node.next || '', (value) => { node.next = value || null; }));
+    if (['condition','random','parallel','repeat'].includes(node.kind)) card.append(programSelect('分岐先', links, node.alternate || '', (value) => { node.alternate = value || null; }));
+    const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '削除'; remove.addEventListener('click', () => {
+      programDraft.nodes = programDraft.nodes.filter((entry) => entry.id !== node.id);
+      for (const entry of programDraft.nodes) { if (entry.next === node.id) entry.next = null; if (entry.alternate === node.id) entry.alternate = null; }
+      renderMoveProgram();
+    }); card.append(remove); root.append(card);
+  }
+  $('add-move-node').disabled = programDraft.nodes.length >= 16;
+}
+$('add-move-node').addEventListener('click', () => {
+  const used = new Set(programDraft.nodes.map((node) => node.id)); let number = 1; while (used.has(`n${number}`)) number++;
+  programDraft.nodes.push({ id: `n${number}`, kind: 'action', action: 'damage', next: null, alternate: null, value: 10, range: 80, duration: 60, chance: 100 }); renderMoveProgram();
+});
+$('starter-move-program').addEventListener('click', () => { programDraft = normalizeProgram({ nodes: [
+  { id: 'n1', kind: 'event', event: 'activate', next: 'n2' },
+  { id: 'n2', kind: 'action', action: 'projectile', value: 8, range: 160, duration: 70, chance: 100 }
+] }); renderMoveProgram(); });
+renderMoveProgram();
 function readMove() {
   const result = { name: $('move-name').value.trim().slice(0, 24) || DEFAULT_MOVE.name,
     description: $('move-description').value.trim().slice(0, 140) };
   for (const key of moveFields) result[key] = Math.max(0, Math.min(999, Number($(`move-${key}`).value) || 0));
+  result.program = normalizeProgram(programDraft);
   return result;
 }
 function comparison() {
@@ -361,7 +412,8 @@ function comparison() {
   $('balance-comparison').replaceChildren(table);
 }
 document.querySelectorAll('#move-screen input').forEach((el) => el.addEventListener('input', comparison));
-$('save-move').addEventListener('click', () => { data.move = readMove(); data.moveArt = movePaint.toDataURL('image/png'); persist(); });
+$('save-move').addEventListener('click', () => { try { data.move = readMove(); data.moveArt = movePaint.toDataURL('image/png'); persist(); } catch (error) { toast(error.message); } });
+$('test-move').addEventListener('click', () => { try { data.move = readMove(); data.moveArt = movePaint.toDataURL('image/png'); match = createMatch({ mode: 'training', stage: data.stage, move: data.move, free: $('rule-mode').value === 'free' }); paused = false; $('arena-overlay').classList.add('hidden'); document.querySelector('[data-screen="fight"]').click(); toast('試し撃ち開始'); } catch (error) { toast(error.message); } });
 $('suggest-move').addEventListener('click', () => {
   const pixels = moveCtx.getImageData(0, 0, 64, 64).data;
   let visible = 0, red = 0, blue = 0, green = 0;
@@ -533,6 +585,14 @@ function renderArena() {
   if (!match) { ctx.restore(); return; }
   if (match.effect?.kind === 'hit' && match.frame - match.effect.frame < 9) ctx.translate((Math.random() - .5) * 9, (Math.random() - .5) * 9);
   for (const p of match.stage.platforms) { ctx.fillStyle = '#1c5165'; ctx.fillRect(p.x, p.y, p.w, p.h); ctx.fillStyle = '#6be5c7'; ctx.fillRect(p.x, p.y, p.w, 5); }
+  for (const entity of match.entities || []) {
+    ctx.save(); ctx.translate(entity.x, entity.y);
+    const art = entity.owner === 0 ? imageFrom(data.moveArt) : null;
+    if (art?.complete && art.naturalWidth) { ctx.scale(entity.vx < 0 ? -1 : 1, 1); ctx.drawImage(art, -25, -25, 50, 50); }
+    else { ctx.fillStyle = entity.owner ? '#ff9ca6' : '#79f0d1'; ctx.globalAlpha = .8; ctx.beginPath(); ctx.arc(0, 0, entity.kind === 'explosion' ? Math.min(entity.range, 70) : entity.kind === 'laser' ? 18 : 17, 0, Math.PI * 2); ctx.fill(); }
+    if (entity.kind === 'laser') { ctx.strokeStyle = entity.owner ? '#ff9ca6' : '#79f0d1'; ctx.lineWidth = 8; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo((match.fighters[entity.owner].facing || 1) * entity.range, 0); ctx.stroke(); }
+    ctx.restore();
+  }
   match.fighters.forEach(drawFighter);
   if (match.effect) {
     const age = match.frame - match.effect.frame;

@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createMatch, stepMatch, DEFAULT_MOVE, DEFAULT_STAGE } from '../public/sam/engine.js';
+import { normalizeProgram } from '../public/sam/move-program.js';
 
 const MAX_ROOMS = 12;
 const send = (ws, value) => { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(value)); };
@@ -21,7 +22,8 @@ function cleanMove(move) {
   return { name: cleanName(move.name) || DEFAULT_MOVE.name,
     damage: number(move.damage, 1, 999, 10), knockback: number(move.knockback, 1, 90, 7),
     range: number(move.range, 20, 500, 66), startup: number(move.startup, 1, 120, 8),
-    recovery: number(move.recovery, 0, 120, 18), cooldown: number(move.cooldown, 0, 180, 12) };
+    recovery: number(move.recovery, 0, 120, 18), cooldown: number(move.cooldown, 0, 180, 12),
+    program: normalizeProgram(move.program) };
 }
 function cleanInput(input) {
   const value = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
