@@ -16,7 +16,7 @@ export const characters: CharacterDefinition[] = [
 ];
 export const characterById = (id: string) => characters.find(c=>c.id===id) || characters[0];
 export interface Wall { id:string; x:number; z:number; w:number; h:number; hp:number; kind:'wall'|'crate'|'ice'; }
-export interface Zone { x:number; z:number; radius:number; kind:'bush'|'speed'|'water'|'conveyor'|'slow'|'heal'|'danger'|'jump'; }
+export interface Zone { id?:string;x:number; z:number; radius:number; kind:'bush'|'speed'|'water'|'conveyor'|'slow'|'heal'|'danger'|'jump'; }
 export interface MapDefinition { id:string; name:string; theme:number; ground:number; width:number; height:number; walls:Wall[]; zones:Zone[]; spawn:[[number,number][],[number,number][]]; goal:[number,number]; }
 const box=(id:string,x:number,z:number,w:number,h:number,hp=0,kind:Wall['kind']='wall'):Wall=>({id,x,z,w,h,hp,kind});
 const grass=(x:number,z:number,radius:number):Zone=>({x,z,radius,kind:'bush'});

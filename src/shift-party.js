@@ -1,0 +1,22 @@
+import { randomUUID } from 'node:crypto';
+
+const fail=(message,status=400)=>Object.assign(new Error(message),{status});
+export class ShiftPartyManager {
+  constructor(){this.parties=new Map();this.memberParty=new Map();this.invites=new Map();this.presence=new Map();}
+  connect(userId){const value=this.presence.get(userId)||{connections:0,playing:false,lastSeen:0};value.connections++;value.lastSeen=Date.now();this.presence.set(userId,value);}
+  heartbeat(userId){const value=this.presence.get(userId)||{connections:0,playing:false,lastSeen:0};value.lastSeen=Date.now();this.presence.set(userId,value);}
+  disconnect(userId){const value=this.presence.get(userId);if(value){value.connections=Math.max(0,value.connections-1);if(!value.connections)value.playing=false;}}
+  setPlaying(userId,playing){const value=this.presence.get(userId);if(value)value.playing=playing;}
+  status(userId){const value=this.presence.get(userId);return {online:!!value&&(value.connections>0||value.lastSeen>Date.now()-35_000),playing:!!value?.playing};}
+  partyOf(userId){const id=this.memberParty.get(userId);return id?this.parties.get(id)||null:null;}
+  view(userId){const party=this.partyOf(userId);const invites=[...this.invites.values()].filter(i=>i.targetId===userId&&i.expiresAt>Date.now()).map(i=>({id:i.id,partyId:i.partyId,fromName:i.fromName}));return {party:party?{id:party.id,leaderId:party.leaderId,mode:party.mode,size:party.size,roomCode:party.roomCode,members:[...party.members.values()]}:null,invites};}
+  create(user){if(this.partyOf(user.id))throw fail('すでにパーティーに参加中です。');const party={id:randomUUID(),leaderId:user.id,mode:'core',size:3,roomCode:null,members:new Map([[user.id,{id:user.id,name:user.username,character:'rei',ready:false}]])};this.parties.set(party.id,party);this.memberParty.set(user.id,party.id);return this.view(user.id);}
+  invite(user,target){const party=this.partyOf(user.id);if(!party||party.leaderId!==user.id)throw fail('リーダーだけが招待できます。',403);if(party.members.size>=party.size)throw fail('パーティーが満員です。');if(this.partyOf(target.id))throw fail('相手はすでにパーティーに参加中です。');const item={id:randomUUID(),partyId:party.id,targetId:target.id,fromName:user.username,expiresAt:Date.now()+5*60_000};this.invites.set(item.id,item);return item;}
+  join(user,inviteId){const invite=this.invites.get(inviteId);if(!invite||invite.targetId!==user.id||invite.expiresAt<Date.now())throw fail('招待が見つからないか期限切れです。',404);if(this.partyOf(user.id))throw fail('すでにパーティーに参加中です。');const party=this.parties.get(invite.partyId);if(!party||party.members.size>=party.size)throw fail('パーティーに参加できません。');party.members.set(user.id,{id:user.id,name:user.username,character:'rei',ready:false});this.memberParty.set(user.id,party.id);this.invites.delete(inviteId);return this.view(user.id);}
+  leave(user){const party=this.partyOf(user.id);if(!party)return this.view(user.id);party.members.delete(user.id);this.memberParty.delete(user.id);if(!party.members.size)this.parties.delete(party.id);else if(party.leaderId===user.id)party.leaderId=party.members.keys().next().value;return this.view(user.id);}
+  setLeader(user,targetId){const party=this.partyOf(user.id);if(!party||party.leaderId!==user.id||!party.members.has(targetId))throw fail('リーダーを変更できません。',403);party.leaderId=targetId;return this.view(user.id);}
+  setReady(user,ready,character){const party=this.partyOf(user.id);if(!party)throw fail('パーティーに参加していません。');const member=party.members.get(user.id);member.ready=ready===true;member.character=character||member.character;return this.view(user.id);}
+  configure(user,mode,size){const party=this.partyOf(user.id);if(!party||party.leaderId!==user.id)throw fail('リーダーだけが変更できます。',403);if(!['core','deathmatch','duel','survival','payload'].includes(mode)||![3,5].includes(size))throw fail('無効な対戦設定です。');if(party.members.size>size)throw fail('現在の人数では選べません。');if(mode==='duel'&&party.members.size>1)throw fail('デュエルはパーティーで遊べません。');party.mode=mode;party.size=size;party.roomCode=null;for(const member of party.members.values())member.ready=false;return this.view(user.id);}
+  setMatch(user,code){const party=this.partyOf(user.id);if(!party||party.leaderId!==user.id)throw fail('リーダーだけが開始できます。',403);if(![...party.members.values()].every(m=>m.ready))throw fail('全員の準備完了が必要です。');if(!/^[A-F0-9]{6}$/.test(code))throw fail('無効なルームコードです。');party.roomCode=code;return this.view(user.id);}
+  sameParty(a,b){const id=this.memberParty.get(a);return !!id&&id===this.memberParty.get(b);}
+}

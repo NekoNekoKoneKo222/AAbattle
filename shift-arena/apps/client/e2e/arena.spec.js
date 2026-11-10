@@ -57,3 +57,30 @@ test('別々のブラウザーが同じ試合に参加できる', async ({ brows
   await second.close();
 });
 
+test('キャラロード、ロードアウト、練習場、パーティーを操作できる', async ({ page }) => {
+  await page.goto('/sam');
+  await page.getByRole('button', { name: /プレイ開始/ }).click();
+  await page.getByLabel('ユーザー名').fill(`Shift${Date.now().toString().slice(-9)}`);
+  await page.getByLabel('パスワード').fill('safe-password-123');
+  await page.getByRole('button', { name: '新規登録' }).click();
+  await page.getByRole('button', { name: 'キャラロード', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'キャラロード' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'アンロック' })).toBeDisabled();
+  await page.getByRole('button', { name: 'トレーニングで試す' }).click();
+  await expect(page.locator('canvas')).toBeVisible();
+  await page.getByRole('button', { name: '練習メニュー' }).click();
+  await expect(page.getByRole('button', { name: '無敵ダミー' })).toBeVisible();
+  await page.getByRole('button', { name: '無敵ダミー' }).click();
+  await page.getByRole('button', { name: '練習メニューを閉じる' }).click();
+  await page.getByRole('button', { name: '退出' }).click();
+  await page.getByRole('button', { name: 'ロードアウト', exact: true }).click();
+  await page.getByRole('button', { name: /エネルギーシールド/ }).click();
+  await page.getByRole('button', { name: /弾薬回収/ }).click();
+  await page.getByRole('button', { name: '保存する' }).click();
+  await expect(page.getByRole('status')).toContainText('保存しました');
+  await page.getByRole('button', { name: '← 戻る' }).click();
+  await page.getByRole('button', { name: 'パーティー', exact: true }).click();
+  await page.getByRole('button', { name: 'パーティーを作成' }).click();
+  await expect(page.getByRole('heading', { name: /メンバー/ })).toContainText('1 / 3');
+});
+

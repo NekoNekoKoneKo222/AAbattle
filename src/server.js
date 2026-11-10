@@ -6,19 +6,23 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { createStore, TradeError } from './store.js';
+import { ShiftStore } from './shift-store.js';
+import { ShiftPartyManager } from './shift-party.js';
 import { validateArt, generateFighter, generationMode, ollamaStatus, ollamaModel } from './generator.js';
 import { createBattle, stepBattle } from './battle.js';
 import { listPveEnemies, PVE_DIFFICULTIES, runPveBattle } from './pve.js';
 import { attachShiftArena } from '../shift-arena/apps/server/dist/index.js';
 
 const store = createStore();
+const shiftStore = new ShiftStore(store.pool || null);
+const shiftParties = new ShiftPartyManager();
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true, maxPayload: 4096 });
 const shiftArena = attachShiftArena(server, async (cookie) => {
   const user = await currentUser({ headers: { cookie } });
   return user ? { id: user.id, username: user.username } : null;
-});
+}, { profile: (user) => shiftStore.getProfile(user), award: (user, result) => shiftStore.awardMatch(user, result), presence: (id, event) => { if (event === 'connect') shiftParties.connect(id); else if (event === 'disconnect') shiftParties.disconnect(id); else shiftParties.setPlaying(id, event === 'playing'); }, sameParty: (a, b) => shiftParties.sameParty(a, b) });
 const queued = new Map();
 const playing = new Set();
 const trading = new Set();
@@ -120,6 +124,13 @@ function wrap(callback) {
     res.status(500).json({ error: 'サーバーエラーが発生しました。' });
   });
 }
+function shiftWrap(callback) {
+  return (req, res) => Promise.resolve(callback(req, res)).catch((error) => {
+    if (error.status >= 400 && error.status < 500) return res.status(error.status).json({ error: error.message });
+    console.error('SHIFT ARENA request failed:', error.message);
+    res.status(500).json({ error: '処理に失敗しました。' });
+  });
+}
 async function requireUser(req, res) {
   const user = await currentUser(req);
   if (!user) res.status(401).json({ error: 'ログインしてください。' });
@@ -134,6 +145,29 @@ function credentials(body) {
 }
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
+app.get('/api/shift/profile', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.getProfile(user)); }));
+app.post('/api/shift/presence', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) { shiftParties.heartbeat(user.id); res.json({ ok: true }); } }));
+app.post('/api/shift/selected', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.setSelected(user, req.body?.character)); }));
+app.post('/api/shift/road/target', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.setTarget(user, req.body?.character)); }));
+app.post('/api/shift/road/unlock', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.unlock(user)); }));
+app.post('/api/shift/loadout', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.setLoadout(user, req.body?.character, req.body?.skill, req.body?.passive)); }));
+app.post('/api/shift/mission/claim', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.claimMission(user, req.body?.id)); }));
+app.post('/api/shift/mastery/claim', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.claimMastery(user, req.body?.character, req.body?.reward)); }));
+app.get('/api/shift/players', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.searchUsers(user, req.query.q)); }));
+app.get('/api/shift/friends', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) { const state = await shiftStore.friendState(user); res.json({ ...state, friends: state.friends.map(friend => ({ ...friend, ...shiftParties.status(friend.id) })) }); } }));
+app.post('/api/shift/friends/request', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.friendRequest(user, req.body?.targetId)); }));
+app.post('/api/shift/friends/decide', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) { await shiftStore.decideFriend(user, req.body?.requestId, req.body?.accept === true); res.json(await shiftStore.friendState(user)); } }));
+app.post('/api/shift/friends/remove', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) { await shiftStore.unfriend(user, req.body?.targetId); res.json(await shiftStore.friendState(user)); } }));
+app.post('/api/shift/friends/block', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) { await shiftStore.block(user, req.body?.targetId); res.json(await shiftStore.friendState(user)); } }));
+app.get('/api/shift/party', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(shiftParties.view(user.id)); }));
+app.post('/api/shift/party/create', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(shiftParties.create(user)); }));
+app.post('/api/shift/party/invite', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (!user) return; const targetId = req.body?.targetId; if (!await shiftStore.areFriends(user.id, targetId)) return res.status(403).json({ error: 'フレンドだけ招待できます。' }); const target = await store.getUser(targetId); if (!target) return res.status(404).json({ error: 'プレイヤーが見つかりません。' }); res.json(shiftParties.invite(user, target)); }));
+app.post('/api/shift/party/join', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(shiftParties.join(user, req.body?.inviteId)); }));
+app.post('/api/shift/party/leave', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(shiftParties.leave(user)); }));
+app.post('/api/shift/party/leader', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(shiftParties.setLeader(user, req.body?.targetId)); }));
+app.post('/api/shift/party/ready', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (!user) return; const profile = await shiftStore.getProfile(user); res.json(shiftParties.setReady(user, req.body?.ready, profile.selected_character)); }));
+app.post('/api/shift/party/configure', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(shiftParties.configure(user, req.body?.mode, req.body?.size)); }));
+app.post('/api/shift/party/match', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(shiftParties.setMatch(user, req.body?.code)); }));
 app.get('/api/config', (_req, res) => res.json({ generationMode: generationMode(), model: generationMode() === 'ollama' ? ollamaModel() : null }));
 app.get('/api/ai/status', wrap(async (req, res) => {
   const user = await requireUser(req, res);
@@ -526,6 +560,7 @@ server.on('upgrade', async (req, socket, head) => {
 
 const port = Number(process.env.PORT || 3000);
 await store.init();
+await shiftStore.init();
 await shiftArena.listen(port);
 console.log(`AABattle and SHIFT ARENA listening on ${port}; generation: ${generationMode()}`);
 
