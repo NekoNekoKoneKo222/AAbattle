@@ -25,7 +25,7 @@ export class ShiftStore {
   async saveModel(user, input) {
     if (!user?.id) throw fail('ログインが必要です。', 401);
     const model = validatePlayerModel(input);
-    if (Buffer.byteLength(JSON.stringify(model)) > 30000) throw fail('モデルが大きすぎます。');
+    if (Buffer.byteLength(JSON.stringify(model)) > 120000) throw fail('モデルが大きすぎます。');
     if (!this.pool) this.models.set(user.id, model);
     else await this.pool.query('INSERT INTO shift_models(user_id,model_doc) VALUES($1,$2) ON CONFLICT(user_id) DO UPDATE SET model_doc=EXCLUDED.model_doc,updated_at=now()', [user.id, JSON.stringify(model)]);
     return model;

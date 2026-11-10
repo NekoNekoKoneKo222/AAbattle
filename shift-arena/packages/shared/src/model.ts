@@ -1,7 +1,8 @@
 export interface ModelCube { origin:[number,number,number]; size:[number,number,number]; color:string; }
 export interface ModelBone { name:string; parent?:string; pivot:[number,number,number]; rotation:[number,number,number]; cubes:ModelCube[]; }
-export interface ModelKeyframe { time:number; rotation:[number,number,number]; }
-export interface PlayerModel { version:1; name:string; bones:ModelBone[]; attack:{length:number;bones:Record<string,ModelKeyframe[]>}; }
+export interface ModelKeyframe { time:number; rotation:[number,number,number]; position?:[number,number,number]; scale?:[number,number,number]; }
+export interface ModelClip { length:number; bones:Record<string,ModelKeyframe[]>; }
+export interface PlayerModel { version:1; name:string; bones:ModelBone[]; attack:ModelClip; skill:ModelClip; }
 
 const number=(value:unknown,min:number,max:number)=>typeof value==='number'&&Number.isFinite(value)&&value>=min&&value<=max?value:NaN;
 function vector(value:unknown,min:number,max:number):[number,number,number]{if(!Array.isArray(value)||value.length!==3)throw Error('座標は数値3つで指定してください。');const result=value.map(v=>number(v,min,max));if(result.some(v=>!Number.isFinite(v)))throw Error('モデルの座標が範囲外です。');return result as [number,number,number];}
@@ -33,15 +34,18 @@ export function validatePlayerModel(input:unknown):PlayerModel{
   if(cubeCount<1||cubeCount>64)throw Error('ブロックは1～64個までです。');
   for(const bone of bones)if(bone.parent&&(!names.has(bone.parent)||bone.parent===bone.name))throw Error('親の骨が見つかりません。');
   for(const bone of bones){const seen=new Set([bone.name]);let parent=bone.parent;while(parent){if(seen.has(parent))throw Error('骨の親子関係が循環しています。');seen.add(parent);parent=bones.find(b=>b.name===parent)?.parent;}}
-  const attackRaw=raw.attack&&typeof raw.attack==='object'?raw.attack as Record<string,unknown>:{};
-  const length=number(attackRaw.length??.5,.1,2);if(!Number.isFinite(length))throw Error('攻撃の長さは0.1～2秒です。');
-  const source=attackRaw.bones&&typeof attackRaw.bones==='object'?attackRaw.bones as Record<string,unknown>:{};
-  const attack:PlayerModel['attack']={length,bones:{}};
-  for(const [bone,frames] of Object.entries(source)){
-    if(!names.has(bone)||!Array.isArray(frames)||frames.length>12)throw Error('攻撃キーフレームが無効です。');
-    attack.bones[bone]=frames.map((frame:unknown)=>{if(!frame||typeof frame!=='object')throw Error('キーフレームが無効です。');const f=frame as Record<string,unknown>,time=number(f.time,0,length);if(!Number.isFinite(time))throw Error('キーフレーム時刻が無効です。');return {time,rotation:vector(f.rotation,-180,180)};}).sort((a,b)=>a.time-b.time);
+  function clip(kind:'attack'|'skill'):ModelClip{
+    const sourceRaw=raw[kind]&&typeof raw[kind]==='object'?raw[kind] as Record<string,unknown>:{};
+    const length=number(sourceRaw.length??.5,.1,5);if(!Number.isFinite(length))throw Error(`${kind==='attack'?'攻撃':'スキル'}の長さは0.1～5秒です。`);
+    const source=sourceRaw.bones&&typeof sourceRaw.bones==='object'?sourceRaw.bones as Record<string,unknown>:{};
+    const result:ModelClip={length,bones:{}};
+    for(const [bone,frames] of Object.entries(source)){
+      if(!names.has(bone)||!Array.isArray(frames)||frames.length>24)throw Error('アニメーションのキーフレームが無効です。');
+      result.bones[bone]=frames.map((frame:unknown)=>{if(!frame||typeof frame!=='object')throw Error('キーフレームが無効です。');const f=frame as Record<string,unknown>,time=number(f.time,0,length);if(!Number.isFinite(time))throw Error('キーフレーム時刻が無効です。');return {time,rotation:vector(f.rotation,-360,360),...(f.position===undefined?{}:{position:vector(f.position,-32,32)}),...(f.scale===undefined?{}:{scale:vector(f.scale,0,8)})};}).sort((a,b)=>a.time-b.time);
+    }
+    return result;
   }
-  return {version:1,name:typeof raw.name==='string'?raw.name.trim().slice(0,32)||'My Fighter':'My Fighter',bones,attack};
+  return {version:1,name:typeof raw.name==='string'?raw.name.trim().slice(0,32)||'My Fighter':'My Fighter',bones,attack:clip('attack'),skill:clip('skill')};
 }
 
 export function defaultPlayerModel():PlayerModel{return validatePlayerModel({version:1,name:'My Fighter',bones:[
@@ -62,21 +66,37 @@ export function importBedrockGeometry(input:unknown):PlayerModel{
   const bones=Array.isArray(g.bones)?g.bones.map((bone:Record<string,unknown>)=>({name:bone.name,parent:bone.parent,pivot:bone.pivot??[0,0,0],rotation:bone.rotation??[0,0,0],cubes:Array.isArray(bone.cubes)?bone.cubes.map((cube:Record<string,unknown>)=>({origin:cube.origin,size:cube.size,color:'#73d9ed'})):[]})):[];
   return validatePlayerModel({version:1,name:typeof description?.identifier==='string'?description.identifier.replace(/^geometry\./,''):'Imported Fighter',bones,attack:{length:.5,bones:{}}});
 }
-export function importBedrockAnimation(model:PlayerModel,input:unknown):PlayerModel{
+export function bedrockAnimationNames(input:unknown):string[]{
   if(!input||typeof input!=='object')throw Error('アニメーションJSONを確認してください。');
   const data=input as Record<string,unknown>,animations=data.animations;
   if(!animations||typeof animations!=='object')throw Error('animations が見つかりません。');
-  const entry=Object.entries(animations as Record<string,unknown>).find(([name])=>name.includes('attack'))||Object.entries(animations as Record<string,unknown>)[0];
-  if(!entry||!entry[1]||typeof entry[1]!=='object')throw Error('アニメーションがありません。');
-  const animation=entry[1] as Record<string,unknown>,length=animation.animation_length??.5,source=animation.bones as Record<string,unknown>|undefined;
+  const names=Object.keys(animations);if(!names.length)throw Error('アニメーションがありません。');return names;
+}
+function bedrockChannel(value:unknown,kind:'rotation'|'position'|'scale'):{time:number;value:[number,number,number]}[]{
+  const bounds=kind==='rotation'?[-360,360]:kind==='position'?[-32,32]:[0,8];
+  const parse=(v:unknown):[number,number,number]=>{const values=typeof v==='number'?[v,v,v]:Array.isArray(v)&&v.length===1?[v[0],v[0],v[0]]:v;return vector(values,bounds[0],bounds[1]);};
+  if(Array.isArray(value)||typeof value==='number')return [{time:0,value:parse(value)}];
+  if(!value||typeof value!=='object')return [];
+  return Object.entries(value).map(([time,pose])=>({time:Number(time),value:parse(pose&&typeof pose==='object'&&!Array.isArray(pose)?(pose as Record<string,unknown>).post??(pose as Record<string,unknown>).pre:pose)})).sort((a,b)=>a.time-b.time);
+}
+function channelAt(frames:{time:number;value:[number,number,number]}[],time:number,fallback:[number,number,number]):[number,number,number]{
+  if(!frames.length)return fallback;if(time<=frames[0].time)return frames[0].value;
+  for(let i=1;i<frames.length;i++)if(time<=frames[i].time){const a=frames[i-1],b=frames[i],ratio=(time-a.time)/Math.max(.00001,b.time-a.time);return a.value.map((v,k)=>v+(b.value[k]-v)*ratio) as [number,number,number];}
+  return frames[frames.length-1].value;
+}
+export function importBedrockAnimation(model:PlayerModel,input:unknown,kind:'attack'|'skill'='attack',animationName?:string):PlayerModel{
+  const names=bedrockAnimationNames(input),selected=animationName??names.find(name=>name.toLowerCase().includes(kind))??names[0];
+  const animation=(input as {animations:Record<string,unknown>}).animations[selected] as Record<string,unknown>|undefined;
+  if(!animation||typeof animation!=='object')throw Error('指定されたアニメーションが見つかりません。');
+  const length=animation.animation_length??.5,source=animation.bones as Record<string,unknown>|undefined;
   const bones:Record<string,ModelKeyframe[]>={};
   for(const [name,value] of Object.entries(source||{})){
     if(!model.bones.some(b=>b.name===name)||!value||typeof value!=='object')continue;
-    const rotation=(value as Record<string,unknown>).rotation;
-    if(Array.isArray(rotation))bones[name]=[{time:0,rotation:vector(rotation,-180,180)}];
-    else if(rotation&&typeof rotation==='object')bones[name]=Object.entries(rotation).map(([time,pose])=>({time:Number(time),rotation:vector(pose,-180,180)}));
+    const channels=value as Record<string,unknown>,rotation=bedrockChannel(channels.rotation,'rotation'),position=bedrockChannel(channels.position,'position'),scale=bedrockChannel(channels.scale,'scale');
+    const times=[...new Set([...rotation,...position,...scale].map(frame=>frame.time))].sort((a,b)=>a-b);
+    if(times.length)bones[name]=times.map(time=>({time,rotation:channelAt(rotation,time,[0,0,0]),...(position.length?{position:channelAt(position,time,[0,0,0])}:{}),...(scale.length?{scale:channelAt(scale,time,[1,1,1])}:{} )}));
   }
-  return validatePlayerModel({...model,attack:{length,bones}});
+  return validatePlayerModel({...model,[kind]:{length,bones}});
 }
 export function exportBedrockGeometry(model:PlayerModel){return {format_version:'1.12.0','minecraft:geometry':[{description:{identifier:`geometry.shift_${model.name.toLowerCase().replace(/[^a-z0-9_]/g,'_')}`,texture_width:64,texture_height:64,visible_bounds_width:3,visible_bounds_height:4,visible_bounds_offset:[0,1,0]},bones:model.bones.map(b=>({name:b.name,...(b.parent?{parent:b.parent}:{}),pivot:b.pivot,rotation:b.rotation,cubes:b.cubes.map(c=>({origin:c.origin,size:c.size,uv:[0,0]}))}))}]};}
-export function exportBedrockAnimation(model:PlayerModel){return {format_version:'1.8.0',animations:{'animation.shift.attack':{animation_length:model.attack.length,loop:false,bones:Object.fromEntries(Object.entries(model.attack.bones).map(([name,frames])=>[name,{rotation:Object.fromEntries(frames.map(f=>[String(f.time),f.rotation]))}]))}}};}
+export function exportBedrockAnimation(model:PlayerModel){return {format_version:'1.8.0',animations:Object.fromEntries((['attack','skill'] as const).map(kind=>[`animation.shift.${kind}`,{animation_length:model[kind].length,loop:false,bones:Object.fromEntries(Object.entries(model[kind].bones).map(([name,frames])=>[name,{rotation:Object.fromEntries(frames.map(f=>[String(f.time),f.rotation])),...(frames.some(f=>f.position)?{position:Object.fromEntries(frames.filter(f=>f.position).map(f=>[String(f.time),f.position]))}:{}),...(frames.some(f=>f.scale)?{scale:Object.fromEntries(frames.filter(f=>f.scale).map(f=>[String(f.time),f.scale]))}:{})}]))}]))};}

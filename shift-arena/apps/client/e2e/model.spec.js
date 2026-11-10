@@ -10,6 +10,11 @@ test('統合版geometryを編集して攻撃モーションと共に書き出せ
   await page.getByRole('button', { name:'＋ ブロック' }).click();
   await expect(page.locator('.model-list').last().getByRole('button')).toHaveCount(2);
   await page.getByRole('button', { name:'現在の時刻にキーフレーム追加' }).click();
+  await page.locator('input[type=file]').last().setInputFiles({ name:'sample.animation.json', mimeType:'application/json', buffer:Buffer.from(JSON.stringify({animations:{'animation.sample.attack':{animation_length:.3,bones:{body:{rotation:{0:[0,0,0],'.3':[0,20,0]}}}},'animation.sample.skill':{animation_length:.8,bones:{body:{rotation:{0:[0,0,0],'.8':[0,90,0]}}}}}})) });
+  await expect(page.getByRole('status')).toContainText('攻撃とスキル');
+  await page.getByLabel('編集中の動作').selectOption('skill');
+  await expect(page.getByRole('heading', { name:'スキル使用モーション' })).toBeVisible();
+  await expect(page.locator('.model-keyframes>div')).toHaveCount(2);
   const file=page.waitForEvent('download');
   await page.getByRole('button', { name:'統合版geometryを書き出す' }).click();
   expect((await file).suggestedFilename()).toBe('fighter.geo.json');

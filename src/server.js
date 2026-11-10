@@ -52,7 +52,7 @@ app.use((req, res, next) => {
   });
   next();
 });
-app.use(express.json({ limit: '32kb', type: 'application/json' }));
+app.use(express.json({ limit: '128kb', type: 'application/json' }));
 
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 function cookieToken(req) {
