@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 
 test('統合版geometryを編集して攻撃モーションと共に書き出せる', async ({ page }) => {
   await page.goto('/model');
@@ -20,26 +21,35 @@ test('統合版geometryを編集して攻撃モーションと共に書き出せ
   expect((await file).suggestedFilename()).toBe('fighter.geo.json');
 });
 
-test('アカウントにモデルを保存し再読み込みできる', async ({ page }) => {
-  await page.goto('/sam');
-  await page.getByRole('button', { name:/プレイ開始/ }).click();
-  const username=`Model${Date.now().toString().slice(-9)}`;
-  await page.getByLabel('ユーザー名').fill(username);
-  await page.getByLabel('パスワード').fill('safe-password-123');
-  await page.getByRole('button', { name:'新規登録' }).click();
-  await expect(page.locator('.account-pill')).toContainText(username);
+test('新キャラを全員向けの提出用データとして書き出せる', async ({ page }) => {
   await page.goto('/model');
-  await expect(page.getByText(`${username} で保存`)).toBeVisible();
   await page.getByLabel('名前').fill('Test Fighter');
-  await page.getByRole('button', { name:'アカウントに保存して対戦で使う' }).click();
-  await expect(page.getByRole('status')).toContainText('アカウントに保存しました');
-  await page.reload();
+  await page.getByLabel('性能のベース').selectOption('gald');
+  const download=page.waitForEvent('download');
+  await page.getByRole('button', { name:'提出用JSONを書き出す' }).click();
+  const file=await download;
+  expect(file.suggestedFilename()).toBe('shift-new-character-new.json');
+  const pack=JSON.parse(await readFile(await file.path(),'utf8'));
+  expect(pack.target).toEqual({kind:'new-character',name:'Test Fighter',baseCharacter:'gald'});
+  expect(pack.previewModel.attack.bones.right_arm).toHaveLength(4);
+  expect(pack.geometry['minecraft:geometry']).toHaveLength(1);
+  await expect(page.getByRole('status')).toContainText('チャットに添付');
+  await page.getByLabel('作るもの').selectOption('stage');
+  await page.locator('input[type=file]').last().setInputFiles({name:file.suggestedFilename(),mimeType:'application/json',buffer:Buffer.from(JSON.stringify(pack))});
+  await expect(page.getByRole('status')).toContainText('提出用JSONを読み込みました');
+  await expect(page.getByLabel('作るもの')).toHaveValue('new-character');
   await expect(page.getByLabel('名前')).toHaveValue('Test Fighter');
-  const me=await (await page.request.get('/api/me')).json();
-  await page.goto('/sam');
-  await page.getByRole('button', { name:/プレイ開始/ }).click();
-  const modelResponse=page.waitForResponse(response=>response.url().endsWith(`/api/shift/model/${me.user.id}`));
-  await page.getByRole('button', { name:/ソロCPU戦を開始/ }).click();
-  expect((await modelResponse).status()).toBe(200);
-  await expect(page.locator('.arena-host canvas')).toBeVisible();
+});
+
+test('既存ステージのBlockbench素材を提出できる', async ({ page }) => {
+  await page.goto('/model');
+  await page.getByLabel('作るもの').selectOption('stage');
+  await page.getByLabel('対象').selectOption('factory');
+  await page.locator('input[type=file]').first().setInputFiles({name:'factory.geo.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({'minecraft:geometry':[{description:{identifier:'geometry.factory'},bones:[{name:'floor',pivot:[0,0,0],cubes:[{origin:[0,0,0],size:[120,1,80]}]}]}]}))});
+  await expect(page.getByRole('status')).toContainText('ステージモデルを受け取りました');
+  const download=page.waitForEvent('download');
+  await page.getByRole('button', { name:'提出用JSONを書き出す' }).click();
+  const pack=JSON.parse(await readFile(await (await download).path(),'utf8'));
+  expect(pack.target).toEqual({kind:'stage',id:'factory',name:'ネオンファクトリー'});
+  expect(pack.geometry['minecraft:geometry'][0].bones[0].cubes[0].size).toEqual([120,1,80]);
 });
