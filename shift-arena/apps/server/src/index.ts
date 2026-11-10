@@ -22,6 +22,7 @@ const safeMode=(value:unknown):Mode=>modes.includes(value as Mode)?value as Mode
 const safeMap=(value:unknown)=>typeof value==='string'&&['park','factory','canyon'].includes(value)?value:'park';
 const pinLabels:Record<string,string>={enemy:'敵発見！',gather:'ここに集合！',attack:'攻撃しよう！',retreat:'撤退！',help:'助けて！',ultimate:'必殺技準備完了！'};
 const chatLabels:Record<string,string>={nice:'ナイス！',thanks:'ありがとう！',sorry:'ごめん！',hello:'よろしく！',roger:'了解！'};
+export function classifyRewardSource(source:string,participants:{accountId?:string;team:number;connected:boolean}[]){if(source!=='online')return source;const teams=new Set(participants.filter(p=>p.accountId&&p.connected).map(p=>p.team));return teams.has(0)&&teams.has(1)?'online':'solo';}
 
 export class ShiftRoom extends Room {
   maxClients=6;
@@ -37,6 +38,7 @@ export class ShiftRoom extends Room {
   private resultSent=false;
   private matchId='';
   private source='private';
+  private rewardSource='private';
   private metrics=new Map<string,{hits:number;ultimates:number;terminal:number}>();
   async onAuth(_client:Client,_options:unknown,context:AuthContext){const account=await resolveAccount(context.headers.get('cookie')||'');return {account};}
   onCreate(options:Record<string,unknown>){
@@ -70,8 +72,8 @@ export class ShiftRoom extends Room {
   private lobbyData(){return {code:this.roomId,host:this.clients[0]?.sessionId||null,mode:this.mode,map:this.map,players:[...this.guests.values()].map(({sessionId,name,character,team,ready,connected,accountId})=>({sessionId,name,character,team,ready,connected,accountId}))};}
   private lobby(){this.broadcast('lobby',this.lobbyData());}
   onDispose(){activeRooms=Math.max(0,activeRooms-1);for(const guest of this.guests.values())if(guest.accountId){activeAccounts.delete(guest.accountId);services?.presence?.(guest.accountId,'disconnect');}}
-  private startGame(){const slots:Slot[]=[...this.guests.values()].map(g=>({id:g.sessionId,name:g.name,character:g.character,team:g.team,bot:!g.connected,loadout:g.loadouts[g.character]}));this.game=createGame({mode:this.mode,map:this.map,difficulty:this.difficulty,shift:this.shiftEnabled,size:this.maxClients===10&&this.mode==='deathmatch'?5:3,slots});this.matchId=randomUUID();this.metrics=new Map(slots.map(s=>[s.id,{hits:0,ultimates:0,terminal:0}]));for(const g of this.guests.values()){g.inputCount=0;if(g.accountId)services?.presence?.(g.accountId,'playing');}this.playerInputs={};this.resultSent=false;this.lock();this.broadcast('started',this.game);}
-  private async awardResults(){if(!this.game||!services)return;const game=this.game;for(const guest of this.guests.values()){if(!guest.account||guest.inputCount<30)continue;const p=game.players.find(v=>v.id===guest.sessionId);if(!p)continue;const metric=this.metrics.get(p.id)||{hits:0,ultimates:0,terminal:0};try{const reward=await services.award(guest.account,{matchId:this.matchId,character:p.character,won:game.winner===p.team,source:this.source,seconds:game.tick/30,kills:p.kills,objective:p.objective,ultimates:metric.ultimates,hits:metric.hits,terminal:metric.terminal});this.clients.find(c=>c.sessionId===guest.sessionId)?.send('reward',reward);}catch(error){console.error('SHIFT ARENA reward failed',error);}}}
+  private startGame(){const slots:Slot[]=[...this.guests.values()].map(g=>({id:g.sessionId,name:g.name,character:g.character,team:g.team,bot:!g.connected,loadout:g.loadouts[g.character]}));this.rewardSource=classifyRewardSource(this.source,[...this.guests.values()]);this.game=createGame({mode:this.mode,map:this.map,difficulty:this.difficulty,shift:this.shiftEnabled,size:this.maxClients===10&&this.mode==='deathmatch'?5:3,slots});this.matchId=randomUUID();this.metrics=new Map(slots.map(s=>[s.id,{hits:0,ultimates:0,terminal:0}]));for(const g of this.guests.values()){g.inputCount=0;if(g.accountId)services?.presence?.(g.accountId,'playing');}this.playerInputs={};this.resultSent=false;this.lock();this.broadcast('started',this.game);}
+  private async awardResults(){if(!this.game||!services)return;const game=this.game;for(const guest of this.guests.values()){if(!guest.account||guest.inputCount<30)continue;const p=game.players.find(v=>v.id===guest.sessionId);if(!p)continue;const metric=this.metrics.get(p.id)||{hits:0,ultimates:0,terminal:0};try{const reward=await services.award(guest.account,{matchId:this.matchId,character:p.character,won:game.winner===p.team,source:this.rewardSource,seconds:game.tick/30,kills:p.kills,objective:p.objective,ultimates:metric.ultimates,hits:metric.hits,terminal:metric.terminal});this.clients.find(c=>c.sessionId===guest.sessionId)?.send('reward',reward);}catch(error){console.error('SHIFT ARENA reward failed',error);}}}
 }
 
 class RoutedTransport extends WebSocketTransport {
