@@ -7,8 +7,8 @@ const floorMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:.9});
 const cylinder=new THREE.CylinderGeometry(.34,.46,.9,10),head=new THREE.SphereGeometry(.31,12,8),projectileGeo=new THREE.SphereGeometry(.16,8,6);
 const helper=new THREE.Object3D();
 export async function loadCharacterModel(url:string){return (await new GLTFLoader().loadAsync(url)).scene;}
-function fighterMesh(p:Fighter){const c=characterById(p.character),group=new THREE.Group();group.userData.id=p.id;
-  const body=new THREE.Mesh(cylinder,mat(c.color));body.position.y=.65;body.castShadow=true;group.add(body);
+function fighterMesh(p:Fighter){const c=characterById(p.character),group=new THREE.Group();group.userData.id=p.id;const bodyColor=p.skinChoice==='master_skin'?new THREE.Color(c.color).lerp(new THREE.Color(0xffd66e),.55).getHex():p.skinChoice==='skin'?new THREE.Color(c.color).lerp(new THREE.Color(0xaf77ff),.45).getHex():c.color;
+  const body=new THREE.Mesh(cylinder,mat(bodyColor));body.position.y=.65;body.castShadow=true;group.add(body);
   const face=new THREE.Mesh(head,mat(c.accent,.4));face.position.y=1.32;face.castShadow=true;group.add(face);
   const visor=new THREE.Mesh(new THREE.BoxGeometry(.43,.1,.12),new THREE.MeshBasicMaterial({color:0x111932}));visor.position.set(0,1.35,.27);group.add(visor);
   const ring=new THREE.Mesh(new THREE.TorusGeometry(.53,.055,5,24),new THREE.MeshBasicMaterial({color:p.team===0?0x37dff1:p.team===1?0xff728e:0xffc256}));ring.rotation.x=Math.PI/2;ring.position.y=.07;group.add(ring);

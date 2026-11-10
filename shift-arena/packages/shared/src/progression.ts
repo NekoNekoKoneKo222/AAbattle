@@ -19,6 +19,13 @@ export const masteryRewards=[
   {level:25,id:'title',label:'限定称号'},
   {level:30,id:'master_skin',label:'マスター専用スキン'},
 ] as const;
+export const masteryAchievements=[
+  {id:'hits',label:'攻撃を100回命中',goal:100},
+  {id:'wins',label:'15試合勝利',goal:15},
+  {id:'ko',label:'50KO達成',goal:50},
+  {id:'ultimates',label:'必殺技を10回使用',goal:10},
+  {id:'terminal',label:'シフト端末を20回占領',goal:20},
+] as const;
 export const masteryLevel=(xp:number)=>Math.min(30,1+Math.floor((Math.sqrt(1+Math.max(0,xp)/25)-1)/2));
 export const masteryThreshold=(level:number)=>level<=1?0:100*(level-1)*level;
 export const missionDefs=[

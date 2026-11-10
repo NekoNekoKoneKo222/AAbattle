@@ -7,7 +7,7 @@ const fail = (message, status = 400) => Object.assign(new Error(message), { stat
 const initial = (id, name) => ({ user_id: id, display_name: name, selected_character: 'rei', owned_characters: ['rei'], credits: 0, prestige: 0, road_target: 'gald', loadouts: {}, mastery: {}, missions: {}, mission_day: utcDay(), first_win_day: null, solo_day: null, solo_count: 0 });
 const normalize = (row) => ({ ...row, mission_day: row.mission_day instanceof Date ? row.mission_day.toISOString().slice(0, 10) : row.mission_day, first_win_day: row.first_win_day instanceof Date ? row.first_win_day.toISOString().slice(0, 10) : row.first_win_day, solo_day: row.solo_day instanceof Date ? row.solo_day.toISOString().slice(0, 10) : row.solo_day });
 function today(profile) { if (profile.mission_day !== utcDay()) { profile.mission_day = utcDay(); profile.missions = {}; } }
-function mastery(profile, id) { return profile.mastery[id] ||= { xp: 0, stats: { matches: 0, wins: 0, ko: 0, ultimates: 0, objective: 0, hits: 0, terminal: 0 }, claimed: [] }; }
+function mastery(profile, id) { return profile.mastery[id] ||= { xp: 0, stats: { matches: 0, wins: 0, ko: 0, ultimates: 0, objective: 0, hits: 0, terminal: 0 }, claimed: [], equipped_skin: null }; }
 function publicProfile(profile) { today(profile); return { ...clone(profile), road_tier: nextRoadTier(profile.owned_characters), mastery_levels: Object.fromEntries(Object.entries(profile.mastery).map(([id, value]) => [id, masteryLevel(value.xp)])), server_day: utcDay() }; }
 
 export class ShiftStore {
@@ -73,6 +73,13 @@ export class ShiftStore {
     if (masteryLevel(m.xp) < reward.level) throw fail('必要なレベルに達していません。');
     if (m.claimed.includes(rewardId)) throw fail('受け取り済みです。');
     m.claimed.push(rewardId);
+  }); }
+  equipMasterySkin(user, character, skin) { return this.withProfile(user, p => {
+    if (!p.owned_characters.includes(character)) throw fail('未所持のキャラクターです。', 403);
+    if (skin !== null && !['skin', 'master_skin'].includes(skin)) throw fail('無効なスキンです。');
+    const m = mastery(p, character);
+    if (skin !== null && !m.claimed.includes(skin)) throw fail('このスキンを獲得していません。', 403);
+    m.equipped_skin = skin;
   }); }
   async awardMatch(user, result) { return this.withProfile(user, async (p, client) => {
     const { matchId, character, won, source, seconds, kills = 0, objective = 0, ultimates = 0, hits = 0, terminal = 0 } = result;

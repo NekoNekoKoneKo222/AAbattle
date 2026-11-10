@@ -70,6 +70,8 @@ test('キャラロード、ロードアウト、練習場、パーティーを�
   await expect(page.locator('canvas')).toBeVisible();
   await page.getByRole('button', { name: '練習メニュー' }).click();
   await expect(page.getByRole('button', { name: '無敵ダミー' })).toBeVisible();
+  await page.getByLabel('CPU難易度').selectOption('hard');
+  await expect(page.getByLabel('CPU難易度')).toHaveValue('hard');
   await page.getByRole('button', { name: '無敵ダミー' }).click();
   await page.getByRole('button', { name: '練習メニューを閉じる' }).click();
   await page.getByRole('button', { name: '退出' }).click();

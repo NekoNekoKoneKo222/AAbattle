@@ -28,6 +28,19 @@ test('loadout is validated and persists for a character', async () => {
   assert.deepEqual((await store.getProfile(alice)).loadouts.rei, { skill: 'energy_shield', passive: 'ammo_return' });
 });
 
+test('mastery skins require a claimed reward and remain equipped', async () => {
+  const store = new ShiftStore(), alice = user('Alice');
+  await store.getProfile(alice);
+  await assert.rejects(store.equipMasterySkin(alice, 'rei', 'skin'), /獲得/);
+  await store.withProfile(alice, profile => { profile.mastery.rei = { xp: 22000, stats: {}, claimed: [] }; });
+  await store.claimMastery(alice, 'rei', 'skin');
+  await store.equipMasterySkin(alice, 'rei', 'skin');
+  assert.equal((await store.getProfile(alice)).mastery.rei.equipped_skin, 'skin');
+  await assert.rejects(store.equipMasterySkin(alice, 'rei', 'master_skin'), /獲得/);
+  await store.equipMasterySkin(alice, 'rei', null);
+  assert.equal((await store.getProfile(alice)).mastery.rei.equipped_skin, null);
+});
+
 test('match rewards are idempotent and missions and mastery cannot be claimed twice', async () => {
   const store = new ShiftStore(), alice = user('Alice');
   const result = { matchId: randomUUID(), character: 'rei', won: true, source: 'online', seconds: 60, kills: 2, objective: 30, ultimates: 5, hits: 8, terminal: 1 };
