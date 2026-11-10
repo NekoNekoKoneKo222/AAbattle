@@ -52,9 +52,13 @@ test('account registration, authentication, character saving and online matchmak
   assert.equal((await request('ai/status')).status, 401);
   assert.equal((await request('fighters/jobs')).status, 401);
   assert.equal((await request('config')).body.generationMode, 'local');
+  assert.equal((await request('config')).body.availableProviders.gemini, false);
   assert.equal((await request('me', null, ac)).body.user.username, 'AliceTest');
 
   const art = ' /\\_/\\\n( o.o )\n > ^ <';
+  assert.equal((await request('fighters', { name: '拒否', art, provider: 'gemini' }, ac)).status, 503);
+  assert.equal((await request('fighters/generate', { name: '拒否', art, provider: 'gemini' }, ac)).status, 503);
+  assert.equal((await request('fighters/generate', { name: '拒否', art, provider: 'invalid' }, ac)).status, 400);
   const fighterA = await request('fighters', { name: '猫', art }, ac);
   const fighterB = await request('fighters', { name: '猫2', art: '[o_o]\n /|\\' }, bc);
   assert.equal(fighterA.status, 201, JSON.stringify(fighterA.body));

@@ -1,5 +1,5 @@
 const $ = (id) => document.getElementById(id);
-const app = { user: null, fighters: [], selected: null, ws: null, authMode: 'login', battle: null, waiting: false, tradeTarget: null, pveEnemies: [], pvePlayback: null, generationMode: 'local', model: null, pendingGenerations: 0, pendingGenerationInputs: new Set(), pollingJobIds: new Set(), aiStatusTimer: null, aiStatusChecking: false };
+const app = { user: null, fighters: [], selected: null, ws: null, authMode: 'login', battle: null, waiting: false, tradeTarget: null, pveEnemies: [], pvePlayback: null, generationMode: 'local', availableProviders: {}, model: null, pendingGenerations: 0, pendingGenerationInputs: new Set(), pollingJobIds: new Set(), aiStatusTimer: null, aiStatusChecking: false };
 const effectLabels = { damage: '攻撃', heal: '回復', shield: '防護', weaken: '弱体', poison: '毒', burn: '火傷', drain: '吸収', boost: '強化', cleanse: '浄化', stun: '気絶', bleed: '出血', rupture: '破裂', silence: '沈黙', counter_stance: '反撃態勢' };
 
 function effectSummary(effect) {
@@ -115,19 +115,21 @@ function showAuth() {
 }
 
 async function refreshAiStatus() {
-  if (!app.user || app.generationMode !== 'ollama' || app.aiStatusChecking) return;
+  if (!app.user || app.generationMode === 'local' || app.aiStatusChecking) return;
   app.aiStatusChecking = true;
   $('ai-status-refresh').disabled = true;
   try {
-    const state = await api('ai/status', { timeoutMs: 12000 });
-    const connection = !state.connected ? '未接続' : state.installed ? '接続済み' : 'モデル未導入';
+    const provider = app.generationMode;
+    const state = await api(`ai/status?provider=${provider}`, { timeoutMs: 12000 });
+    if (app.generationMode !== provider) return;
+    const connection = provider === 'gemini' ? 'キー設定済み' : !state.connected ? '未接続' : state.installed ? '接続済み' : 'モデル未導入';
     const activity = state.generating ? '生成中' : '待機中';
     const waiting = Number(state.waiting) || 0;
     const checked = new Date(state.checkedAt || Date.now()).toLocaleTimeString('ja-JP');
-    $('ai-status').textContent = `Ollama: ${connection} / モデル: ${state.model || app.model} / 状態: ${activity} / 順番待ち: ${waiting}件 / 更新: ${checked}`;
-    $('ai-status').parentElement.dataset.state = !state.connected || !state.installed ? 'offline' : state.generating ? 'busy' : 'online';
+    $('ai-status').textContent = `${provider === 'gemini' ? 'Gemini API' : 'Ollama'}: ${connection} / モデル: ${state.model || app.model} / 状態: ${activity} / 順番待ち: ${waiting}件 / 更新: ${checked}`;
+    $('ai-status').parentElement.dataset.state = provider === 'gemini' ? state.generating ? 'busy' : 'online' : !state.connected || !state.installed ? 'offline' : state.generating ? 'busy' : 'online';
   } catch {
-    $('ai-status').textContent = `Ollama: 状態を確認できません / モデル: ${app.model}`;
+    $('ai-status').textContent = `${app.generationMode === 'gemini' ? 'Gemini API' : 'Ollama'}: 状態を確認できません`;
     $('ai-status').parentElement.dataset.state = 'offline';
   } finally {
     app.aiStatusChecking = false;
@@ -137,6 +139,7 @@ async function refreshAiStatus() {
 
 function startAiMonitor() {
   if (app.aiStatusTimer) clearInterval(app.aiStatusTimer);
+  if (app.generationMode === 'local') return;
   void refreshAiStatus();
   app.aiStatusTimer = setInterval(() => {
     if (app.user && !document.hidden) void refreshAiStatus();
@@ -152,7 +155,33 @@ async function showGame(user) {
   await loadFighters();
   await resumeGenerationJobs();
   connect();
-  if (app.generationMode === 'ollama') startAiMonitor();
+  startAiMonitor();
+}
+function updateProviderControls() {
+  for (const provider of ['gemini', 'ollama']) {
+    const button = $(`provider-${provider}`);
+    button.disabled = !app.availableProviders[provider];
+    button.setAttribute('aria-pressed', String(app.generationMode === provider));
+    button.title = button.disabled ? `${provider === 'gemini' ? 'Gemini APIキー' : 'Ollama'}が未設定です` : '';
+  }
+  $('mode-badge').textContent = app.generationMode === 'ollama' ? `GENERATOR : OLLAMA (${app.model})` : app.generationMode === 'gemini' ? 'GENERATOR : GEMINI AI' : 'GENERATOR : LOCAL RULES';
+  $('ai-status-refresh').classList.toggle('hidden', app.generationMode === 'local');
+  if (app.generationMode === 'local') {
+    $('ai-status').textContent = 'ローカルルールを使用';
+    $('ai-status').parentElement.dataset.state = 'online';
+  } else {
+    $('ai-status').textContent = `${app.generationMode === 'gemini' ? 'Gemini API' : 'Ollama'}の状態を確認中…`;
+    $('ai-status').parentElement.dataset.state = '';
+  }
+  if (app.user) startAiMonitor();
+}
+for (const provider of ['gemini', 'ollama']) {
+  $(`provider-${provider}`).addEventListener('click', () => {
+    if (!app.availableProviders[provider]) return;
+    app.generationMode = provider;
+    localStorage.setItem('aabattle-generation-provider', provider);
+    updateProviderControls();
+  });
 }
 
 async function loadFighters() {
@@ -750,7 +779,7 @@ $('fighter-form').addEventListener('submit', async (event) => {
   try {
     const { jobId } = await api('fighters/generate', {
       method: 'POST',
-      body: JSON.stringify({ name, art })
+      body: JSON.stringify({ name, art, provider: app.generationMode })
     });
     if (!/^[a-f0-9]{64}$/.test(jobId || '')) throw new Error('生成ジョブ番号が不正です。');
     app.pendingGenerations++;
@@ -829,14 +858,11 @@ async function initialize() {
   }, 8000);
   try {
     const [{ user }, config] = await Promise.all([api('me'), api('config')]);
-    app.generationMode = config.generationMode;
+    app.availableProviders = config.availableProviders || { gemini: config.generationMode === 'gemini', ollama: config.generationMode === 'ollama', local: true };
+    const savedProvider = localStorage.getItem('aabattle-generation-provider');
+    app.generationMode = savedProvider && app.availableProviders[savedProvider] ? savedProvider : app.availableProviders.gemini ? 'gemini' : config.generationMode;
     app.model = config.model;
-    $('mode-badge').textContent = config.generationMode === 'ollama' ? `GENERATOR : OLLAMA (${config.model})` : config.generationMode === 'gemini' ? 'GENERATOR : GEMINI AI' : 'GENERATOR : LOCAL RULES';
-    $('ai-status-refresh').classList.toggle('hidden', config.generationMode !== 'ollama');
-    if (config.generationMode !== 'ollama') {
-      $('ai-status').textContent = config.generationMode === 'gemini' ? 'Gemini APIを使用' : 'ローカルルールを使用';
-      $('ai-status').parentElement.dataset.state = 'online';
-    }
+    updateProviderControls();
     if (user) await showGame(user);
     status.classList.add('hidden');
   } catch (error) {

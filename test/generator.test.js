@@ -59,8 +59,10 @@ test('without API credentials, fighter generation is explicitly local', async ()
 test('Gemini API invents unique skills, effects and passives from the AA', async () => {
   const previousKey = process.env.GEMINI_API_KEY;
   const previousModel = process.env.GEMINI_MODEL;
+  const previousProvider = process.env.AI_PROVIDER;
   const previousFetch = globalThis.fetch;
   process.env.GEMINI_API_KEY = 'mock-gemini-api-key';
+  process.env.AI_PROVIDER = 'ollama';
   delete process.env.GEMINI_MODEL;
   const requests = [];
   const draft = {
@@ -82,7 +84,7 @@ test('Gemini API invents unique skills, effects and passives from the AA', async
   };
   try {
     const art = ' /\\_/\\\n( o.o )\n > ^ <';
-    const result = await generateFighter(art, 'ツキネコ', ['ねこパンチ']);
+    const result = await generateFighter(art, 'ツキネコ', ['ねこパンチ'], 'gemini');
     assert.equal(result.mode, 'gemini');
     assert.equal(result.definition.skills.length, 3);
     assert.equal(result.definition.passive.kind, 'berserk');
@@ -102,6 +104,8 @@ test('Gemini API invents unique skills, effects and passives from the AA', async
     else process.env.GEMINI_API_KEY = previousKey;
     if (previousModel === undefined) delete process.env.GEMINI_MODEL;
     else process.env.GEMINI_MODEL = previousModel;
+    if (previousProvider === undefined) delete process.env.AI_PROVIDER;
+    else process.env.AI_PROVIDER = previousProvider;
   }
 });
 

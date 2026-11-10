@@ -136,7 +136,7 @@ render.yaml    Render配備設定
 4. 既存のAAエディターで猫、ロボット、剣などを入力し、`GENERATE FIGHTER` を押します。接続状態、モデル、生成時間、能力と技が表示されます。対戦画面で生成キャラクターを選択できます。
 5. `npm test` で自動テストを実行します。実機の3種生成と自動戦闘は、Ollamaを起動した状態で `$env:AI_PROVIDER='ollama'; node test/live-ollama.mjs` を実行します。HTTP経由の認証・保存は `node test/live-http.mjs` で確認できます。生成中はCPU環境で数十秒かかる場合があります。`ollama ps` の `PROCESSOR` 列でGPUかCPUかを確認できます。
 
-`AI_PROVIDER=gemini` は既存の `GEMINI_API_KEY` と任意の `GEMINI_MODEL` を使います。`AI_PROVIDER=local` は従来の固定ルールです。`AI_PROVIDER` を設定しない場合も、従来どおりGeminiキーがあればGemini、なければローカルルールです。Ollamaが停止している場合や応答が不正な場合、生成だけがエラーになり、ログインや対戦などは引き続き使えます。AIの応答はサーバー側で検証・補正し、コードとして実行しません。
+`AI_PROVIDER=gemini` は既存の `GEMINI_API_KEY` と任意の `GEMINI_MODEL` を使います。`AI_PROVIDER=local` は従来の固定ルールです。`AI_PROVIDER` を設定しない場合も、従来どおりGeminiキーがあればGemini、なければローカルルールです。Ollamaが停止している場合や応答が不正な場合、生成だけがエラーになり、ログインや対戦などは引き続き使えます。AIの応答はサーバー側で検証・補正し、コードとして実行しません。 AAbattleの生成画面ではGemini APIとOllamaをボタンで切り替えられます。選択はブラウザーに保存され、その生成ジョブだけに適用されます。`GEMINI_API_KEY` が設定済みなら初回はGeminiを選びます。APIキーはサーバー内だけで使用し、画面やリクエストには送信しません。
 
 ## 第2段階: RenderからPCのOllamaへ安全に接続
 

@@ -498,8 +498,9 @@ async function geminiGenerate(art, name, avoidNames = []) {
   throw new Error(`Geminiが有効な独自スキルを生成できませんでした。${lastError?.message || ''} もう一度お試しください。`);
 }
 
-export async function generateFighter(art, name, avoidNames = []) {
-  const mode = generationMode();
+export async function generateFighter(art, name, avoidNames = [], requestedMode) {
+  const mode = requestedMode ?? generationMode();
+  if (!['ollama', 'gemini', 'local'].includes(mode)) throw new Error('生成方式が不正です。');
   const started = Date.now();
   if (mode === 'ollama') {
     const draft = gatewayConfigured()

@@ -33,6 +33,7 @@ const fighterJobs = new Map();
 const fighterJobQueue = [];
 let pendingFighterJobs = 0;
 let activeFighterJob = false;
+let activeFighterProvider = null;
 const MAX_PENDING_FIGHTER_JOBS = 4;
 const FIGHTER_JOB_TTL_MS = 30 * 60 * 1000;
 const tradeRequests = new Map();
@@ -85,6 +86,12 @@ function limit(map, key, max, duration) {
   }
   return arr.length <= max;
 }
+function requestedProvider(value) {
+  const provider = value === undefined ? generationMode() : value;
+  if (!['ollama', 'gemini', 'local'].includes(provider)) throw Object.assign(new Error('生成方式を選び直してください。'), { status: 400 });
+  if (provider === 'gemini' && !process.env.GEMINI_API_KEY) throw Object.assign(new Error('Gemini APIキーがサーバーに設定されていません。'), { status: 503 });
+  return provider;
+}
 function pruneFighterJobs() {
   const now = Date.now();
   for (const [id, job] of fighterJobs) {
@@ -93,8 +100,9 @@ function pruneFighterJobs() {
 }
 function runNextFighterJob() {
   if (activeFighterJob || !fighterJobQueue.length) return;
-  const { job, userId, name, art } = fighterJobQueue.shift();
+  const { job, userId, name, art, provider } = fighterJobQueue.shift();
   activeFighterJob = true;
+  activeFighterProvider = provider;
   job.state = 'running';
   void (async () => {
     try {
@@ -103,7 +111,7 @@ function runNextFighterJob() {
         ...(fighter.definition?.skills || []).map((skill) => skill.name),
         fighter.definition?.passive?.name
       ]).filter(Boolean);
-      const generated = await generateFighter(art, name, existingNames);
+      const generated = await generateFighter(art, name, existingNames, provider);
       job.fighter = await store.saveFighter(userId, name, art, generated.definition, generated.mode);
       job.generationMs = generated.generationMs;
       job.state = 'done';
@@ -113,6 +121,7 @@ function runNextFighterJob() {
     } finally {
       job.completedAt = Date.now();
       pendingFighterJobs--;
+      activeFighterProvider = null;
       activeFighterJob = false;
       runNextFighterJob();
     }
@@ -173,17 +182,20 @@ app.post('/api/shift/party/leader', shiftWrap(async (req, res) => { const user =
 app.post('/api/shift/party/ready', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (!user) return; const profile = await shiftStore.getProfile(user); res.json(shiftParties.setReady(user, req.body?.ready, profile.selected_character)); }));
 app.post('/api/shift/party/configure', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(shiftParties.configure(user, req.body?.mode, req.body?.size)); }));
 app.post('/api/shift/party/match', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(shiftParties.setMatch(user, req.body?.code)); }));
-app.get('/api/config', (_req, res) => res.json({ generationMode: generationMode(), model: generationMode() === 'ollama' ? ollamaModel() : null }));
+app.get('/api/config', (_req, res) => res.json({ generationMode: generationMode(), model: ollamaModel(), availableProviders: { gemini: Boolean(process.env.GEMINI_API_KEY), ollama: true, local: true } }));
 app.get('/api/ai/status', wrap(async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
-  const status = generationMode() === 'ollama'
+  let provider;
+  try { provider = requestedProvider(req.query.provider); } catch (error) { return res.status(error.status || 400).json({ error: error.message }); }
+  const status = provider === 'ollama'
     ? await ollamaStatus()
-    : { connected: null, model: null, installed: null, active: 0, queued: 0 };
+    : { connected: null, model: provider === 'gemini' ? (process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite') : null, installed: provider === 'gemini' ? true : null, active: 0, queued: 0 };
   res.json({
     ...status,
-    generating: activeFighterJob || Boolean(status.active),
-    waiting: Math.max(fighterJobQueue.length, Number(status.queued) || 0),
+    provider,
+    generating: activeFighterProvider === provider || (provider === 'ollama' && Boolean(status.active)),
+    waiting: Math.max(fighterJobQueue.filter(entry => entry.provider === provider).length, provider === 'ollama' ? Number(status.queued) || 0 : 0),
     checkedAt: Date.now()
   });
 }));
@@ -227,6 +239,8 @@ app.get('/api/me', wrap(async (req, res) => {
 app.post('/api/fighters', wrap(async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
+  let provider;
+  try { provider = requestedProvider(req.body?.provider); } catch (error) { return res.status(error.status || 400).json({ error: error.message }); }
   if (!limit(creations, user.id, 120, 60 * 60 * 1000)) return res.status(429).json({ error: '生成上限は1時間に120体です。' });
   const name = String(req.body?.name || '').trim();
   if (name.length < 1 || name.length > 24 || /[\u0000-\u001f]/.test(name)) {
@@ -241,7 +255,7 @@ app.post('/api/fighters', wrap(async (req, res) => {
       ...(fighter.definition?.skills || []).map((skill) => skill.name),
       fighter.definition?.passive?.name
     ]).filter(Boolean);
-    generated = await generateFighter(art, name, existingNames);
+    generated = await generateFighter(art, name, existingNames, provider);
   }
   catch (error) { return res.status(502).json({ error: error.message.slice(0, 180) }); }
   const fighter = await store.saveFighter(user.id, name, art, generated.definition, generated.mode);
@@ -251,6 +265,8 @@ app.post('/api/fighters', wrap(async (req, res) => {
 app.post('/api/fighters/generate', wrap(async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
+  let provider;
+  try { provider = requestedProvider(req.body?.provider); } catch (error) { return res.status(error.status || 400).json({ error: error.message }); }
   const name = String(req.body?.name || '').trim();
   if (name.length < 1 || name.length > 24 || /[\u0000-\u001f]/.test(name)) {
     return res.status(400).json({ error: '名前は1～24文字にしてください。' });
@@ -262,18 +278,18 @@ app.post('/api/fighters/generate', wrap(async (req, res) => {
   const existingJob = [...fighterJobs.entries()].find(([, job]) =>
     job.userId === user.id && job.fingerprint === fingerprint &&
     (job.state === 'queued' || job.state === 'running' ||
-      (job.state === 'done' && Date.now() - job.completedAt < 10_000)));
+      (job.state === 'done' && job.provider === provider && Date.now() - job.completedAt < 10_000)));
   if (existingJob) return res.status(202).json({ jobId: existingJob[0], reused: true });
   if (pendingFighterJobs >= MAX_PENDING_FIGHTER_JOBS || fighterJobs.size >= 128) {
     return res.status(429).json({ error: '生成待ちが満杯です。少し待って再試行してください。' });
   }
   if (!limit(creations, user.id, 120, 60 * 60 * 1000)) return res.status(429).json({ error: '生成上限は1時間に120体です。' });
   const jobId = randomBytes(32).toString('hex');
-  const job = { userId: user.id, fingerprint, name, state: 'queued', createdAt: Date.now() };
+  const job = { userId: user.id, fingerprint, name, provider, state: 'queued', createdAt: Date.now() };
   fighterJobs.set(jobId, job);
   pendingFighterJobs++;
   res.status(202).json({ jobId });
-  fighterJobQueue.push({ job, userId: user.id, name, art });
+  fighterJobQueue.push({ job, userId: user.id, name, art, provider });
   runNextFighterJob();
 }));
 
@@ -296,7 +312,7 @@ app.get('/api/fighters/jobs', wrap(async (req, res) => {
   pruneFighterJobs();
   const jobs = [...fighterJobs.entries()]
     .filter(([, job]) => job.userId === user.id && (job.state === 'queued' || job.state === 'running'))
-    .map(([jobId, job]) => ({ jobId, name: job.name, status: job.state }));
+    .map(([jobId, job]) => ({ jobId, name: job.name, provider: job.provider, status: job.state }));
   res.json({ jobs });
 }));
 

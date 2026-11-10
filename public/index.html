@@ -99,6 +99,11 @@
 ( o.o )
  &gt; ^ &lt;</textarea>
               <div id="art-hint" class="fineprint">最大20行・1行52文字。半角スペースと「\」はそのまま保持されます。</div>
+              <div class="provider-switch" role="group" aria-label="AI生成方式">
+                <span>生成AI</span>
+                <button id="provider-gemini" type="button" class="secondary-button" aria-pressed="false">Gemini API</button>
+                <button id="provider-ollama" type="button" class="secondary-button" aria-pressed="false">Ollama</button>
+              </div>
               <button id="generate-button" type="submit" class="primary-button">&gt;&gt; GENERATE FIGHTER</button>
               <div class="ai-monitor" aria-label="AIの稼働状況">
                 <div class="ai-monitor-heading"><span>AI STATUS</span><button id="ai-status-refresh" type="button" class="secondary-button">更新</button></div>
