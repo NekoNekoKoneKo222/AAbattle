@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { characterRoad, loadoutOptions, masteryLevel, masteryRewards, missionDefs, nextRoadTier, rewardConfig, validLoadout } from '../shift-arena/packages/shared/dist/index.js';
+import { characterRoad, loadoutOptions, masteryLevel, masteryRewards, missionDefs, nextRoadTier, rewardConfig, validLoadout, validatePlayerModel } from '../shift-arena/packages/shared/dist/index.js';
 
 const utcDay = () => new Date().toISOString().slice(0, 10);
 const clone = (value) => structuredClone(value);
@@ -11,11 +11,30 @@ function mastery(profile, id) { return profile.mastery[id] ||= { xp: 0, stats: {
 function publicProfile(profile) { today(profile); return { ...clone(profile), road_tier: nextRoadTier(profile.owned_characters), mastery_levels: Object.fromEntries(Object.entries(profile.mastery).map(([id, value]) => [id, masteryLevel(value.xp)])), server_day: utcDay() }; }
 
 export class ShiftStore {
-  constructor(pool = null) { this.pool = pool; this.memory = new Map(); this.rewards = new Set(); this.locks = new Map(); this.requests = new Map(); this.friends = new Set(); this.blocks = new Set(); }
+  constructor(pool = null) { this.pool = pool; this.memory = new Map(); this.models = new Map(); this.rewards = new Set(); this.locks = new Map(); this.requests = new Map(); this.friends = new Set(); this.blocks = new Set(); }
   async init() {
     if (!this.pool) return;
-    const { rows } = await this.pool.query("SELECT to_regclass('public.shift_profiles') AS profiles, to_regclass('public.shift_reward_transactions') AS rewards, to_regclass('public.shift_friend_requests') AS requests, to_regclass('public.shift_friendships') AS friends, to_regclass('public.shift_blocks') AS blocks");
-    if (Object.values(rows[0] || {}).some(v => !v)) throw new Error('SHIFT ARENA schema missing. Apply migrations/005_shift_arena.sql first.');
+    const { rows } = await this.pool.query("SELECT to_regclass('public.shift_profiles') AS profiles, to_regclass('public.shift_reward_transactions') AS rewards, to_regclass('public.shift_friend_requests') AS requests, to_regclass('public.shift_friendships') AS friends, to_regclass('public.shift_blocks') AS blocks, to_regclass('public.shift_models') AS models");
+    if (Object.values(rows[0] || {}).some(v => !v)) throw new Error('SHIFT ARENA schema missing. Apply migrations/005_shift_arena.sql and 006_shift_models.sql first.');
+  }
+  async getModel(userId) {
+    if (!this.pool) return this.models.get(userId) || null;
+    const { rows } = await this.pool.query('SELECT model_doc FROM shift_models WHERE user_id=$1', [userId]);
+    return rows[0]?.model_doc || null;
+  }
+  async saveModel(user, input) {
+    if (!user?.id) throw fail('ログインが必要です。', 401);
+    const model = validatePlayerModel(input);
+    if (Buffer.byteLength(JSON.stringify(model)) > 30000) throw fail('モデルが大きすぎます。');
+    if (!this.pool) this.models.set(user.id, model);
+    else await this.pool.query('INSERT INTO shift_models(user_id,model_doc) VALUES($1,$2) ON CONFLICT(user_id) DO UPDATE SET model_doc=EXCLUDED.model_doc,updated_at=now()', [user.id, JSON.stringify(model)]);
+    return model;
+  }
+  async clearModel(user) {
+    if (!user?.id) throw fail('ログインが必要です。', 401);
+    if (!this.pool) this.models.delete(user.id);
+    else await this.pool.query('DELETE FROM shift_models WHERE user_id=$1', [user.id]);
+    return { ok: true };
   }
   async withProfile(user, change = () => {}) {
     if (!user?.id) throw fail('ログインが必要です。', 401);

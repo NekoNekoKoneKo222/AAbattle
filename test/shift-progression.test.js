@@ -3,8 +3,19 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { ShiftStore } from '../src/shift-store.js';
 import { ShiftPartyManager } from '../src/shift-party.js';
+import { defaultPlayerModel } from '../shift-arena/packages/shared/dist/index.js';
 
 const user = (name) => ({ id: randomUUID(), username: name });
+test('custom model is stored per account and validated on the server', async () => {
+  const store = new ShiftStore(), alice = user('Alice'), bob = user('Bob');
+  const model = defaultPlayerModel();
+  await store.saveModel(alice, model);
+  assert.equal((await store.getModel(alice.id)).bones[0].name, 'body');
+  assert.equal(await store.getModel(bob.id), null);
+  await assert.rejects(store.saveModel(alice, { ...model, bones: [] }), /骨/);
+  await store.clearModel(alice);
+  assert.equal(await store.getModel(alice.id), null);
+});
 test('character road unlock is serialized, keeps surplus, and rejects unowned selection', async () => {
   const store = new ShiftStore(), alice = user('Alice');
   assert.deepEqual((await store.getProfile(alice)).owned_characters, ['rei']);

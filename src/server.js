@@ -52,7 +52,7 @@ app.use((req, res, next) => {
   });
   next();
 });
-app.use(express.json({ limit: '12kb', type: 'application/json' }));
+app.use(express.json({ limit: '32kb', type: 'application/json' }));
 
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 function cookieToken(req) {
@@ -146,6 +146,10 @@ function credentials(body) {
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 app.get('/api/shift/profile', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.getProfile(user)); }));
+app.get('/api/shift/model/me', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json({ model: await shiftStore.getModel(user.id) }); }));
+app.post('/api/shift/model', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json({ model: await shiftStore.saveModel(user, req.body?.model) }); }));
+app.post('/api/shift/model/clear', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.clearModel(user)); }));
+app.get('/api/shift/model/:userId', shiftWrap(async (req, res) => { if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.userId)) return res.status(400).json({ error: 'IDが無効です。' }); res.json({ model: await shiftStore.getModel(req.params.userId) }); }));
 app.post('/api/shift/presence', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) { shiftParties.heartbeat(user.id); res.json({ ok: true }); } }));
 app.post('/api/shift/selected', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.setSelected(user, req.body?.character)); }));
 app.post('/api/shift/road/target', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.setTarget(user, req.body?.character)); }));
@@ -450,6 +454,7 @@ app.post('/api/pve/battle', wrap(async (req, res) => {
 }));
 
 app.get('/sam', (_req, res) => res.sendFile(path.join(staticRoot, 'sam', 'index.html')));
+app.get('/model', (_req, res) => res.sendFile(path.join(staticRoot, 'sam', 'index.html')));
 app.use(express.static(staticRoot, { index: 'index.html', maxAge: 60000 }));
 app.use((err, _req, res, _next) => {
   res.status(err.status || 400).json({ error: 'リクエストを処理できませんでした。' });
