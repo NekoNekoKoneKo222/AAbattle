@@ -470,6 +470,7 @@ app.post('/api/pve/battle', wrap(async (req, res) => {
 }));
 
 app.get('/sam', (_req, res) => res.sendFile(path.join(staticRoot, 'sam', 'index.html')));
+app.get('/abn', (_req, res) => res.sendFile(path.join(staticRoot, 'abn', 'index.html')));
 app.get('/model', (_req, res) => res.sendFile(path.join(staticRoot, 'sam', 'index.html')));
 app.use(express.static(staticRoot, { index: 'index.html', maxAge: 60000 }));
 app.use((err, _req, res, _next) => {
