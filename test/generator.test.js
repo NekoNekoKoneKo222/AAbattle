@@ -80,6 +80,7 @@ test('Gemini API invents unique skills, effects and passives from the AA', async
   };
   globalThis.fetch = async (url, init) => {
     requests.push({ url, init });
+    if (requests.length < 3) return { status: 503, headers: { get: () => '0.001' } };
     return { ok: true, status: 200, json: async () => ({ candidates: [{ content: { parts: [{ text: JSON.stringify(draft) }] } }] }) };
   };
   try {
@@ -91,10 +92,10 @@ test('Gemini API invents unique skills, effects and passives from the AA', async
     assert.equal(result.definition.skills[0].name, '三日月の爪跡');
     assert.deepEqual(result.definition.skills[0].effects.map((effect) => effect.type), ['damage', 'burn']);
     assert.deepEqual(result.definition.skills[2].effects.map((effect) => effect.type), ['boost', 'heal']);
-    assert.equal(requests.length, 1);
-    assert.match(requests[0].url, /models\/gemini-3\.5-flash-lite:generateContent/);
-    assert.equal(requests[0].init.headers['x-goog-api-key'], 'mock-gemini-api-key');
-    const body = JSON.parse(requests[0].init.body);
+    assert.equal(requests.length, 3);
+    assert.match(requests[2].url, /models\/gemini-3\.5-flash-lite:generateContent/);
+    assert.equal(requests[2].init.headers['x-goog-api-key'], 'mock-gemini-api-key');
+    const body = JSON.parse(requests[2].init.body);
     assert.match(body.contents[0].parts[0].text, /ねこパンチ/);
     assert.match(body.contents[0].parts[0].text, /\/\\_\/\\/);
     assert.equal(body.generationConfig.responseMimeType, 'application/json');
@@ -135,6 +136,38 @@ test('Gemini regenerates a duplicate ability instead of storing it', async () =>
     assert.equal(result.definition.skills[0].name, '新しい技');
     assert.equal(result.definition.skills[1].name, '無敵の羽');
     assert.equal(calls, 2);
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousKey === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = previousKey;
+  }
+});
+
+test('Gemini 503 stops after three attempts with a clear recovery message', async () => {
+  const previousKey = process.env.GEMINI_API_KEY;
+  const previousFetch = globalThis.fetch;
+  process.env.GEMINI_API_KEY = 'mock-gemini-api-key';
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; return { status: 503, headers: { get: () => '0.001' } }; };
+  try {
+    await assert.rejects(generateFighter('(@_@)', '羽', [], 'gemini'), /HTTP 503、3回試行/);
+    assert.equal(calls, 3);
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousKey === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = previousKey;
+  }
+});
+
+test('Gemini quota error is not retried', async () => {
+  const previousKey = process.env.GEMINI_API_KEY;
+  const previousFetch = globalThis.fetch;
+  process.env.GEMINI_API_KEY = 'mock-gemini-api-key';
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; return { status: 429, ok: false }; };
+  try {
+    await assert.rejects(generateFighter('(@_@)', '羽', [], 'gemini'), /利用上限/);
+    assert.equal(calls, 1);
   } finally {
     globalThis.fetch = previousFetch;
     if (previousKey === undefined) delete process.env.GEMINI_API_KEY;
