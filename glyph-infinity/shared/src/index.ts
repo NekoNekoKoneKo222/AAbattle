@@ -2,9 +2,10 @@ export const TILE = 32;
 export const WORLD = 80;
 export type Vec = { x: number; y: number };
 export type Input = { x: number; y: number; aimX: number; aimY: number; attack: boolean; dash: boolean };
-export type Actor = { id: string; name: string; x: number; y: number; hp: number; maxHp: number; glyph: string; kind?: string; facingX?: number; facingY?: number };
-export type Effect = { id: number; x: number; y: number; text: string; color: string; born: number };
-export type Snapshot = { type: 'state'; you: string; players: Actor[]; enemies: Actor[]; effects: Effect[]; xp: number; level: number; coins: number; zone: string; time: number };
+export type Actor = { id: string; name: string; x: number; y: number; hp: number; maxHp: number; glyph: string; kind?: string; facingX?: number; facingY?: number; windupUntil?: number; staggerUntil?: number };
+export type Effect = { id: number; x: number; y: number; text: string; color: string; born: number; kind?: 'slash' | 'hit' | 'trail'; dx?: number; dy?: number };
+export type Projectile = { id: number; x: number; y: number; glyph: string; color: string };
+export type Snapshot = { type: 'state'; you: string; players: Actor[]; enemies: Actor[]; projectiles: Projectile[]; effects: Effect[]; xp: number; level: number; coins: number; zone: string; time: number; rollUntil: number; rollX: number; rollY: number; rollReadyAt: number; swingAt: number; combo: number };
 
 type AuthoredMap = { originX: number; originY: number; rows: string[][] };
 let authoredMap: AuthoredMap | null = null;

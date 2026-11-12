@@ -8,6 +8,7 @@
 - iPad touch: left virtual stick to move, right buttons to attack and dash. Attacks face the travel direction. Tap the minimap or header map button to open the world map.
 - Leave the city through the gate and enter the forest. Enemies respawn; defeating them grants XP and coins. Defeat returns the player to the city.
 - Position, HP, level, XP and coins save on disconnect and every 15 seconds.
+- Combat uses a three-hit melee combo, nearby auto-targeting for keyboard/touch players, a short invulnerable dodge, enemy attack warnings and moving ranged projectiles. The client interpolates server snapshots and caches nearby terrain tiles to keep motion smooth while the server still decides hits and movement.
 
 ## Edit the world
 

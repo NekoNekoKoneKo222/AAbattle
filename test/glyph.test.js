@@ -46,8 +46,85 @@ test('server owns movement and saves profile when disconnected',async()=>{
     await new Promise(resolve=>setTimeout(resolve,260));
     const moved=await new Promise(resolve=>ws.once('message',m=>resolve(JSON.parse(m.toString()))));
     assert.ok(moved.players[0].x>16 && moved.players[0].x<100,`x=${moved.players[0].x}`);
+    const dashStates=[];const onDash=m=>dashStates.push(JSON.parse(m.toString()));ws.on('message',onDash);
+    ws.send(JSON.stringify({type:'input',x:1,y:0,aimX:0,aimY:0,attack:false,dash:true}));
+    await new Promise(resolve=>setTimeout(resolve,260));ws.off('message',onDash);
+    assert.ok(dashStates.some(s=>s.rollUntil>s.time),'dash should last beyond a single tick');
+    assert.ok(dashStates.some(s=>s.effects.some(e=>e.kind==='trail')),'dash should leave a visible trail');
     ws.close();await once(ws,'close');
-    let saved=await store.load(user);for(let n=0;n<20&&saved.x===16;n++){await new Promise(resolve=>setTimeout(resolve,10));saved=await store.load(user);}assert.ok(saved.x>16 && saved.x<150,`saved x=${saved.x}`);
+    let saved=await store.load(user);for(let n=0;n<20&&saved.x===16;n++){await new Promise(resolve=>setTimeout(resolve,10));saved=await store.load(user);}assert.ok(saved.x>16 && saved.x<250,`saved x=${saved.x}`);
+  } finally {
+    if(ws.readyState!==WebSocket.CLOSED)ws.terminate();
+    await game.shutdown();await new Promise(resolve=>httpServer.close(resolve));
+  }
+});
+
+test('keyboard melee auto-targets a nearby enemy without a mouse',async()=>{
+  const user={id:'melee-player',username:'Melee'};
+  let profile={x:16,y:16,hp:100,xp:0,level:1,coins:0};
+  const httpServer=http.createServer();
+  const game=attachGlyphInfinity(async()=>({...profile}),async(_user,value)=>{profile={...value};});
+  httpServer.on('upgrade',(req,socket,head)=>void game.upgrade(req,socket,head,user));
+  httpServer.listen(0,'127.0.0.1');await once(httpServer,'listening');
+  const url=`ws://127.0.0.1:${httpServer.address().port}`;
+  let ws=new WebSocket(url),timer;
+  try {
+    await once(ws,'open');
+    const initial=await new Promise(resolve=>ws.once('message',m=>resolve(JSON.parse(m.toString()))));
+    const target=initial.enemies.find(e=>e.id==='e0');
+    assert.ok(target);
+    ws.close();await once(ws,'close');
+    await new Promise(resolve=>setTimeout(resolve,30));
+    let near=null;
+    for(const radius of [38,48,60,70])for(let a=0;a<8;a++){
+      const x=target.x+Math.cos(a*Math.PI/4)*radius,y=target.y+Math.sin(a*Math.PI/4)*radius;
+      if(canStand(x,y)&&!near)near={x,y};
+    }
+    assert.ok(near,'an accessible melee position should exist');
+    profile={...profile,...near,hp:100};
+    ws=new WebSocket(url);await once(ws,'open');
+    const states=[];ws.on('message',m=>states.push(JSON.parse(m.toString())));
+    const attack=()=>ws.send(JSON.stringify({type:'input',x:0,y:0,aimX:0,aimY:0,attack:true,dash:false}));
+    attack();timer=setInterval(attack,50);
+    await new Promise(resolve=>setTimeout(resolve,800));
+    assert.ok(states.some(s=>s.effects.some(e=>e.kind==='slash')),'swing should have a visible effect');
+    assert.ok(states.some(s=>s.enemies.find(e=>e.id==='e0')?.hp<target.hp),`melee attack should damage e0: target=${JSON.stringify(target)}, near=${JSON.stringify(near)}, states=${JSON.stringify(states.map(s=>({x:s.players[0].x,y:s.players[0].y,hp:s.enemies.find(e=>e.id==='e0')?.hp,slash:s.effects.some(e=>e.kind==='slash')})).slice(0,8))}`);
+  } finally {
+    clearInterval(timer);
+    if(ws.readyState!==WebSocket.CLOSED)ws.terminate();
+    await game.shutdown();await new Promise(resolve=>httpServer.close(resolve));
+  }
+});
+
+test('ranged enemy warns before firing a dodgeable projectile',async()=>{
+  const user={id:'ranged-player',username:'Ranged'};
+  let profile={x:16,y:16,hp:100,xp:0,level:1,coins:0};
+  const httpServer=http.createServer();
+  const game=attachGlyphInfinity(async()=>({...profile}),async(_user,value)=>{profile={...value};});
+  httpServer.on('upgrade',(req,socket,head)=>void game.upgrade(req,socket,head,user));
+  httpServer.listen(0,'127.0.0.1');await once(httpServer,'listening');
+  const url=`ws://127.0.0.1:${httpServer.address().port}`;
+  let ws=new WebSocket(url);
+  try {
+    await once(ws,'open');
+    const initial=await new Promise(resolve=>ws.once('message',m=>resolve(JSON.parse(m.toString()))));
+    const target=initial.enemies.find(e=>e.id==='e1');assert.ok(target);
+    ws.close();await once(ws,'close');await new Promise(resolve=>setTimeout(resolve,30));
+    let near=null;
+    for(const radius of [36,48,64,80,100,120,140])for(let a=0;a<16;a++){
+      const x=target.x+Math.cos(a*Math.PI/8)*radius,y=target.y+Math.sin(a*Math.PI/8)*radius;
+      if(!canStand(x,y))continue;
+      let clear=true;
+      for(let t=0;t<=1;t+=.1)if(!canStand(target.x+(x-target.x)*t,target.y+(y-target.y)*t))clear=false;
+      if(clear&&!near)near={x,y};
+    }
+    assert.ok(near,'a clear ranged lane should exist');
+    profile={...profile,...near,hp:100};
+    ws=new WebSocket(url);await once(ws,'open');
+    const states=[];ws.on('message',m=>states.push(JSON.parse(m.toString())));
+    await new Promise(resolve=>setTimeout(resolve,1300));
+    assert.ok(states.some(s=>(s.enemies.find(e=>e.id==='e1')?.windupUntil??0)>s.time),'warning should precede the shot');
+    assert.ok(states.some(s=>s.projectiles.length>0),'the enemy should fire a moving projectile');
   } finally {
     if(ws.readyState!==WebSocket.CLOSED)ws.terminate();
     await game.shutdown();await new Promise(resolve=>httpServer.close(resolve));
