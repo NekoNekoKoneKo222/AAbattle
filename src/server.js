@@ -15,11 +15,14 @@ import { TournamentManager } from './tournaments.js';
 import { TitleManager, battleProgress } from './titles.js';
 import { listPveEnemies, PVE_DIFFICULTIES, runPveBattle } from './pve.js';
 import { attachShiftArena } from '../shift-arena/apps/server/dist/index.js';
+import { attachGlyphInfinity } from '../glyph-infinity/server/dist/index.js';
+import { GlyphStore } from './glyph-store.js';
 
 const store = createStore();
 const tournaments = new TournamentManager(store);
 const titles = new TitleManager(store);
 const shiftStore = new ShiftStore(store.pool || null);
+const glyphStore = new GlyphStore(store.pool || null);
 const shiftParties = new ShiftPartyManager();
 const app = express();
 const server = http.createServer(app);
@@ -28,6 +31,7 @@ const shiftArena = attachShiftArena(server, async (cookie) => {
   const user = await currentUser({ headers: { cookie } });
   return user ? { id: user.id, username: user.username } : null;
 }, { profile: (user) => shiftStore.getProfile(user), award: (user, result) => shiftStore.awardMatch(user, result), presence: (id, event) => { if (event === 'connect') shiftParties.connect(id); else if (event === 'disconnect') shiftParties.disconnect(id); else shiftParties.setPlaying(id, event === 'playing'); }, sameParty: (a, b) => shiftParties.sameParty(a, b) });
+const glyphInfinity = attachGlyphInfinity((user) => glyphStore.load(user), (user, profile) => glyphStore.save(user, profile));
 const queued = new Map();
 const playing = new Set();
 const trading = new Set();
@@ -519,6 +523,7 @@ app.post('/api/pve/battle', wrap(async (req, res) => {
 }));
 
 app.get('/sam', (_req, res) => res.sendFile(path.join(staticRoot, 'sam', 'index.html')));
+app.get(['/GF', '/GF/'], (_req, res) => res.sendFile(path.join(staticRoot, 'GF', 'index.html')));
 app.get('/abn', (_req, res) => res.sendFile(path.join(staticRoot, 'abn', 'index.html')));
 app.get('/model', (_req, res) => res.sendFile(path.join(staticRoot, 'sam', 'index.html')));
 app.use(express.static(staticRoot, { index: 'index.html', maxAge: 60000 }));
@@ -631,12 +636,13 @@ server.on('upgrade', async (req, socket, head) => {
   try {
     const origin = req.headers.origin;
     const expectedHost = req.headers['x-forwarded-host'] || req.headers.host;
-    if (!origin || new URL(origin).host !== expectedHost || (req.url !== '/ws' && !req.url?.startsWith('/sam/colyseus/'))) {
+    if (!origin || new URL(origin).host !== expectedHost || (req.url !== '/ws' && req.url !== '/GF/ws' && !req.url?.startsWith('/sam/colyseus/'))) {
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); socket.destroy(); return;
     }
     if (req.url.startsWith('/sam/colyseus/')) return shiftArena.upgrade(req, socket, head);
     const user = await currentUser(req);
     if (!user) { socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n'); socket.destroy(); return; }
+    if (req.url === '/GF/ws') return glyphInfinity.upgrade(req, socket, head, { id: user.id, username: user.username });
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req, user));
   } catch (_) { socket.destroy(); }
 });
@@ -650,6 +656,7 @@ console.log(`AABattle and SHIFT ARENA listening on ${port}; generation: ${genera
 async function shutdown() {
   wss.clients.forEach((c) => c.close());
   await shiftArena.shutdown();
+  await glyphInfinity.shutdown();
   await store.close();
   process.exit(0);
 }

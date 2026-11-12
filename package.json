@@ -6,7 +6,8 @@
   "type": "module",
   "workspaces": [
     "shift-arena/apps/*",
-    "shift-arena/packages/*"
+    "shift-arena/packages/*",
+    "glyph-infinity/*"
   ],
   "scripts": {
     "start": "node src/server.js",
@@ -15,7 +16,8 @@
     "dev": "node --watch src/server.js",
     "test": "node --test test/*.test.js",
     "pretest": "npm run build:shift",
-    "build:shift": "npm run build --workspace @shift/shared && npm run build --workspace @shift/client && npm run build --workspace @shift/server",
+    "build:shift": "npm run build --workspace @shift/shared && npm run build --workspace @shift/client && npm run build --workspace @shift/server && npm run build:glyph",
+    "build:glyph": "npm run build --workspace @glyph/shared && npm run build --workspace @glyph/client && npm run build --workspace @glyph/server",
     "test:shift": "npm run test --workspace @shift/shared"
   },
   "engines": {
