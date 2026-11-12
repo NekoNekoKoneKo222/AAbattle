@@ -200,7 +200,15 @@ Tunnel・Access・ゲートウェイの動作確認後にRenderで **Save, rebui
 4. Cloudflare Accessでその `workers.dev` ホスト名のSelf-hosted applicationを作り、Render専用Service Tokenだけを許可するService Authポリシーを設定します。[WorkersへのAccess設定手順](https://developers.cloudflare.com/workers/configuration/cloudflare-access/)を参照してください。
 5. Renderの `OLLAMA_GATEWAY_URL` にその固定 `https://...workers.dev` URLを設定します。他の環境変数と検証手順は上記と同じです。Access保護前にWorkerのURLを本番の接続先へ設定しないでください。
 
-Renderからは固定HTTPSホストの `POST /v1/skills/generate` と `GET /v1/skills/jobs/<ID>`、`GET /v1/status` だけを使います。Cloudflare経路ではAccessの2ヘッダーとBearerトークンを、Tailscale経路ではBearerトークンを送信します。ブラウザーからの生成要求はすぐにジョブ番号を返し、最大4件を順番に処理します。前のキャラクターを生成中でも次のキャラクターを送信できます。生成結果は画面がポーリングして取得します。1アカウントとPCゲートウェイの上限はそれぞれ1時間120件です。ゲートウェイは認証、6KBの入力制限、同時実行1件、待ち行列最大4件、生成タイムアウト、24KBの出力制限を実装しています。秘密情報やAAをログに出しません。
+Renderからは固定HTTPSホストの `POST /v1/skills/generate` と `GET /v1/skills/jobs/<ID>`、`GET /v1/status` だけを使います。Cloudflare経路ではAccessの2ヘッダーとBearerトークンを、Tailscale経路ではBearerトークンを送信します。ブラウザーからの生成要求はすぐにジョブ番号を返し、最大4件を順番に処理します。前のキャラクターを生成中でも次のキャラクターを送信できます。生成結果は画面がポーリングして取得します。1アカウントとPCゲートウェイの上限はそれぞれ1時間120件です。ゲートウェイは認証、12KBの入力制限、同時実行1件、待ち行列最大4件、生成タイムアウト、24KBの出力制限を実装しています。秘密情報やAAをログに出しません。
 
 認証なしのアクセスと誤ったBearerトークンが拒否されることを確認してから、公開ゲームでログインし、AA生成とPvE/PvPでの使用を試します。PCやTunnelが停止した場合、生成はエラーになりますが、ログイン、既存キャラ、対戦、トレード、Neon保存は動作し続けます。Cloudflareの設定値はまだリポジトリには含まれません。
+
+## 戦闘拡張・覚醒・大会・称号
+
+作成時の「覚醒後AA」は任意です。入力すると通常形態の生成時に覚醒名・条件・専用技も決まります。Gemini / Ollama は未入力時にも覚醒後AAを提案できます。覚醒の有無と詳細は戦闘で目撃するまで図鑑とAPIから隠され、目撃後はアカウントごとに記録されます。古いキャラクターのJSONはそのまま使えます。
+
+状態異常・反撃は `src/status-effects.js`、性格によるスキル選択は `src/tactics.js`、覚醒は `src/awakening.js` に分かれています。大会は8・16・32人のシングルエリミネーションで、参加時と開始時にAAの所有者を検証し、開始時の能力を保存します。大会の途中でサーバーが止まっても、次の大会詳細取得時に未処理ラウンドを再開します。称号は戦績からサーバーが解放を判定し、能力値への加算はありません。
+
+`migrations/007_battle_expansion.sql` は `fighter_awakening_seen`、`tournaments`、`tournament_rewards`、`user_achievement_progress`、`user_titles` を追加します。既存テーブルを削除・変更しません。**本番のNeonへ007を適用してから新コードをRenderへ公開**してください。逆の順序では新しいAPIがテーブル不足で失敗します。移行前に一時Neonブランチへ適用し、既存のユーザー・AA・戦績件数を比較してください。新しい秘密環境変数は不要です。
 

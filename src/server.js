@@ -10,10 +10,15 @@ import { ShiftStore } from './shift-store.js';
 import { ShiftPartyManager } from './shift-party.js';
 import { validateArt, generateFighter, generationMode, ollamaStatus, ollamaModel } from './generator.js';
 import { createBattle, stepBattle } from './battle.js';
+import { hideAwakening } from './awakening.js';
+import { TournamentManager } from './tournaments.js';
+import { TitleManager, battleProgress } from './titles.js';
 import { listPveEnemies, PVE_DIFFICULTIES, runPveBattle } from './pve.js';
 import { attachShiftArena } from '../shift-arena/apps/server/dist/index.js';
 
 const store = createStore();
+const tournaments = new TournamentManager(store);
+const titles = new TitleManager(store);
 const shiftStore = new ShiftStore(store.pool || null);
 const shiftParties = new ShiftPartyManager();
 const app = express();
@@ -75,6 +80,14 @@ async function issueSession(res, user) {
 function publicUser(user) {
   return { id: user.id, username: user.username, wins: user.wins, losses: user.losses };
 }
+async function visibleFighter(userId, fighter) {
+  if (!fighter) return fighter;
+  return { ...fighter, definition: hideAwakening(fighter.definition, await store.hasSeenAwakening(userId, fighter.id)) };
+}
+async function visibleTrade(userId, trade) {
+  return { ...trade, offered_fighter: await visibleFighter(userId, trade.offered_fighter),
+    requested_fighter: await visibleFighter(userId, trade.requested_fighter) };
+}
 function limit(map, key, max, duration) {
   const now = Date.now();
   const arr = (map.get(key) || []).filter((time) => time > now - duration);
@@ -99,7 +112,7 @@ function pruneFighterJobs() {
 }
 function runNextFighterJob() {
   if (activeFighterJob || !fighterJobQueue.length) return;
-  const { job, userId, name, art, provider } = fighterJobQueue.shift();
+  const { job, userId, name, art, provider, awakeningArt } = fighterJobQueue.shift();
   activeFighterJob = true;
   activeFighterProvider = provider;
   job.state = 'running';
@@ -110,7 +123,7 @@ function runNextFighterJob() {
         ...(fighter.definition?.skills || []).map((skill) => skill.name),
         fighter.definition?.passive?.name
       ]).filter(Boolean);
-      const generated = await generateFighter(art, name, existingNames, provider);
+      const generated = await generateFighter(art, name, existingNames, provider, awakeningArt);
       job.fighter = await store.saveFighter(userId, name, art, generated.definition, generated.mode);
       job.generationMs = generated.generationMs;
       job.state = 'done';
@@ -232,8 +245,35 @@ app.post('/api/logout', wrap(async (req, res) => {
 
 app.get('/api/me', wrap(async (req, res) => {
   const user = await currentUser(req);
-  res.json({ user: user ? publicUser(user) : null });
+  if (!user) return res.json({ user: null });
+  const titleState = await titles.get(user.id);
+  res.json({ user: { ...publicUser(user), equippedTitle: titleState.definitions.find(t => t.id === titleState.equipped_title)?.name || null } });
 }));
+app.get('/api/titles', shiftWrap(async (req,res) => { const user = await requireUser(req,res); if (user) res.json(await titles.get(user.id)); }));
+app.post('/api/titles/equip', shiftWrap(async (req,res) => { const user = await requireUser(req,res); if (user) res.json(await titles.equip(user.id,req.body?.titleId ?? null)); }));
+app.get('/api/tournaments', shiftWrap(async (req,res) => { const user = await requireUser(req,res); if (user) res.json({ tournaments:await tournaments.list() }); }));
+app.post('/api/tournaments', shiftWrap(async (req,res) => { const user = await requireUser(req,res); if (!user) return;
+  if ((await tournaments.list()).filter(t => t.creatorId === user.id && t.status === 'open').length >= 2) return res.status(429).json({error:'募集中の大会は同時に2件までです。'});
+  res.status(201).json({ tournament:await tournaments.create(user,req.body?.name,Number(req.body?.size)) });
+}));
+app.get('/api/tournaments/:id', shiftWrap(async (req,res) => {
+  const user = await requireUser(req,res); if (!user) return;
+  if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(req.params.id)) return res.status(400).json({error:'大会IDが不正です。'});
+  const tournament = await tournaments.resume(req.params.id);
+  if (!tournament) return res.status(404).json({ error:'大会が見つかりません。' });
+  if (tournament.status === 'complete') await titles.awardTournament(tournament.id,tournament.championId);
+  res.json({ tournament });
+}));
+app.post('/api/tournaments/:id/join', shiftWrap(async (req,res) => {
+  const user = await requireUser(req,res); if (!user) return;
+  if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(req.params.id) || !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(String(req.body?.fighterId || ''))) return res.status(400).json({error:'大会IDとAAを確認してください。'});
+  let tournament = await tournaments.join(req.params.id,user,String(req.body?.fighterId || ''));
+  if (tournament.status === 'running') tournament = await tournaments.resume(tournament.id);
+  if (tournament.status === 'complete') await titles.awardTournament(tournament.id,tournament.championId);
+  res.json({ tournament });
+}));
+app.post('/api/tournaments/:id/withdraw', shiftWrap(async (req,res) => { const user=await requireUser(req,res); if(!user)return; if(!/^[0-9a-f-]{36}$/i.test(req.params.id))return res.status(400).json({error:'大会IDが不正です。'}); res.json({ tournament:await tournaments.withdraw(req.params.id,user.id) }); }));
+app.post('/api/tournaments/:id/cancel', shiftWrap(async (req,res) => { const user=await requireUser(req,res); if(!user)return; if(!/^[0-9a-f-]{36}$/i.test(req.params.id))return res.status(400).json({error:'大会IDが不正です。'}); res.json({ tournament:await tournaments.cancel(req.params.id,user.id) }); }));
 
 app.post('/api/fighters', wrap(async (req, res) => {
   const user = await requireUser(req, res);
@@ -245,8 +285,9 @@ app.post('/api/fighters', wrap(async (req, res) => {
   if (name.length < 1 || name.length > 24 || /[\u0000-\u001f]/.test(name)) {
     return res.status(400).json({ error: '名前は1～24文字にしてください。' });
   }
-  let art;
+  let art, awakeningArt;
   try { art = validateArt(req.body?.art); } catch (error) { return res.status(400).json({ error: error.message }); }
+  try { awakeningArt = req.body?.awakeningArt ? validateArt(req.body.awakeningArt) : ''; } catch (error) { return res.status(400).json({ error: error.message }); }
   let generated;
   try {
     const existing = await store.listFighters(user.id);
@@ -254,11 +295,11 @@ app.post('/api/fighters', wrap(async (req, res) => {
       ...(fighter.definition?.skills || []).map((skill) => skill.name),
       fighter.definition?.passive?.name
     ]).filter(Boolean);
-    generated = await generateFighter(art, name, existingNames, provider);
+    generated = await generateFighter(art, name, existingNames, provider, awakeningArt);
   }
   catch (error) { return res.status(502).json({ error: error.message.slice(0, 180) }); }
   const fighter = await store.saveFighter(user.id, name, art, generated.definition, generated.mode);
-  res.status(201).json({ fighter, generationMs: generated.generationMs });
+  res.status(201).json({ fighter: await visibleFighter(user.id, fighter), generationMs: generated.generationMs });
 }));
 
 app.post('/api/fighters/generate', wrap(async (req, res) => {
@@ -270,10 +311,11 @@ app.post('/api/fighters/generate', wrap(async (req, res) => {
   if (name.length < 1 || name.length > 24 || /[\u0000-\u001f]/.test(name)) {
     return res.status(400).json({ error: '名前は1～24文字にしてください。' });
   }
-  let art;
+  let art, awakeningArt;
   try { art = validateArt(req.body?.art); } catch (error) { return res.status(400).json({ error: error.message }); }
+  try { awakeningArt = req.body?.awakeningArt ? validateArt(req.body.awakeningArt) : ''; } catch (error) { return res.status(400).json({ error: error.message }); }
   pruneFighterJobs();
-  const fingerprint = digest(`${user.id}\0${name}\0${art}`);
+  const fingerprint = digest(`${user.id}\0${name}\0${art}\0${awakeningArt}\0${provider}`);
   const existingJob = [...fighterJobs.entries()].find(([, job]) =>
     job.userId === user.id && job.fingerprint === fingerprint &&
     (job.state === 'queued' || job.state === 'running' ||
@@ -288,7 +330,7 @@ app.post('/api/fighters/generate', wrap(async (req, res) => {
   fighterJobs.set(jobId, job);
   pendingFighterJobs++;
   res.status(202).json({ jobId });
-  fighterJobQueue.push({ job, userId: user.id, name, art, provider });
+  fighterJobQueue.push({ job, userId: user.id, name, art, provider, awakeningArt });
   runNextFighterJob();
 }));
 
@@ -302,7 +344,7 @@ app.get('/api/fighters/jobs/:id', wrap(async (req, res) => {
   if (!job || job.userId !== user.id) return res.status(404).json({ error: '生成ジョブが見つかりません。' });
   if (job.state === 'running' || job.state === 'queued') return res.status(202).json({ status: job.state });
   if (job.state === 'failed') return res.json({ status: 'failed', error: job.error });
-  res.json({ status: 'done', fighter: job.fighter, generationMs: job.generationMs });
+  res.json({ status: 'done', fighter: await visibleFighter(user.id, job.fighter), generationMs: job.generationMs });
 }));
 
 app.get('/api/fighters/jobs', wrap(async (req, res) => {
@@ -318,7 +360,7 @@ app.get('/api/fighters/jobs', wrap(async (req, res) => {
 app.get('/api/fighters', wrap(async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
-  res.json({ fighters: await store.listFighters(user.id) });
+  res.json({ fighters: await Promise.all((await store.listFighters(user.id)).map(fighter => visibleFighter(user.id, fighter))) });
 }));
 
 app.put('/api/fighters/:id/favorite', wrap(async (req, res) => {
@@ -328,7 +370,7 @@ app.put('/api/fighters/:id/favorite', wrap(async (req, res) => {
   if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id) || typeof req.body?.favorite !== 'boolean') {
     return res.status(400).json({ error: 'AAとお気に入り設定を正しく指定してください。' });
   }
-  try { res.json({ fighter: await store.setFighterFavorite(user.id, id, req.body.favorite) }); }
+  try { res.json({ fighter: await visibleFighter(user.id, await store.setFighterFavorite(user.id, id, req.body.favorite)) }); }
   catch (error) {
     if (error instanceof TradeError) return res.status(error.statusCode).json({ error: error.message });
     throw error;
@@ -362,13 +404,13 @@ app.get('/api/players/:username/fighters', wrap(async (req, res) => {
   if (result.username.toLocaleLowerCase('und') === user.username.toLocaleLowerCase('und')) {
     return res.status(400).json({ error: '交換相手には別のプレイヤーを指定してください。' });
   }
-  res.json(result);
+  res.json({ ...result, fighters: await Promise.all(result.fighters.map(fighter => visibleFighter(user.id, fighter))) });
 }));
 
 app.get('/api/trades', wrap(async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
-  res.json({ trades: await store.listTrades(user.id) });
+  res.json({ trades: await Promise.all((await store.listTrades(user.id)).map(trade => visibleTrade(user.id, trade))) });
 }));
 
 app.post('/api/trades', wrap(async (req, res) => {
@@ -386,7 +428,7 @@ app.post('/api/trades', wrap(async (req, res) => {
   }
   try {
     const trade = await store.createTrade(user.id, toUsername, offeredId, requestedId);
-    res.status(201).json({ trade });
+    res.status(201).json({ trade: await visibleTrade(user.id, trade) });
   } catch (error) {
     if (error instanceof TradeError) return res.status(error.statusCode).json({ error: error.message });
     throw error;
@@ -415,7 +457,7 @@ app.post('/api/trades/:id/:action', wrap(async (req, res) => {
     let trade;
     try { trade = await store.decideTrade(id, user.id, action); }
     finally { busyIds.forEach((userId) => trading.delete(userId)); }
-    res.json({ trade });
+    res.json({ trade: await visibleTrade(user.id, trade) });
   } catch (error) {
     if (error instanceof TradeError) return res.status(error.statusCode).json({ error: error.message });
     throw error;
@@ -458,7 +500,12 @@ app.post('/api/pve/battle', wrap(async (req, res) => {
       return res.status(403).json({ error: '自分が所持しているAAを選んでください。' });
     }
     const battle = runPveBattle(user, fighter, difficulty);
+    battle.fighters[0].definition = hideAwakening(battle.fighters[0].definition, await store.hasSeenAwakening(user.id, fighter.id));
+    if (battle.log.some(turn => turn.fighters.some(state => state.userId === user.id && state.awakened))) await store.markAwakeningSeen(user.id, fighter.id);
     const record = await store.savePveMatch(user.id, fighter, battle);
+    const last = battle.log.at(-1)?.fighters.find(state => state.userId === user.id);
+    await titles.add(user.id, { statuses:last?.statusCount || 0, counters:last?.counterCount || 0,
+      awakeningWins:Number(battle.won && last?.awakened), lastStandWins:Number(battle.won && last?.lastStandUsed), bossWins:Number(battle.won && difficulty === 'boss') });
     res.status(201).json({ battle, record: {
       id: record.id, won: record.won, enemy_key: record.enemy_key, turns: record.turns, created_at: record.created_at
     } });
@@ -502,20 +549,31 @@ async function makeMatch(first, second) {
   playing.add(first.user.id);
   playing.add(second.user.id);
   const battle = createBattle(first.user, currentFirst, second.user, currentSecond);
+  for (const [index, player] of [first, second].entries()) {
+    const state = await titles.get(player.user.id);
+    const title = state.definitions.find(t => t.id === state.equipped_title);
+    if (title) battle.fighters[index].username = `《${title.name}》${player.user.username}`;
+  }
   const match = { battle, sockets: [first.ws, second.ws] };
   broadcast(match, {
     type: 'battle:start', id: battle.id,
-    fighters: battle.fighters.map(({ userId, username, name, art, definition, hp, maxHp }) => ({
-      userId, username, name, art, definition, hp, maxHp, shield: 0
-    }))
+    fighters: await Promise.all(battle.fighters.map(async ({ userId, username, name, art, definition, fighterId, hp, maxHp }) => ({
+      userId, username, name, art, definition: hideAwakening(definition, false), hp, maxHp, shield: 0
+    })))
   });
   const timer = setInterval(async () => {
     try {
       const turn = stepBattle(battle);
+      for (const fighter of battle.fighters) if (fighter.awakened) {
+        await store.markAwakeningSeen(first.user.id, fighter.fighterId);
+        await store.markAwakeningSeen(second.user.id, fighter.fighterId);
+      }
       broadcast(match, turn);
       if (battle.ended) {
         clearInterval(timer);
         await store.saveMatch(first.user.id, second.user.id, battle.winnerId, battle.log);
+        await titles.add(first.user.id,battleProgress(battle.log,first.user.id,battle.winnerId));
+        await titles.add(second.user.id,battleProgress(battle.log,second.user.id,battle.winnerId));
         playing.delete(first.user.id);
         playing.delete(second.user.id);
         broadcast(match, { type: 'battle:finish', winnerId: battle.winnerId });

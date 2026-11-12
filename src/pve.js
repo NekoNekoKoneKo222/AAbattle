@@ -91,9 +91,10 @@ export function runPveBattle(user, fighter, difficulty, rng = Math.random) {
     id: battle.id,
     difficulty,
     enemy: enemy.title,
-    fighters: battle.fighters.map(({ userId, username, name, art, definition, maxHp }) => ({
-      userId, username, name, art, definition, hp: maxHp, maxHp, shield: 0
-    })),
+    fighters: [{ userId: user.id, username: user.username, name: fighter.name, art: fighter.art,
+      definition: fighter.definition, hp: fighter.definition.stats.hp, maxHp: fighter.definition.stats.hp, shield: 0 },
+    { userId: cpu.id, username: cpu.username, name: cpuFighter.name, art: cpuFighter.art,
+      definition: cpuFighter.definition, hp: cpuFighter.definition.stats.hp, maxHp: cpuFighter.definition.stats.hp, shield: 0 }],
     log: battle.log,
     turns: battle.turn,
     won: battle.winnerId === user.id,

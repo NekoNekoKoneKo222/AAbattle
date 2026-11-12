@@ -30,7 +30,7 @@ test('gateway accepts only authenticated, bounded generation jobs and status rea
   })).status, 400);
   assert.equal((await request('/v1/skills/generate', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...valid, avoidNames: ['x'.repeat(7000)] })
+    body: JSON.stringify({ ...valid, avoidNames: ['x'.repeat(13000)] })
   })).status, 413);
   const started = await request('/v1/skills/generate', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(valid)

@@ -30,6 +30,7 @@ export class MemoryStore {
     this.matches = [];
     this.pveMatches = [];
     this.trades = new Map();
+    this.awakeningSeen = new Set();
   }
   async init() {}
   async close() {}
@@ -65,6 +66,8 @@ export class MemoryStore {
     const fighter = this.fighters.get(id);
     return fighter && !fighter.deleted_at ? fighter : null;
   }
+  async hasSeenAwakening(userId, fighterId) { return this.awakeningSeen.has(`${userId}:${fighterId}`); }
+  async markAwakeningSeen(userId, fighterId) { this.awakeningSeen.add(`${userId}:${fighterId}`); }
   async setFighterFavorite(ownerId, id, favorite) {
     const fighter = await this.getFighter(id);
     if (!fighter || fighter.owner_id !== ownerId) throw new TradeError('AAが見つかりません。', 404);
@@ -227,6 +230,12 @@ class PostgresStore {
     return (await this.pool.query('SELECT * FROM fighters WHERE owner_id=$1 AND deleted_at IS NULL ORDER BY is_favorite DESC, created_at DESC LIMIT 100', [ownerId])).rows;
   }
   async getFighter(id) { return (await this.pool.query('SELECT * FROM fighters WHERE id=$1 AND deleted_at IS NULL', [id])).rows[0] || null; }
+  async hasSeenAwakening(userId, fighterId) {
+    return Boolean((await this.pool.query('SELECT 1 FROM fighter_awakening_seen WHERE user_id=$1 AND fighter_id=$2', [userId, fighterId])).rows[0]);
+  }
+  async markAwakeningSeen(userId, fighterId) {
+    await this.pool.query('INSERT INTO fighter_awakening_seen (user_id,fighter_id) VALUES ($1,$2) ON CONFLICT DO NOTHING', [userId, fighterId]);
+  }
   async setFighterFavorite(ownerId, id, favorite) {
     const { rows } = await this.pool.query('UPDATE fighters SET is_favorite=$3 WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL RETURNING *',
       [id, ownerId, favorite]);

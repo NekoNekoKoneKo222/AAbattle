@@ -1,6 +1,6 @@
 const $ = (id) => document.getElementById(id);
 const app = { user: null, fighters: [], selected: null, ws: null, authMode: 'login', battle: null, waiting: false, tradeTarget: null, pveEnemies: [], pvePlayback: null, generationMode: 'local', availableProviders: {}, model: null, pendingGenerations: 0, pendingGenerationInputs: new Set(), pollingJobIds: new Set(), aiStatusTimer: null, aiStatusChecking: false };
-const effectLabels = { damage: '攻撃', heal: '回復', shield: '防護', weaken: '弱体', poison: '毒', burn: '火傷', drain: '吸収', boost: '強化', cleanse: '浄化', stun: '気絶', bleed: '出血', rupture: '破裂', silence: '沈黙', counter_stance: '反撃態勢' };
+const effectLabels = { damage: '攻撃', heal: '回復', shield: '防護', weaken: '弱体', poison: '毒', burn: '火傷', drain: '吸収', boost: '強化', cleanse: '浄化', stun: '気絶', bleed: '出血', rupture: '破裂', silence: '沈黙', counter_stance: '反撃態勢', shock:'感電', freeze:'凍結', blind:'盲目', corrosion:'腐食', curse:'呪い', fear:'恐怖', glitch:'文字化け', seal:'封印', reflect:'反射', haste:'加速', focus:'集中', harden:'硬化', regeneration:'再生', parry:'パリィ', shield_counter:'シールドカウンター', retaliation:'報復', just_guard:'ジャストガード', endure:'不屈' };
 
 function effectSummary(effect) {
   if (effect.type === 'bleed') return `出血 毎ターン${effect.power}ダメージ / 付与${effect.chance}%`;
@@ -11,7 +11,7 @@ function effectSummary(effect) {
 }
 
 function battleStatus(fighter) {
-  const active = [fighter.bleed && '出血', fighter.rupture && '破裂', fighter.silence && '沈黙', fighter.counterStance && '反撃態勢'].filter(Boolean);
+  const active = fighter.statuses?.length ? fighter.statuses.map(s => `${s.name}:${s.remaining}`) : [fighter.bleed && '出血', fighter.rupture && '破裂', fighter.silence && '沈黙', fighter.counterStance && '反撃態勢'].filter(Boolean);
   return active.length ? ` / ${active.join('・')}` : '';
 }
 
@@ -95,7 +95,56 @@ function switchTab(tab) {
     if (!app.pveEnemies.length) loadPveEnemies();
     refreshPveHistory();
   }
+  if (tab === 'tournaments') void refreshTournaments();
+  if (tab === 'titles') void refreshTitles();
 }
+
+async function refreshTournaments() {
+  try {
+    const { tournaments } = await api('tournaments');
+    const list = $('tournament-list'); list.replaceChildren();
+    if (!tournaments.length) list.append(node('p','muted','大会はまだありません。'));
+    for (const item of tournaments) {
+      const card = node('article','trade-entry');
+      card.append(node('h3','',`${item.name} / ${item.size}人`), node('p','muted',`${item.status} / ${item.entries.length}人参加 / 第${item.round}回戦`));
+      if (item.championId) card.append(node('b','',`優勝: ${item.entries.find(e => e.userId === item.championId)?.username || item.championId}`));
+      card.append(node('div','muted',item.entries.map(e => e.username).join(' / ') || '参加者募集中'));
+      if (item.status === 'open' && !item.entries.some(e => e.userId === app.user.id) && app.fighters.length) {
+        const select = node('select'); for (const fighter of app.fighters) { const option=node('option','',fighter.name); option.value=fighter.id; select.append(option); }
+        const button=node('button','secondary-button','[ このAAで参加 ]'); button.addEventListener('click',async()=>{ button.disabled=true; try { await api(`tournaments/${item.id}/join`,{method:'POST',body:JSON.stringify({fighterId:select.value})}); await refreshTournaments(); } catch(error){button.disabled=false;notify(error.message,true);} });
+        card.append(select,button);
+      }
+      if (item.status === 'open' && item.entries.some(e => e.userId === app.user.id)) {
+        const button=node('button','secondary-button','[ 参加取消 ]'); button.addEventListener('click',async()=>{try{await api(`tournaments/${item.id}/withdraw`,{method:'POST'});await refreshTournaments();}catch(error){notify(error.message,true);}});card.append(button);
+      }
+      if (item.status === 'open' && item.creatorId === app.user.id) {
+        const button=node('button','secondary-button','[ 大会中止 ]'); button.addEventListener('click',async()=>{try{await api(`tournaments/${item.id}/cancel`,{method:'POST'});await refreshTournaments();}catch(error){notify(error.message,true);}});card.append(button);
+      }
+      if (item.matches.length) {
+        const bracket=node('details'); bracket.append(node('summary','','[ 対戦表・戦闘ログ ]'));
+        for (const match of item.matches) {
+          const detail=node('details'); detail.append(node('summary','',`R${match.round}: ${match.aName} VS ${match.bName} / 勝者 ${item.entries.find(e=>e.userId===match.winnerId)?.username || ''}`));
+          detail.addEventListener('toggle',async()=>{ if(!detail.open || detail.querySelector('pre')) return; try { const {tournament}=await api(`tournaments/${item.id}`); const full=tournament.matches.find(m=>m.id===match.id); detail.append(node('pre','tournament-log',(full?.log||[]).map(turn=>`[${turn.turn}] ${turn.lines.join(' / ')}`).join('\n'))); }catch(error){notify(error.message,true);} }); bracket.append(detail);
+        }
+        card.append(bracket);
+      }
+      list.append(card);
+    }
+  } catch(error) { notify(error.message,true); }
+}
+async function refreshTitles() {
+  try {
+    const state=await api('titles'); const list=$('title-list'); list.replaceChildren();
+    const equipped=state.definitions.find(t=>t.id===state.equipped_title); $('user-badge').textContent=`${equipped?`《${equipped.name}》`:''}@${app.user.username} / W${app.user.wins} L${app.user.losses}`;
+    for (const title of state.definitions) {
+      const earned=state.earned.includes(title.id); const row=node('article','trade-entry');
+      row.append(node('b','',`《${title.name}》 ${earned?'解放済み':'未解放'}`),node('p','muted',`${title.condition} (${state.counters[title.key]||0}/${title.required})`));
+      if (earned) { const button=node('button','secondary-button',state.equipped_title===title.id?'[ 装備解除 ]':'[ 装備 ]');button.addEventListener('click',async()=>{try{await api('titles/equip',{method:'POST',body:JSON.stringify({titleId:state.equipped_title===title.id?null:title.id})});await refreshTitles();}catch(error){notify(error.message,true);}});row.append(button); }
+      list.append(row);
+    }
+  } catch(error) { notify(error.message,true); }
+}
+$('tournament-create').addEventListener('submit',async event=>{event.preventDefault();try{await api('tournaments',{method:'POST',body:JSON.stringify({name:$('tournament-name').value,size:Number($('tournament-size').value)})});$('tournament-name').value='';await refreshTournaments();}catch(error){notify(error.message,true);}});
 
 function showAuth() {
   if (app.aiStatusTimer) clearInterval(app.aiStatusTimer);
@@ -151,6 +200,7 @@ async function showGame(user) {
   $('auth-view').classList.add('hidden');
   $('game-view').classList.remove('hidden');
   $('user-badge').textContent = `@${user.username} / W${user.wins} L${user.losses}`;
+  void api('titles').then(state => { const title=state.definitions.find(t=>t.id===state.equipped_title); if (app.user?.id===user.id) $('user-badge').textContent=`${title?`《${title.name}》`:''}@${user.username} / W${user.wins} L${user.losses}`; }).catch(()=>{});
   switchTab('create');
   await loadFighters();
   await resumeGenerationJobs();
@@ -207,6 +257,7 @@ async function loadFighters() {
 function renderDefinition(definition, target) {
   target.replaceChildren();
   target.append(node('div', 'result-title', definition.title));
+  if (definition.characterTitle) target.append(node('div', 'small-badge', `《${definition.characterTitle}》`));
   target.append(node('div', 'muted', `// ${definition.archetype} / ${definition.personality.toUpperCase()}`));
   const stats = { HP: definition.stats.hp, ATK: definition.stats.atk, DEF: definition.stats.def, SPD: definition.stats.speed };
   for (const [key, value] of Object.entries(stats)) {
@@ -228,6 +279,13 @@ function renderDefinition(definition, target) {
   passive.append(node('b', '', `[PASSIVE] ${definition.passive.name}`), node('small', '', definition.passive.description));
   list.append(passive);
   target.append(list);
+  if (definition.tactics) target.append(node('small', 'muted', `戦術: 攻撃${definition.tactics.aggression} / 防御${definition.tactics.defensePriority} / 回復${definition.tactics.healPriority} / 妨害${definition.tactics.debuffPriority} / 反撃${definition.tactics.counterPriority} / 決着${definition.tactics.finisherPriority} / 危険許容${definition.tactics.riskTolerance}`));
+  if (definition.awakening) {
+    const data = definition.awakening;
+    const block = node('div', 'skill-row');
+    block.append(node('b', '', `>>> 覚醒形態: ${data.name}`), node('small', '', `条件 ${data.condition.type} ${data.condition.value} / ATK +${data.bonus.atk}% DEF +${data.bonus.def}% SPD +${data.bonus.speed}%`), node('pre', '', data.art), node('small', '', `覚醒技: ${data.skill.name} [CD:${data.skill.cooldown}]`));
+    target.append(block);
+  }
 }
 
 function renderCollection() {
@@ -379,6 +437,9 @@ function replayPveTurn(turn) {
     $(`pve-battle-hp-${side}`).textContent = `${fighter.hp} / ${fighter.maxHp} HP${fighter.shield ? ` / SHIELD ${fighter.shield}` : ''}${battleStatus(fighter)}`;
     $(`pve-hp-${side}`).style.width = `${Math.round(100 * fighter.hp / fighter.maxHp)}%`;
     $(`pve-battle-art-${side}`).style.color = turn.attackerId === fighter.userId ? '#8ef4c7' : '#a9dedb';
+    $(`pve-battle-art-${side}`).textContent = fighter.art;
+    const title = app.pvePlayback?.battle.fighters[i]?.definition?.characterTitle;
+    $(`pve-battle-name-${side}`).textContent = `${title ? `《${title}》` : ''}${fighter.name}`;
   });
   for (const line of turn.lines) appendPveLog(`[${String(turn.turn).padStart(2, '0')}] ${line}`, turn.ended && line.startsWith('勝者'));
 }
@@ -391,6 +452,7 @@ function finishPvePlayback(playback) {
   $('pve-start').disabled = !app.fighters.length;
   $('pve-status').textContent = playback.battle.won ? '>>> PVE CLEAR! 勝利を保存しました。' : '>>> DEFEAT. 次の挑戦を待っています。';
   refreshPveHistory();
+  void loadFighters();
 }
 
 function playPveReplay(battle) {
@@ -403,7 +465,7 @@ function playPveReplay(battle) {
   for (let i = 0; i < 2; i++) {
     const fighter = battle.fighters[i];
     const side = i ? 'b' : 'a';
-    $(`pve-battle-name-${side}`).textContent = `${fighter.name} / ${fighter.username}`;
+    $(`pve-battle-name-${side}`).textContent = `${fighter.definition.characterTitle ? `《${fighter.definition.characterTitle}》` : ''}${fighter.name} / ${fighter.username}`;
     $(`pve-battle-art-${side}`).textContent = fighter.art;
     $(`pve-battle-hp-${side}`).textContent = `${fighter.hp} / ${fighter.maxHp} HP`;
     $(`pve-hp-${side}`).style.width = '100%';
@@ -638,7 +700,7 @@ function startBattle(msg) {
   for (let i = 0; i < 2; i++) {
     const key = i ? 'b' : 'a';
     const fighter = msg.fighters[i];
-    $(`battle-name-${key}`).textContent = `${fighter.name} / ${fighter.username}`;
+    $(`battle-name-${key}`).textContent = `${fighter.definition.characterTitle ? `《${fighter.definition.characterTitle}》` : ''}${fighter.name} / ${fighter.username}`;
     $(`battle-art-${key}`).textContent = fighter.art;
     $(`battle-hp-${key}`).textContent = `${fighter.hp} / ${fighter.maxHp} HP`;
     $(`hp-${key}`).style.width = '100%';
@@ -662,6 +724,9 @@ function updateBattle(msg) {
     $(`battle-hp-${key}`).textContent = `${fighter.hp} / ${fighter.maxHp} HP${fighter.shield ? ` / SHIELD ${fighter.shield}` : ''}${battleStatus(fighter)}`;
     $(`hp-${key}`).style.width = `${Math.round(100 * fighter.hp / fighter.maxHp)}%`;
     const element = $(`battle-art-${key}`);
+    element.textContent = fighter.art;
+    const title = app.battle.fighters[i]?.definition?.characterTitle;
+    $(`battle-name-${key}`).textContent = `${title ? `《${title}》` : ''}${fighter.name}`;
     element.style.color = msg.attackerId === fighter.userId ? '#8ef4c7' : '#a9dedb';
   });
   for (const line of msg.lines) addLog(`[${String(msg.turn).padStart(2, '0')}] ${line}`, msg.ended && line.startsWith('勝者'));
@@ -780,7 +845,8 @@ $('fighter-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const name = $('fighter-name').value;
   const art = $('art-editor').value;
-  const inputKey = JSON.stringify([name.trim(), art]);
+  const awakeningArt = $('awakening-art-editor').value;
+  const inputKey = JSON.stringify([name.trim(), art, awakeningArt]);
   if (app.pendingGenerationInputs.has(inputKey)) {
     notify('同じキャラクターはすでに生成中です。別の名前やAAなら続けて送信できます。');
     return;
@@ -792,7 +858,7 @@ $('fighter-form').addEventListener('submit', async (event) => {
   try {
     const { jobId } = await api('fighters/generate', {
       method: 'POST',
-      body: JSON.stringify({ name, art, provider: app.generationMode })
+      body: JSON.stringify({ name, art, awakeningArt, provider: app.generationMode })
     });
     if (!/^[a-f0-9]{64}$/.test(jobId || '')) throw new Error('生成ジョブ番号が不正です。');
     app.pendingGenerations++;

@@ -3,7 +3,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { generateOllamaDraft, localOllamaStatus, validateArt } from './generator.js';
 
-const BODY_LIMIT = 6 * 1024;
+const BODY_LIMIT = 12 * 1024;
 const OUTPUT_LIMIT = 24 * 1024;
 const JOB_TTL_MS = 10 * 60 * 1000;
 const MAX_PENDING_JOBS = 4;
@@ -45,7 +45,8 @@ function inputFrom(body) {
       avoidNames.some((value) => typeof value !== 'string' || value.length > 24)) {
     throw new Error('過去のスキル名が不正です。');
   }
-  return { art, name, avoidNames };
+  const awakeningArt = body.awakeningArt == null || body.awakeningArt === '' ? null : validateArt(body.awakeningArt);
+  return { art, name, avoidNames, awakeningArt };
 }
 
 export function createGateway({
@@ -65,7 +66,7 @@ export function createGateway({
     const { input, job } = queue.shift();
     active = 1;
     job.state = 'running';
-    Promise.resolve().then(() => generate(input.art, input.name, input.avoidNames)).then((draft) => {
+    Promise.resolve().then(() => generate(input.art, input.name, input.avoidNames, input.awakeningArt)).then((draft) => {
       const encoded = JSON.stringify(draft);
       if (Buffer.byteLength(encoded) > OUTPUT_LIMIT) throw new Error('生成結果が長すぎます。');
       job.draft = draft;

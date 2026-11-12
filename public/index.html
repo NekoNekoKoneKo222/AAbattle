@@ -82,6 +82,8 @@
         <button class="nav-button" data-tab="trades">[ 05 / トレード ]</button>
         <button class="nav-button" data-tab="pve">[ 06 / PvE ]</button>
         <button class="nav-button" data-tab="guide">[ 07 / 説明書 ]</button>
+        <button class="nav-button" data-tab="tournaments">[ 08 / 大会 ]</button>
+        <button class="nav-button" data-tab="titles">[ 09 / 称号 ]</button>
         <button id="logout" class="nav-button logout">[ LOGOUT ]</button>
       </nav>
 
@@ -100,6 +102,9 @@
 ( o.o )
  &gt; ^ &lt;</textarea>
               <div id="art-hint" class="fineprint">最大20行・1行52文字。半角スペースと「\」はそのまま保持されます。</div>
+              <label for="awakening-art-editor">覚醒後AA（任意・秘密）</label>
+              <textarea id="awakening-art-editor" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off" rows="7" maxlength="1600" placeholder="覚醒形態のAAを入力。空欄ならAIに任せます。"></textarea>
+              <div class="fineprint">覚醒の有無と能力は戦闘で目撃するまで図鑑には表示されません。</div>
               <div class="provider-switch" role="group" aria-label="AI生成方式">
                 <span>生成AI</span>
                 <button id="provider-gemini" type="button" class="secondary-button" aria-pressed="false">Gemini API</button>
@@ -301,7 +306,23 @@
           <section class="ascii-frame"><div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div><div class="ascii-content"><div class="panel-heading">// 戦闘の進み方</div><h3>使える技はすべて発動</h3><p>速度が高いキャラから始まり、両者が交互に行動します。行動開始時にクールダウンを進め、使用可能な技を各1回ずつ使います。2つ使えるなら2つ、3つ使えるなら3つ発動します。連続使用する技とCDの短い技は、威力が抑えられます。使用可能な技がないときだけ通常攻撃をします。</p><p>技の順番は性格やHPの状況を見て自動で決まります。HPが0になった時点で残りの技は発動しません。気絶や沈黙で行動不能になったときは、その行動の技をすべて使えません。</p><p class="muted">48行動で決着しない場合は、残りHPの割合とシールドで勝敗を決めます。</p></div><div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div></section>
           <section class="ascii-frame"><div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div><div class="ascii-content"><div class="panel-heading">// 能力と状態</div><h3>技と特性</h3><p>技はダメージ・回復・シールド・強化・状態異常などの効果を持ちます。追加効果には発動確率があり、技ごとに再使用までのクールダウンがあります。特性は条件に応じて自動で発動します。</p><ul><li>毒・火傷・出血：行動時に継続ダメージ</li><li>破裂：10以上のHPダメージを受けると約10%の追加ダメージ</li><li>沈黙：設定された確率で行動不能</li><li>反撃態勢：攻撃を受けると設定確率で反撃</li><li>ラストスタンド：1度だけ最大HPの1%で復活し、その連続攻撃を止める</li></ul></div><div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div></section>
           <section class="ascii-frame"><div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div><div class="ascii-content"><div class="panel-heading">// 記録と交換</div><h3>遊んだ結果</h3><p>PvEの勝敗はPvPと別に保存されます。PvEでは直近20戦の履歴を表示し、戦闘の再生をスキップしても結果は保存されます。</p><p>「戦績」では対人戦の結果を確認できます。「トレード」では相手のプレイヤー名で検索し、互いの所持AAを指定して交換を申請できます。交換は相手の承認後に確定します。</p></div><div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div></section>
+          <section class="ascii-frame"><div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div><div class="ascii-content"><div class="panel-heading">// 覚醒と戦術</div><h3>戦闘で明らかになる力</h3><p>生成時に覚醒後AAを任意で入力できます。覚醒の有無・条件・能力は、実際の戦闘で姿を見てから図鑑に表示されます。覚醒後はAAと能力が変わり、専用技が解禁されます。</p><p>キャラの性格と戦術値が技の優先順を決めます。新しい感電・凍結・盲目・腐食・呪い・恐怖・文字化け・封印、反射・パリィ・ジャストガードなどはログと残りターンを確認できます。</p></div><div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div></section>
+          <section class="ascii-frame"><div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div><div class="ascii-content"><div class="panel-heading">// 大会と称号</div><h3>参加して勝ち抜く</h3><p>大会は8・16・32人の勝ち抜き戦です。1アカウント1体で参加し、満員になった時点のAA能力で試合します。開始前なら参加取消や主催者による中止ができます。</p><p>称号はPvP・PvE・大会の結果から解放され、1つだけ装備できます。キャラ専用称号は図鑑や交換後のAAに付属します。称号による能力ボーナスはありません。</p></div><div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div></section>
         </div>
+      </section>
+      <section id="tab-tournaments" class="tab-page hidden">
+        <div class="panel-heading">// ONLINE TOURNAMENT</div><h2>AAトーナメント</h2>
+        <form id="tournament-create" class="stack tournament-create">
+          <label for="tournament-name">大会名</label><input id="tournament-name" maxlength="60" required placeholder="大会名">
+          <label for="tournament-size">参加人数</label><select id="tournament-size"><option value="8">8人</option><option value="16">16人</option><option value="32">32人</option></select>
+          <button class="primary-button" type="submit">[ 大会を作成 ]</button>
+        </form>
+        <div id="tournament-list" class="history-list"></div>
+      </section>
+      <section id="tab-titles" class="tab-page hidden">
+        <div class="panel-heading">// ACHIEVEMENTS</div><h2>プレイヤー称号</h2>
+        <p class="muted">称号は見た目だけで、戦闘能力には影響しません。</p>
+        <div id="title-list" class="history-list"></div>
       </section>
     </main>
 

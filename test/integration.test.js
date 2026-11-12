@@ -86,6 +86,16 @@ test('account registration, authentication, character saving and online matchmak
   assert.equal((await request('fighters', null, bc)).body.fighters[0].id, fighterA.body.fighter.id);
   assert.equal((await request(`trades/${tradeId}/accept`, {}, bc)).status, 409);
   assert.equal((await request('trades', null, bc)).body.trades[0].status, 'accepted');
+  const tournament = await request('tournaments', { name: 'ローカル大会', size: 8 }, ac);
+  assert.equal(tournament.status, 201, JSON.stringify(tournament.body));
+  const tournamentId = tournament.body.tournament.id;
+  assert.equal((await request(`tournaments/${tournamentId}/join`, { fighterId: fighterA.body.fighter.id }, ac)).status, 403);
+  assert.equal((await request(`tournaments/${tournamentId}/join`, { fighterId: fighterB.body.fighter.id }, ac)).status, 200);
+  assert.equal((await request(`tournaments/${tournamentId}/join`, { fighterId: fighterB.body.fighter.id }, ac)).status, 409);
+  assert.equal((await request(`tournaments/${tournamentId}`, null, ac)).body.tournament.entries.length, 1);
+  assert.equal((await request(`tournaments/${tournamentId}/withdraw`, {}, ac)).status, 200);
+  assert.equal((await request(`tournaments/${tournamentId}/cancel`, {}, ac)).status, 200);
+  assert.equal((await request('titles/equip', { titleId: 'champion' }, ac)).status, 403);
   assert.equal((await request('pve/enemies')).status, 401);
   assert.equal((await request('pve/history')).status, 401);
   const pveEnemies = await request('pve/enemies', null, ac);

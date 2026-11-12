@@ -106,13 +106,13 @@ export async function gatewayStatus(model) {
   } catch { return { connected: false, model, installed: false, active: 0, queued: 0 }; }
 }
 
-export async function gatewayGenerate({ art, name, avoidNames }) {
+export async function gatewayGenerate({ art, name, avoidNames, awakeningArt }) {
   async function submit() {
     const requestId = randomBytes(32).toString('hex');
     const started = Date.now();
     while (true) {
       try {
-        const { status, data } = await request('/v1/skills/generate', 'POST', { art, name, avoidNames, requestId });
+        const { status, data } = await request('/v1/skills/generate', 'POST', { art, name, avoidNames, awakeningArt, requestId });
         if (status !== 202 || !/^[a-f0-9]{64}$/.test(data.jobId || '')) {
           throw new Error('AIゲートウェイが不正なジョブ番号を返しました。');
         }
