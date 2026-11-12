@@ -1,4 +1,4 @@
-# GLYPH INFINITY — Phases 1–2
+# GLYPH INFINITY — Phases 1–3
 
 `/GF` is a text-only Canvas action game. It uses the existing AAbattle account and an authoritative WebSocket simulation at `/GF/ws`.
 
@@ -18,6 +18,12 @@ The currently implemented skill parts are 4 triggers (normal, melee, shot, count
 
 Weapon crafting supports all 12 listed base types and one optional secondary type for hybrid weapons. Material, element, special effect and display glyph affect the server-authoritative attack. Enemies award crafting material; weapon costs are charged on creation. Salvaging returns half the material cost. Skill graphs, weapons, materials and equipped slots save to the AAbattle account.
 
+## Phase 3 RPG and PvE
+
+Open **Adventure** with **I** or the header button. Enemies award XP and level the player up to Lv.100. Ordinary enemies can drop one of four equipment slots; bosses always drop equipment. Each item has an individual ID, one of seven rarities, and a random HP, attack, or defense option. The account inventory holds 60 items. Equip, enhance (up to +10), reroll the option, favorite, or dismantle items in the Adventure panel. Favorites cannot be dismantled. The server checks all costs and ownership.
+
+At Lv.2, start the private three-wave Void Ruins dungeon from Adventure. Wave 3 is THE NULL, which speeds up and attacks harder below half HP. Clearing grants coins and crystal; defeat or retreat returns to the prior position. Quests give one-time rewards for kills, boss kills, and clears. Kills also advance mastery for the equipped weapon class. At Lv.100, rebirth returns to Lv.1, retains gear and mastery, and adds a capped attack bonus. RPG progress is stored in the existing `glyph_crafting` JSONB, so Phase 3 needs no new database migration.
+
 ## Edit the world
 
 Edit [`world.txt`](world.txt) to change the authored terrain. `@origin X Y` gives the tile coordinate of the first character in the first row; each character represents one tile, and all rows must have equal width. `.` and spaces are walkable ground, `:` is a road, `#` a wall, `T` a tree, `~` water, `^` rock, `+` a landmark, and `S` the starting point. Walls, trees, water and rocks block movement. Outside the text grid the existing procedural terrain remains. Restart the local server or commit the file and redeploy Render to apply edits for everyone. The game and collision server load the same file.
@@ -28,6 +34,6 @@ From repository root: `npm ci`, `npm run build:shift`, `npm start`. Apply `migra
 
 ## Phase scope
 
-Implemented: character world, camera and collision, PC/touch movement, melee combat, enemy movement and attacks, five enemy tiers including THE NULL, progression and persistent saves. The city, forest, ruins and training arena have distinct procedural glyph terrain. Phase 2 adds the working workshop, saved skill graphs, four skill slots, weapon crafting, timed parry and a training dummy.
+Implemented: character world, camera and collision, PC/touch movement, melee combat, enemy movement and attacks, five enemy tiers including THE NULL, progression and persistent saves. The city, forest, ruins and training arena have distinct procedural glyph terrain. Phase 2 adds the working workshop, saved skill graphs, four skill slots, weapon crafting, timed parry and a training dummy. Phase 3 adds the account inventory, equipment options and enhancement, quests, a three-wave dungeon, mastery and rebirth.
 
-Planned later: the remaining skill parts, equipment drops and inventory, dungeon objectives, co-op, ranked PvP and seasonal systems.
+Planned later: the remaining skill parts, equipment sets and inheritance, co-op, ranked PvP and seasonal systems.

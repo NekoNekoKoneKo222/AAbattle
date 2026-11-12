@@ -1,7 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { IncomingMessage } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { TILE, canStand, norm, zoneAt, compileSkill, compileWeapon, starterCraft, WEAPON_BASES, type Actor, type CraftState, type Effect, type Input, type Projectile, type SkillProgram, type Snapshot, type Weapon } from '@glyph/shared';
+import { TILE, canStand, norm, zoneAt, compileSkill, compileWeapon, starterCraft, normalizeRpg, rollGear, gearBonus, QUESTS, WEAPON_BASES, type Actor, type CraftState, type Effect, type Input, type Projectile, type SkillProgram, type Snapshot, type Weapon } from '@glyph/shared';
 
 export type User = { id: string; username: string };
 export type Profile = { x: number; y: number; hp: number; xp: number; level: number; coins: number };
@@ -12,7 +12,7 @@ type LoadCraft = (user: User) => Promise<CraftState>;
 type Enemy = Actor & { targetX: number; targetY: number; speed: number; damage: number; lastAttack: number; respawn: number; windupUntil: number; staggerUntil: number; slowUntil: number; dotUntil: number; dotAt: number };
 type EnemyProjectile = Projectile & { vx: number; vy: number; damage: number; expires: number };
 type FriendlyProjectile = Projectile & { vx: number; vy: number; damage: number; expires: number; program: SkillProgram | null; hitIds: Set<string>; pierce: number; special: string; element: string };
-type Session = { user: User; ws: WebSocket; player: Actor; input: Input; inputAt: number; profile: Profile; craft: CraftState; craftSave: Promise<void>; craftDirty: boolean; lastCraftAt: number; enemies: Enemy[]; projectiles: EnemyProjectile[]; friendly: FriendlyProjectile[]; effects: Effect[]; lastSwing: number; combo: number; lastDash: number; dashLatch: boolean; rollUntil: number; rollX: number; rollY: number; lastTrail: number; invulnUntil: number; lastParry: number; parryUntil: number; parrySuccessUntil: number; ep: number; skillCooldowns: number[]; lastSave: number; lastSnapshot: number; kills: number };
+type Session = { user: User; ws: WebSocket; player: Actor; input: Input; inputAt: number; profile: Profile; craft: CraftState; craftSave: Promise<void>; craftDirty: boolean; lastCraftAt: number; dungeon: number; dungeonReturn: {x:number;y:number}|null; enemies: Enemy[]; projectiles: EnemyProjectile[]; friendly: FriendlyProjectile[]; effects: Effect[]; lastSwing: number; combo: number; lastDash: number; dashLatch: boolean; rollUntil: number; rollX: number; rollY: number; lastTrail: number; invulnUntil: number; lastParry: number; parryUntil: number; parrySuccessUntil: number; ep: number; skillCooldowns: number[]; lastSave: number; lastSnapshot: number; kills: number };
 const emptyInput: Input = { x:0,y:0,aimX:1,aimY:0,attack:false,dash:false };
 const templates = [
   {kind:'melee',glyph:'g',name:'森のグリフ',hp:35,speed:42,damage:6},
@@ -49,7 +49,7 @@ function normalizeCraft(raw:unknown):CraftState {
   for(const key of ['iron','wood','crystal'] as const)bag[key]=Number.isSafeInteger(materials[key])?Math.max(0,Math.min(9999,Number(materials[key]))):seed.materials[key];
   const equippedSkills=Array.from({length:4},(_,i)=>{const id=Array.isArray(a.equippedSkills)?a.equippedSkills[i]:null;return typeof id==='string'&&ids.has(id)?id:null;});
   const equippedWeaponId=typeof a.equippedWeaponId==='string'&&weaponIds.has(a.equippedWeaponId)?a.equippedWeaponId:null;
-  return {skills,weapons,equippedSkills,equippedWeaponId,materials:bag};
+  return {skills,weapons,equippedSkills,equippedWeaponId,materials:bag,rpg:normalizeRpg(a.rpg)};
 }
 function safeNear(x:number,y:number):{x:number;y:number} {
   if(canStand(x,y))return {x,y};
@@ -70,6 +70,21 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
     return s.craftSave;
   };
   const sendCraft=(s:Session)=>{if(s.ws.readyState===WebSocket.OPEN)s.ws.send(JSON.stringify({type:'craft:state',craft:s.craft}));};
+  const dungeonWave=(wave:number):Enemy[]=>{
+    const count=wave===3?1:wave+1;
+    return Array.from({length:count},(_,i)=>{
+      const e=spawn(wave===3?8:wave===2?7:i%3),pos=safeNear((i-(count-1)/2)*75,110);
+      e.id=`d${wave}-${i}`;e.x=pos.x;e.y=pos.y;e.targetX=e.x;e.targetY=e.y;
+      e.maxHp=Math.round(e.maxHp*(wave===3?1.5:1+wave*.3));e.hp=e.maxHp;e.damage+=wave*2;
+      return e;
+    });
+  };
+  const leaveDungeon=(s:Session,now:number,complete:boolean)=>{
+    if(complete){s.craft.rpg.dungeonClears++;s.profile.coins+=100;s.craft.materials.crystal=Math.min(9999,s.craft.materials.crystal+3);s.craftDirty=true;void queueCraftSave(s).catch(console.error);sendCraft(s);}
+    const pos=s.dungeonReturn??{x:16,y:16};s.player.x=pos.x;s.player.y=pos.y;s.player.hp=s.player.maxHp;
+    s.dungeon=0;s.dungeonReturn=null;s.enemies=spots.map((_,i)=>spawn(i));s.projectiles=[];s.friendly=[];
+    addEffect(s,pos.x,pos.y,complete?'遺跡踏破！':'ダンジョンから帰還',complete?'#f6d77b':'#9ff4ec',now);
+  };
   const equippedWeapon=(s:Session):Weapon|null=>s.craft.weapons.find(w=>w.id===s.craft.equippedWeaponId)??null;
   const heal=(s:Session,amount:number,now:number)=>{
     const gained=Math.min(Math.max(0,Math.round(amount)),s.player.maxHp-s.player.hp);
@@ -78,7 +93,7 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
   const effectAllowed=(s:Session,guards:string[],now:number)=>guards.every(g=>g==='on_hit'||g==='low_hp'&&s.player.hp<=s.player.maxHp/2||g==='on_parry'&&now<s.parrySuccessUntil);
   function damageEnemy(s:Session,e:Enemy,rawDamage:number,now:number,element='neutral',program:SkillProgram|null=null,special='none') {
     if(e.hp<=0)return;
-    const damage=Math.min(150,Math.max(1,Math.round(rawDamage)));
+    const damage=Math.min(150,Math.max(1,Math.round(rawDamage+gearBonus(s.craft.rpg,'damage')+Math.min(10,Math.floor((s.craft.rpg.mastery[equippedWeapon(s)?.primary??'bare']??0)/20))+Math.min(10,s.craft.rpg.rebirths))));
     e.hp=Math.max(0,e.hp-damage);e.windupUntil=0;e.staggerUntil=Math.max(e.staggerUntil,now+170);
     addEffect(s,e.x,e.y,`-${damage}`,'#ff9393',now,'hit');
     if(element==='fire'||element==='poison'){e.dotUntil=now+(element==='fire'?2400:3600);e.dotAt=now+700;}
@@ -108,6 +123,13 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
       if(e.kind!=='dummy'){
         s.profile.xp+=e.kind==='boss'?60:e.kind==='elite'?25:10;
         s.profile.coins+=e.kind==='boss'?50:5;
+        s.craft.rpg.kills++;
+        if(e.kind==='boss')s.craft.rpg.bossKills++;
+        const masteryKey=equippedWeapon(s)?.primary??'bare';s.craft.rpg.mastery[masteryKey]=Math.min(10000,(s.craft.rpg.mastery[masteryKey]??0)+1);
+        if(s.craft.rpg.inventory.length<60&&(e.kind==='boss'||Math.random()<.22)){
+          const gear=rollGear(s.profile.level,e.kind==='boss',Math.random,randomUUID());s.craft.rpg.inventory.push(gear);
+          addEffect(s,e.x,e.y,`◆ ${gear.rarity} ${gear.name}`,'#f9db89',now);
+        }
         const material=e.kind==='boss'?'crystal':e.kind==='ranged'?'wood':'iron';
         s.craft.materials[material]++;
         s.craftDirty=true;s.kills++;
@@ -124,8 +146,9 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
       if(source){source.staggerUntil=now+650;damageEnemy(s,source,Math.max(8,damage*2),now);}
       return;
     }
-    s.player.hp=Math.max(0,s.player.hp-damage);
-    addEffect(s,s.player.x,s.player.y,`-${damage}`,'#ff7777',now,'hit');
+    const received=Math.max(1,Math.round(damage-gearBonus(s.craft.rpg,'guard')));
+    s.player.hp=Math.max(0,s.player.hp-received);
+    addEffect(s,s.player.x,s.player.y,`-${received}`,'#ff7777',now,'hit');
   }
   function fireFriendly(s:Session,x:number,y:number,dx:number,dy:number,damage:number,now:number,program:SkillProgram|null,special:string,element:string,range:number,glyph:string){
     if(s.friendly.length>=36)return;
@@ -170,16 +193,51 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
       return;
     }
     if(type==='arena'){
+      if(s.dungeon)return;
       const pos=a.enter===true?safeNear(-620,390):{x:16,y:16};
       s.player.x=pos.x;s.player.y=pos.y;s.player.hp=s.player.maxHp;s.projectiles=[];s.friendly=[];
       addEffect(s,pos.x,pos.y,a.enter===true?'訓練場':'街へ帰還','#9ff4ec',now);
       return;
     }
-    if(!type.startsWith('craft:'))return;
+    if(type==='rpg:dungeon'){
+      if(s.dungeon||s.profile.level<2)return;
+      s.dungeonReturn={x:s.player.x,y:s.player.y};s.dungeon=1;s.player.x=0;s.player.y=0;s.player.hp=s.player.maxHp;s.enemies=dungeonWave(1);s.projectiles=[];s.friendly=[];
+      addEffect(s,0,0,'虚無の遺跡：第1波','#d9acff',now);sendCraft(s);return;
+    }
+    if(type==='rpg:leave'){if(s.dungeon)leaveDungeon(s,now,false);return;}
+    if(!type.startsWith('craft:')&&!type.startsWith('rpg:'))return;
     if(now-s.lastCraftAt<200){s.ws.send(JSON.stringify({type:'craft:error',message:'操作が速すぎます。少し待ってください。'}));return;}
     s.lastCraftAt=now;
     try{
-      if(type==='craft:save-skill'){
+      if(type==='rpg:equip'){
+        const id=String(a.id??''),gear=s.craft.rpg.inventory.find(g=>g.id===id);
+        if(!gear)throw new Error('装備が見つかりません。');s.craft.rpg.equipped[gear.slot]=gear.id;
+      }else if(type==='rpg:upgrade'){
+        const gear=s.craft.rpg.inventory.find(g=>g.id===a.id);
+        if(!gear)throw new Error('装備が見つかりません。');if(gear.upgrade>=10)throw new Error('強化上限です。');
+        const cost=(gear.upgrade+1)*10;if(s.profile.coins<cost||s.craft.materials.iron<gear.upgrade+1)throw new Error('コインか鉄が足りません。');
+        s.profile.coins-=cost;s.craft.materials.iron-=gear.upgrade+1;gear.upgrade++;
+      }else if(type==='rpg:reroll'){
+        const gear=s.craft.rpg.inventory.find(g=>g.id===a.id);
+        if(!gear)throw new Error('装備が見つかりません。');if(s.profile.coins<30||s.craft.materials.crystal<1)throw new Error('コインか結晶が足りません。');
+        s.profile.coins-=30;s.craft.materials.crystal--;gear.option=(['hp','damage','guard'] as const).filter(option=>option!==gear.option)[Math.floor(Math.random()*2)];
+      }else if(type==='rpg:favorite'){
+        const gear=s.craft.rpg.inventory.find(g=>g.id===a.id);if(!gear)throw new Error('装備が見つかりません。');gear.favorite=!gear.favorite;
+      }else if(type==='rpg:salvage'){
+        const gear=s.craft.rpg.inventory.find(g=>g.id===a.id);if(!gear)throw new Error('装備が見つかりません。');
+        if(gear.favorite)throw new Error('お気に入りは解体できません。');
+        s.craft.rpg.inventory=s.craft.rpg.inventory.filter(g=>g.id!==gear.id);
+        if(s.craft.rpg.equipped[gear.slot]===gear.id)s.craft.rpg.equipped[gear.slot]=null;
+        s.craft.materials.iron=Math.min(9999,s.craft.materials.iron+1+Math.floor(gear.upgrade/2));
+      }else if(type==='rpg:claim'){
+        const quest=QUESTS.find(q=>q.id===a.id);if(!quest)throw new Error('クエストが見つかりません。');
+        if(s.craft.rpg.claimed.includes(quest.id))throw new Error('受取済みです。');
+        if(s.craft.rpg[quest.kind]<quest.target)throw new Error('クエスト未達成です。');
+        s.craft.rpg.claimed.push(quest.id);s.profile.coins+=quest.coins;
+      }else if(type==='rpg:rebirth'){
+        if(s.dungeon||s.profile.level<100)throw new Error('Lv.100で街にいると転生できます。');
+        s.profile.level=1;s.profile.xp=0;s.craft.rpg.rebirths++;s.craft.rpg.rebirthPoints++;s.player.maxHp=100+gearBonus(s.craft.rpg,'hp');s.player.hp=s.player.maxHp;
+      }else if(type==='craft:save-skill'){
         const parsed=compileSkill(a.skill),index=s.craft.skills.findIndex(g=>g.id===parsed.skill.id);
         if(index<0&&s.craft.skills.length>=12)throw new Error('保存できるスキルは12個までです。');
         const skill={...parsed.skill,id:index>=0?parsed.skill.id:randomUUID()};
@@ -212,6 +270,7 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
         if(s.craft.equippedWeaponId===id)s.craft.equippedWeaponId=null;
       }else return;
       await queueCraftSave(s);
+      if(type==='rpg:rebirth'||type==='rpg:claim'||type==='rpg:upgrade'||type==='rpg:reroll')await save(s.user,{...s.profile});
       sendCraft(s);
     }catch(error){
       if(s.ws.readyState===WebSocket.OPEN)s.ws.send(JSON.stringify({type:'craft:error',message:error instanceof Error?error.message:'保存に失敗しました。'}));
@@ -262,12 +321,14 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
         if(canStand(e.x+push.x*knock,e.y+push.y*knock)){e.x+=push.x*knock;e.y+=push.y*knock;}
       }
     }
-    const need=20*s.profile.level;
-    if(s.profile.xp>=need){s.profile.xp-=need;s.profile.level++;p.maxHp+=8;p.hp=p.maxHp;addEffect(s,p.x,p.y,'LEVEL UP!','#7bffa5',now);}
+    while(s.profile.level<100&&s.profile.xp>=20*s.profile.level){s.profile.xp-=20*s.profile.level;s.profile.level++;p.maxHp=100+(s.profile.level-1)*8+gearBonus(s.craft.rpg,'hp');p.hp=p.maxHp;addEffect(s,p.x,p.y,'LEVEL UP!','#7bffa5',now);}
+    if(s.profile.level>=100)s.profile.xp=0;
+    p.maxHp=100+(s.profile.level-1)*8+gearBonus(s.craft.rpg,'hp');p.hp=Math.min(p.hp,p.maxHp);
 
     for(let n=0;n<s.enemies.length;n++){
       const e=s.enemies[n];
-      if(e.hp<=0){if(now>=e.respawn)s.enemies[n]=spawn(n);continue;}
+      if(e.hp<=0){if(!s.dungeon&&now>=e.respawn)s.enemies[n]=spawn(n);continue;}
+      if(s.dungeon&&e.kind==='boss'&&e.hp<e.maxHp/2&&e.damage<25){e.damage=25;e.speed=42;addEffect(s,e.x,e.y,'THE NULL : PHASE 2','#e389ff',now);}
       if(e.dotUntil>now&&e.dotAt<=now){e.dotAt=now+700;damageEnemy(s,e,3,now);}
       if(e.kind==='dummy')continue;
       const dx=p.x-e.x,dy=p.y-e.y,d=Math.hypot(dx,dy);
@@ -318,12 +379,16 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
       }
       return true;
     });
-    if(p.hp<=0){p.x=16;p.y=16;p.hp=p.maxHp;s.projectiles=[];addEffect(s,p.x,p.y,'街で復活','#b6e9ff',now);}
+    if(p.hp<=0){if(s.dungeon)leaveDungeon(s,now,false);else{p.x=16;p.y=16;p.hp=p.maxHp;s.projectiles=[];addEffect(s,p.x,p.y,'街で復活','#b6e9ff',now);}}
+    if(s.dungeon&&s.enemies.every(e=>e.hp<=0)){
+      if(s.dungeon===3)leaveDungeon(s,now,true);
+      else{s.dungeon++;s.enemies=dungeonWave(s.dungeon);s.projectiles=[];addEffect(s,p.x,p.y,`第${s.dungeon}波`,'#d9acff',now);}
+    }
     s.effects=s.effects.filter(e=>now-e.born<650);
     s.profile.x=p.x;s.profile.y=p.y;s.profile.hp=p.hp;
     if(now-s.lastSnapshot>=50&&s.ws.readyState===WebSocket.OPEN){
       s.lastSnapshot=now;
-      const snapshot:Snapshot={type:'state',you:s.user.id,players:[p],enemies:s.enemies.filter(e=>e.hp>0),projectiles:[...s.projectiles,...s.friendly].map(({id,x,y,glyph,color})=>({id,x,y,glyph,color})),effects:s.effects,xp:s.profile.xp,level:s.profile.level,coins:s.profile.coins,zone:zoneAt(p.x,p.y),time:now,rollUntil:s.rollUntil,rollX:s.rollX,rollY:s.rollY,rollReadyAt:s.lastDash+1400,parryUntil:s.parryUntil,parryReadyAt:s.lastParry+1200,swingAt:s.lastSwing,combo:now-s.lastSwing<1000?s.combo:0,ep:Math.floor(s.ep),maxEp:100,skillCooldowns:s.skillCooldowns,weaponGlyph:weapon?.glyph??'⚔'};
+      const snapshot:Snapshot={type:'state',you:s.user.id,players:[p],enemies:s.enemies.filter(e=>e.hp>0),projectiles:[...s.projectiles,...s.friendly].map(({id,x,y,glyph,color})=>({id,x,y,glyph,color})),effects:s.effects,xp:s.profile.xp,level:s.profile.level,coins:s.profile.coins,zone:s.dungeon?`虚無の遺跡 第${s.dungeon}波`:zoneAt(p.x,p.y),dungeon:s.dungeon,time:now,rollUntil:s.rollUntil,rollX:s.rollX,rollY:s.rollY,rollReadyAt:s.lastDash+1400,parryUntil:s.parryUntil,parryReadyAt:s.lastParry+1200,swingAt:s.lastSwing,combo:now-s.lastSwing<1000?s.combo:0,ep:Math.floor(s.ep),maxEp:100,skillCooldowns:s.skillCooldowns,weaponGlyph:weapon?.glyph??'⚔'};
       s.ws.send(JSON.stringify(snapshot));
     }
     if(now-s.lastSave>15000){s.lastSave=now;void save(s.user,{...s.profile}).catch(console.error);if(s.craftDirty)void queueCraftSave(s).catch(console.error);}
@@ -339,9 +404,10 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
         [profile,craft]=await Promise.all([load(user),loadCraft(user).then(normalizeCraft)]);
       }catch{socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');socket.destroy();return;}
       wss.handleUpgrade(req,socket,head,ws=>{
-        const hp=Math.min(100+(profile.level-1)*8,Math.max(1,profile.hp));
-        const player:Actor={id:user.id,name:user.username,x:profile.x,y:profile.y,hp,maxHp:100+(profile.level-1)*8,glyph:'@',facingX:1,facingY:0};
-        const s:Session={user,ws,player,input:{...emptyInput},inputAt:Date.now(),profile,craft,craftSave:Promise.resolve(),craftDirty:false,lastCraftAt:0,enemies:spots.map((_,i)=>spawn(i)),projectiles:[],friendly:[],effects:[],lastSwing:0,combo:0,lastDash:0,dashLatch:false,rollUntil:0,rollX:0,rollY:0,lastTrail:0,invulnUntil:0,lastParry:0,parryUntil:0,parrySuccessUntil:0,ep:100,skillCooldowns:[0,0,0,0],lastSave:Date.now(),lastSnapshot:0,kills:0};
+        const maxHp=100+(profile.level-1)*8+gearBonus(craft.rpg,'hp');
+        const hp=Math.min(maxHp,Math.max(1,profile.hp));
+        const player:Actor={id:user.id,name:user.username,x:profile.x,y:profile.y,hp,maxHp,glyph:'@',facingX:1,facingY:0};
+        const s:Session={user,ws,player,input:{...emptyInput},inputAt:Date.now(),profile,craft,craftSave:Promise.resolve(),craftDirty:false,lastCraftAt:0,dungeon:0,dungeonReturn:null,enemies:spots.map((_,i)=>spawn(i)),projectiles:[],friendly:[],effects:[],lastSwing:0,combo:0,lastDash:0,dashLatch:false,rollUntil:0,rollX:0,rollY:0,lastTrail:0,invulnUntil:0,lastParry:0,parryUntil:0,parrySuccessUntil:0,ep:100,skillCooldowns:[0,0,0,0],lastSave:Date.now(),lastSnapshot:0,kills:0};
         sessions.set(user.id,s);
         sendCraft(s);
         ws.on('message',data=>{try{void handleCommand(s,JSON.parse(data.toString()));}catch{}});
