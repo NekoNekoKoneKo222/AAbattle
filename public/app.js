@@ -330,6 +330,19 @@ function renderPveEnemyPreview() {
   $('pve-enemy-description').textContent = enemy.description;
   const { hp, atk, def, speed } = enemy.stats;
   $('pve-enemy-stats').textContent = `HP ${hp} / ATK ${atk} / DEF ${def} / SPD ${speed}`;
+  const skills = $('pve-enemy-skills');
+  skills.replaceChildren(node('div', 'panel-heading', '// ENEMY ABILITIES'));
+  for (const skill of enemy.skills || []) {
+    const row = node('div', 'skill-row');
+    row.append(node('b', '', `${skill.name} [CD:${skill.cooldown}]`), node('small', '', skill.description));
+    if (skill.effects?.length) row.append(node('small', '', skill.effects.map(effectSummary).join(' + ')));
+    skills.append(row);
+  }
+  if (enemy.passive) {
+    const row = node('div', 'skill-row');
+    row.append(node('b', '', `[PASSIVE] ${enemy.passive.name}`), node('small', '', enemy.passive.description));
+    skills.append(row);
+  }
 }
 
 async function refreshPveHistory() {

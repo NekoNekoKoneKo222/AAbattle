@@ -66,7 +66,15 @@ export function listPveEnemies() {
   return PVE_DIFFICULTIES.map((key) => ({
     key, label: enemies[key].label, name: enemies[key].title,
     description: enemies[key].description, art: enemies[key].art,
-    stats: { ...enemies[key].definition.stats }
+    stats: { ...enemies[key].definition.stats },
+    skills: enemies[key].definition.skills.map(({ name, description, cooldown, effects }) => ({
+      name, description, cooldown,
+      effects: effects.map(({ type, power, chance, duration }) => ({ type, power, chance, duration }))
+    })),
+    passive: {
+      name: enemies[key].definition.passive.name,
+      description: enemies[key].definition.passive.description
+    }
   }));
 }
 

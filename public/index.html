@@ -81,6 +81,7 @@
         <button class="nav-button" data-tab="history">[ 04 / 戦績 ]</button>
         <button class="nav-button" data-tab="trades">[ 05 / トレード ]</button>
         <button class="nav-button" data-tab="pve">[ 06 / PvE ]</button>
+        <button class="nav-button" data-tab="guide">[ 07 / 説明書 ]</button>
         <button id="logout" class="nav-button logout">[ LOGOUT ]</button>
       </nav>
 
@@ -247,6 +248,7 @@
                   <pre id="pve-enemy-art"></pre>
                   <p id="pve-enemy-description" class="muted">敵データを読み込んでいます。</p>
                   <div id="pve-enemy-stats" class="small-badge">--</div>
+                  <div id="pve-enemy-skills" class="skill-list" aria-label="敵の技と特性"></div>
                 </div>
                 <div class="pve-actions">
                   <button id="pve-start" type="submit" class="primary-button">&gt;&gt; START SOLO BATTLE</button>
@@ -291,6 +293,15 @@
           <div class="stats-summary"><span id="pve-wins">PVE WIN 0</span><span id="pve-losses">PVE LOSE 0</span></div>
           <div id="pve-history" class="history-list"></div>
         </section>
+      </section>
+      <section id="tab-guide" class="tab-page hidden" aria-labelledby="guide-title">
+        <div class="arena-heading"><div><div class="panel-heading"><span class="number">07</span> GAME SYSTEM MANUAL</div><h2 id="guide-title">ゲームシステム説明書</h2></div></div>
+        <div class="guide-grid">
+          <section class="ascii-frame"><div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div><div class="ascii-content"><div class="panel-heading">// はじめかた</div><h3>AAを作って対戦へ</h3><ol><li>「作成」でキャラ名とAAを入力し、Gemini APIまたはOllamaで能力を生成します。</li><li>「図鑑」でHP・攻撃・防御・速度、3つの技と特性を確認します。</li><li>「PvE」でCPUと練習するか、「対戦」でほかのプレイヤーと自動戦闘します。</li></ol><p class="muted">生成済みのキャラはアカウントの図鑑に保存されます。PvEは何度でも挑戦できます。</p></div><div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div></section>
+          <section class="ascii-frame"><div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div><div class="ascii-content"><div class="panel-heading">// 戦闘の進み方</div><h3>使える技はすべて発動</h3><p>速度が高いキャラから始まり、両者が交互に行動します。行動開始時にクールダウンを進め、使用可能な技を各1回ずつ使います。2つ使えるなら2つ、3つ使えるなら3つ発動します。連続使用する技とCDの短い技は、威力が抑えられます。使用可能な技がないときだけ通常攻撃をします。</p><p>技の順番は性格やHPの状況を見て自動で決まります。HPが0になった時点で残りの技は発動しません。気絶や沈黙で行動不能になったときは、その行動の技をすべて使えません。</p><p class="muted">48行動で決着しない場合は、残りHPの割合とシールドで勝敗を決めます。</p></div><div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div></section>
+          <section class="ascii-frame"><div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div><div class="ascii-content"><div class="panel-heading">// 能力と状態</div><h3>技と特性</h3><p>技はダメージ・回復・シールド・強化・状態異常などの効果を持ちます。追加効果には発動確率があり、技ごとに再使用までのクールダウンがあります。特性は条件に応じて自動で発動します。</p><ul><li>毒・火傷・出血：行動時に継続ダメージ</li><li>破裂：10以上のHPダメージを受けると約10%の追加ダメージ</li><li>沈黙：設定された確率で行動不能</li><li>反撃態勢：攻撃を受けると設定確率で反撃</li><li>ラストスタンド：1度だけ最大HPの1%で復活し、その連続攻撃を止める</li></ul></div><div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div></section>
+          <section class="ascii-frame"><div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div><div class="ascii-content"><div class="panel-heading">// 記録と交換</div><h3>遊んだ結果</h3><p>PvEの勝敗はPvPと別に保存されます。PvEでは直近20戦の履歴を表示し、戦闘の再生をスキップしても結果は保存されます。</p><p>「戦績」では対人戦の結果を確認できます。「トレード」では相手のプレイヤー名で検索し、互いの所持AAを指定して交換を申請できます。交換は相手の承認後に確定します。</p></div><div class="ascii-edge"><span>+</span><span class="dash"></span><span>+</span></div></section>
+        </div>
       </section>
     </main>
 

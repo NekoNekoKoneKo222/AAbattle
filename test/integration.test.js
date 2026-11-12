@@ -91,6 +91,8 @@ test('account registration, authentication, character saving and online matchmak
   const pveEnemies = await request('pve/enemies', null, ac);
   assert.equal(pveEnemies.status, 200);
   assert.equal(pveEnemies.body.enemies.length, 4);
+  assert.equal(pveEnemies.body.enemies[0].skills.length, 3);
+  assert.equal(pveEnemies.body.enemies[0].skills[0].name, 'ぷにっと衝撃');
   assert.equal((await request('pve/battle', { difficulty: 'boss', fighterId: 'invalid' }, ac)).status, 400);
   assert.equal((await request('pve/battle', { difficulty: 'easy', fighterId: fighterA.body.fighter.id }, ac)).status, 403);
   const pve = await request('pve/battle', { difficulty: 'easy', fighterId: fighterB.body.fighter.id }, ac);

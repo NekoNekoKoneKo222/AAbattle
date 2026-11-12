@@ -32,6 +32,53 @@ test('one account cannot match itself', () => {
   assert.throws(() => createBattle(player, fighter, player, fighter), /同じアカウント/);
 });
 
+test('uses every ready skill once per action and observes each cooldown', () => {
+  const durable = { ...definition, stats: { hp: 1000, atk: 10, def: 100, speed: 80 } };
+  const fighter = (id) => ({ id, name: id, art: 'o', definition: durable });
+  const battle = createBattle({ id: 'one', username: 'alice' }, fighter('cat'),
+    { id: 'two', username: 'bob' }, fighter('robot'), () => 0);
+  const first = stepBattle(battle);
+  assert.deepEqual(first.lines.filter((line) => line.startsWith('catの「')), ['catの「刺突」！', 'catの「斬撃」！', 'catの「強撃」！']);
+  assert.deepEqual(battle.fighters[0].cooldowns, [2, 2, 2]);
+  stepBattle(battle);
+  const third = stepBattle(battle);
+  assert.equal(third.lines.filter((line) => line.startsWith('catの「')).length, 1);
+  assert.match(third.lines.join(' '), /通常攻撃/);
+  stepBattle(battle);
+  const fifth = stepBattle(battle);
+  assert.equal(fifth.lines.filter((line) => line.startsWith('catの「')).length, 3);
+});
+
+test('two ready skills both fire while a cooling skill stays unavailable', () => {
+  const durable = { ...definition, stats: { hp: 1000, atk: 10, def: 100, speed: 80 } };
+  const fighter = (id) => ({ id, name: id, art: 'o', definition: durable });
+  const battle = createBattle({ id: 'one', username: 'alice' }, fighter('cat'),
+    { id: 'two', username: 'bob' }, fighter('robot'), () => 0);
+  battle.fighters[0].cooldowns = [0, 0, 2];
+  const first = stepBattle(battle);
+  assert.deepEqual(first.lines.filter((line) => line.startsWith('catの「')), ['catの「刺突」！', 'catの「斬撃」！']);
+});
+
+test('three maximum-power CD1 attacks do not guarantee victory against a mixed build', () => {
+  const stats = { hp: 180, atk: 38, def: 17, speed: 60 };
+  const base = { personality: 'aggressive', stats, passive: { name: '装甲', kind: 'armor', chance: 0 } };
+  const rapid = { ...base, skills: [0, 1, 2].map((index) => ({ name: `連撃${index}`, kind: 'damage', power: 90, cooldown: 1 })) };
+  const mixed = { ...base, skills: [
+    { name: '重撃', kind: 'damage', power: 90, cooldown: 3 },
+    { name: '防護', kind: 'shield', power: 65, cooldown: 3 },
+    { name: '回復', kind: 'heal', power: 65, cooldown: 3 }
+  ] };
+  let seed = 1;
+  const rng = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
+  const battle = createBattle({ id: 'rapid', username: 'rapid' }, { id: 'r', name: 'rapid', art: 'o', definition: rapid },
+    { id: 'mixed', username: 'mixed' }, { id: 'm', name: 'mixed', art: 'o', definition: mixed }, rng);
+  const opening = stepBattle(battle);
+  assert.equal(opening.lines.filter((line) => line.includes('連撃')).length, 3);
+  assert.ok(opening.fighters[1].hp > 100);
+  while (!battle.ended) stepBattle(battle);
+  assert.equal(battle.winnerId, 'mixed');
+});
+
 test('Gemini combined skill effects cause real status changes in automatic combat', () => {
   const attacker = {
     ...definition, stats: { hp: 150, atk: 32, def: 12, speed: 90 },
@@ -151,13 +198,19 @@ test('last stand revives at 1 percent HP once, then a second defeat ends the fig
   const battle = statusBattle({ type: 'damage', power: 90, chance: 100, duration: 1 },
     { name: 'ラストスタンド', kind: 'laststand', chance: 1 });
   battle.fighters[0].definition.stats.atk = 250;
-  const first = stepBattle(battle);
-  assert.match(first.lines.join(' '), /1%で復活/);
-  assert.equal(first.fighters[1].hp, 2);
-  assert.equal(first.ended, false);
-  stepBattle(battle);
-  const third = stepBattle(battle);
-  assert.equal(third.ended, true);
-  assert.equal(third.fighters[1].hp, 0);
-  assert.equal(third.lines.filter((line) => line.includes('復活')).length, 0);
+  let revival;
+  while (!battle.ended && !revival) {
+    const turn = stepBattle(battle);
+    if (turn.lines.some((line) => line.includes('1%で復活'))) revival = turn;
+  }
+  assert.ok(revival);
+  assert.equal(revival.fighters[1].hp, 2);
+  assert.equal(revival.ended, false);
+  let repeatedRevival = false;
+  while (!battle.ended) {
+    const turn = stepBattle(battle);
+    repeatedRevival ||= turn.lines.some((line) => line.includes('1%で復活'));
+  }
+  assert.equal(battle.fighters[1].hp, 0);
+  assert.equal(repeatedRevival, false);
 });

@@ -22,6 +22,8 @@ test('PvE enemies provide four difficulty tiers and safe public summaries', () =
   const enemies = listPveEnemies();
   assert.equal(enemies.length, 4);
   assert.ok(enemies.every((enemy) => enemy.art && enemy.stats.hp > 0 && enemy.description));
+  assert.ok(enemies.every((enemy) => enemy.skills.length === 3 && enemy.passive.name));
+  assert.ok(enemies.every((enemy) => enemy.skills.every((skill) => Number.isInteger(skill.cooldown) && skill.effects.length > 0)));
   assert.ok(enemies.every((enemy) => !Object.hasOwn(enemy, 'definition')));
 });
 

@@ -20,9 +20,9 @@ export function createBattle(playerA, fighterA, playerB, fighterB, rng = Math.ra
   return { id: randomUUID(), fighters: [left, right], turn: 0, ended: false, winnerId: null, log: [], rng };
 }
 
-function chooseMove(attacker, defender, rng) {
+function chooseMove(attacker, defender, rng, used = new Set()) {
   const s = attacker.definition.skills;
-  const available = s.map((move, index) => ({ move, index })).filter((v) => attacker.cooldowns[v.index] === 0);
+  const available = s.map((move, index) => ({ move, index })).filter((v) => attacker.cooldowns[v.index] === 0 && !used.has(v.index));
   if (!available.length) return { move: { name: '通常攻撃', kind: 'damage', power: 50, cooldown: 0 }, index: -1 };
   const personality = attacker.definition.personality;
   const healthRatio = attacker.hp / attacker.maxHp;
@@ -115,13 +115,21 @@ export function stepBattle(battle) {
   } else if (a.hp > 0 && silenced) {
     lines.push(`${a.name}は沈黙で行動できない！`);
   } else if (a.hp > 0) {
-    const { move, index } = chooseMove(a, d, rng);
+    const usableCount = a.definition.skills.filter((_, index) => a.cooldowns[index] === 0).length;
+    const used = new Set();
+    // Sharing one action lowers each move's output; short cooldowns trade power for frequency.
+    const comboScale = 1 / (1 + 0.5 * (Math.max(1, usableCount) - 1));
+    for (let action = 0; action < Math.max(1, usableCount) && a.hp > 0 && d.hp > 0; action++) {
+    const targetLastStandUsed = d.lastStandUsed;
+    const { move, index } = chooseMove(a, d, rng, used);
+    if (index >= 0) used.add(index);
     if (index >= 0) a.cooldowns[index] = move.cooldown + 1;
     lines.push(`${a.name}の「${move.name}」！`);
     const effects = Array.isArray(move.effects) && move.effects.length ? move.effects : [{ type: move.kind, power: move.power, chance: 100, duration: 3 }];
-    const scale = effects.length > 1 ? 0.65 : 1;
+    const cooldownScale = index < 0 ? 1 : [1, 0.55, 0.75, 1, 1.1, 1.15][clamp(move.cooldown, 1, 5)];
+    const scale = (effects.length > 1 ? 0.65 : 1) * comboScale * cooldownScale;
     for (const effect of effects) {
-      if (a.hp <= 0 || d.hp <= 0) break;
+      if (a.hp <= 0 || d.hp <= 0 || (!targetLastStandUsed && d.lastStandUsed)) break;
       if (!['silence', 'counter_stance'].includes(effect.type) && rng() * 100 >= (effect.chance ?? 100)) { lines.push('追加効果は発動しなかった'); continue; }
       const power = clamp(effect.power ?? move.power ?? 50, 15, 90) * scale;
       const duration = clamp(effect.duration ?? 3, 1, 3);
@@ -215,6 +223,9 @@ export function stepBattle(battle) {
           reviveIfLastStand(a, lines);
         }
       }
+    }
+    // A revival interrupts the remaining combo so Last Stand grants a real survival window.
+    if (!targetLastStandUsed && d.lastStandUsed) break;
     }
   }
   if (a.weak > 0) a.weak--;
