@@ -145,7 +145,7 @@ export type MaterialBag = { iron: number; wood: number; crystal: number };
 export type Weapon = { id: string; name: string; primary: WeaponBase; secondary: WeaponBase | null; material: Material; element: string; special: string; glyph: string };
 export type WeaponStats = { damage: number; interval: number; range: number; mode: 'melee' | 'ranged'; cost: MaterialBag; rarity: string };
 export type CraftState = { skills: SkillGraph[]; weapons: Weapon[]; equippedSkills: (string | null)[]; equippedWeaponId: string | null; materials: MaterialBag; rpg:import('./rpg.js').RpgState };
-export const starterCraft = ():CraftState=>({skills:[],weapons:[],equippedSkills:[null,null,null,null],equippedWeaponId:null,materials:{iron:4,wood:4,crystal:2},rpg:{inventory:[],equipped:{head:null,body:null,feet:null,charm:null},kills:0,bossKills:0,dungeonClears:0,claimed:[],rebirths:0,rebirthPoints:0,mastery:{}}});
+export const starterCraft = ():CraftState=>({skills:[],weapons:[],equippedSkills:[null,null,null,null],equippedWeaponId:null,materials:{iron:4,wood:4,crystal:2},rpg:{inventory:[],equipped:{head:null,body:null,feet:null,charm:null},kills:0,bossKills:0,dungeonClears:0,claimed:[],rebirths:0,rebirthPoints:0,mastery:{},explored:[],discovered:['city'],eventClaims:[],openedChests:[]}});
 
 export function compileWeapon(raw: unknown): { weapon: Weapon; stats: WeaponStats } {
   if(!raw||typeof raw!=='object')throw new Error('武器データが不正です。');

@@ -1,73 +1,65 @@
 import { useEffect, useRef, useState } from 'react';
-import { TILE, WORLD, tileAt, type Actor } from '@glyph/shared';
+import { TILE, WORLD, WORLD_SITES, BIOMES, biomeAt, chunkKey, currentWorldEvent, tileAt, type Actor, type RpgState } from '@glyph/shared';
+import './world.css';
 
-function terrainColor(glyph: string): string {
-  if (glyph === '#' || glyph === '▓' || glyph === '▲') return '#62788b';
-  if (glyph === '♣' || glyph === '♠') return '#438a6e';
-  if (glyph === '≋') return '#3887a9';
-  if (glyph === '◈' || glyph === '◎') return '#e2b86f';
-  if (glyph === '·') return '#567181';
-  return '#243a4a';
+const COUNT=WORLD*2+1,CELL=2,SIZE=COUNT*CELL;
+function terrainColor(glyph:string,tx:number,ty:number):string{
+  if(glyph==='#'||glyph==='▓'||glyph==='▲')return '#68788a';
+  if(glyph==='♣'||glyph==='♠')return '#438a6e';
+  if(glyph==='≋')return '#3887a9';
+  if(glyph==='◈'||glyph==='◎'||glyph==='◇'||glyph==='✧')return '#e2bd72';
+  if(glyph===':')return '#817c83';
+  return BIOMES[biomeAt(tx,ty)].color;
 }
-
-function drawTiles(ctx: CanvasRenderingContext2D, left: number, top: number, count: number, cell: number) {
-  ctx.fillStyle = '#0b1925';
-  ctx.fillRect(0, 0, count * cell, count * cell);
-  for (let row = 0; row < count; row++) for (let col = 0; col < count; col++) {
-    ctx.fillStyle = terrainColor(tileAt(left + col, top + row));
-    ctx.fillRect(col * cell, row * cell, cell - 0.35, cell - 0.35);
+function drawTiles(ctx:CanvasRenderingContext2D,left:number,top:number,count:number,cell:number,explored?:Set<string>){
+  ctx.fillStyle='#0b1925';ctx.fillRect(0,0,count*cell,count*cell);
+  for(let row=0;row<count;row++)for(let col=0;col<count;col++){
+    const tx=left+col,ty=top+row;
+    if(explored&&!explored.has(chunkKey(tx,ty))&&Math.hypot(tx,ty)>9)continue;
+    ctx.fillStyle=terrainColor(tileAt(tx,ty),tx,ty);
+    ctx.fillRect(col*cell,row*cell,cell,cell);
   }
 }
-
-export function WorldMap({ player, open, onClose, onOpen }: { player?: Actor; open: boolean; onClose: () => void; onOpen: () => void }) {
-  const mini = useRef<HTMLCanvasElement>(null);
-  const full = useRef<HTMLCanvasElement>(null);
-  const [marker, setMarker] = useState<{ x: number; y: number } | null>(null);
-  const px = Math.floor((player?.x ?? 16) / TILE), py = Math.floor((player?.y ?? 16) / TILE);
-
-  useEffect(() => {
-    const ctx = mini.current?.getContext('2d');
-    if (!ctx) return;
-    const count = 33, cell = 4, left = px - 16, top = py - 16;
-    drawTiles(ctx, left, top, count, cell);
-    ctx.fillStyle = '#f6f9ff';
-    ctx.fillRect(16 * cell - 3, 16 * cell - 3, 10, 10);
-    ctx.fillStyle = '#41e9ff';
-    ctx.fillRect(16 * cell - 1, 16 * cell - 1, 6, 6);
-  }, [px, py]);
-
-  useEffect(() => {
-    if (!open) return;
-    const ctx = full.current?.getContext('2d');
-    if (!ctx) return;
-    const count = WORLD * 2 + 1, cell = 4;
-    drawTiles(ctx, -WORLD, -WORLD, count, cell);
-    const dot = (x: number, y: number, color: string, size = 12) => {
-      const sx = (x + WORLD + .5) * cell, sy = (y + WORLD + .5) * cell;
-      ctx.fillStyle = color;
-      ctx.beginPath(); ctx.arc(sx, sy, size / 2, 0, Math.PI * 2); ctx.fill();
+export function WorldMap({player,rpg,open,onClose,onOpen,send}:{player?:Actor;rpg?:RpgState;open:boolean;onClose:()=>void;onOpen:()=>void;send:(message:Record<string,unknown>)=>void}){
+  const mini=useRef<HTMLCanvasElement>(null),full=useRef<HTMLCanvasElement>(null),base=useRef<HTMLCanvasElement|null>(null),baseKey=useRef('pending');
+  const [marker,setMarker]=useState<{x:number;y:number}|null>(null);
+  const px=Math.floor((player?.x??16)/TILE),py=Math.floor((player?.y??16)/TILE);
+  const exploredKey=(rpg?.explored??[]).join('|'),discovered=rpg?.discovered??['city'];
+  const here=BIOMES[biomeAt(px,py)],event=currentWorldEvent(Date.now());
+  const nearMerchant=Math.hypot(px+3,py-1)<3;
+  useEffect(()=>{
+    const ctx=mini.current?.getContext('2d');if(!ctx)return;
+    drawTiles(ctx,px-16,py-16,33,4);
+    ctx.fillStyle='#41e9ff';ctx.fillRect(62,62,8,8);
+  },[px,py]);
+  useEffect(()=>{
+    if(!open)return;const ctx=full.current?.getContext('2d');if(!ctx)return;
+    if(!base.current){base.current=document.createElement('canvas');base.current.width=SIZE;base.current.height=SIZE;}
+    if(baseKey.current!==exploredKey){
+      const bg=base.current.getContext('2d');if(bg)drawTiles(bg,-WORLD,-WORLD,COUNT,CELL,new Set(rpg?.explored??[]));
+      baseKey.current=exploredKey;
+    }
+    ctx.drawImage(base.current,0,0);
+    const dot=(tx:number,ty:number,color:string,radius:number)=>{
+      const sx=(tx+WORLD+.5)*CELL,sy=(ty+WORLD+.5)*CELL;
+      ctx.fillStyle=color;ctx.beginPath();ctx.arc(sx,sy,radius,0,Math.PI*2);ctx.fill();
     };
-    dot(0, 0, '#f1c971', 9);
-    dot(-20, 14, '#ba8df2', 7);
-    dot(0, 22, '#d38ad7', 7);
-    if (marker) dot(marker.x, marker.y, '#f6d880', 12);
-    dot(px, py, '#72f4ff', 17);
-    ctx.fillStyle = '#e8faff'; ctx.font = 'bold 12px system-ui';
-    ctx.fillText('始まりの街', (0 + WORLD) * cell + 11, (0 + WORLD) * cell - 12);
-    ctx.fillText('文字の森', (20 + WORLD) * cell + 6, (0 + WORLD) * cell - 12);
-    ctx.fillText('虚無の遺跡', (0 + WORLD) * cell + 9, (22 + WORLD) * cell + 17);
-    ctx.fillText('訓練闘技場', (-20 + WORLD) * cell - 80, (14 + WORLD) * cell - 10);
-  }, [open, px, py, marker]);
-
+    for(const site of WORLD_SITES)if(discovered.includes(site.id)){dot(site.tx,site.ty,site.kind==='secret'?'#fae399':site.kind==='merchant'?'#ffcb77':'#a8f6e7',site.kind==='waypoint'?5:3);}
+    if((rpg?.explored??[]).includes(chunkKey(event.tx,event.ty)))dot(event.tx,event.ty,'#fa9bdb',5);
+    if(marker)dot(marker.x,marker.y,'#f6d880',5);
+    dot(px,py,'#72f4ff',7);
+  },[open,px,py,exploredKey,discovered.join('|'),marker,event.id]);
   return <>
     <button className="minimap" onClick={onOpen} aria-label="ワールドマップを開く" title="ワールドマップ (M)"><canvas ref={mini} width="132" height="132"/><span>◎ MAP　M</span></button>
-    {open && <div className="map-backdrop" role="dialog" aria-modal="true" aria-label="ワールドマップ">
-      <section className="world-map">
-        <div className="map-title"><div><strong>◈ WORLD MAP</strong><small>ワールドマップ / 現在地：{px}, {py}</small></div><button onClick={onClose} aria-label="マップを閉じる">閉じる ×</button></div>
-        <canvas ref={full} width="644" height="644" onClick={e => { const r = e.currentTarget.getBoundingClientRect(); setMarker({ x: Math.max(-WORLD, Math.min(WORLD, Math.floor((e.clientX - r.left) / r.width * 644 / 4) - WORLD)), y: Math.max(-WORLD, Math.min(WORLD, Math.floor((e.clientY - r.top) / r.height * 644 / 4) - WORLD)) }); }} aria-label="クリックして目的地マーカーを置く"/>
-        <div className="map-legend"><span><i style={{background:'#72f4ff'}}/>現在地</span><span><i style={{background:'#f6d880'}}/>目的地</span><span><i style={{background:'#f1c971'}}/>安全地帯</span><span><i style={{background:'#438a6e'}}/>森林</span><span><i style={{background:'#62788b'}}/>障害物</span></div>
-        <p>地図をタップすると目的地マーカーを置けます。M または「閉じる」で戻ります。</p>
-      </section>
-    </div>}
+    {open&&<div className="map-backdrop" role="dialog" aria-modal="true" aria-label="ワールドマップ"><section className="world-map">
+      <div className="map-title"><div><strong>◈ WORLD MAP</strong><small>現在地：{px}, {py} / {here.name} / 危険度 {here.danger}</small></div><button onClick={onClose} aria-label="マップを閉じる">閉じる ×</button></div>
+      <canvas ref={full} width={SIZE} height={SIZE} onClick={e=>{const rect=e.currentTarget.getBoundingClientRect();setMarker({x:Math.max(-WORLD,Math.min(WORLD,Math.floor((e.clientX-rect.left)/rect.width*COUNT)-WORLD)),y:Math.max(-WORLD,Math.min(WORLD,Math.floor((e.clientY-rect.top)/rect.height*COUNT)-WORLD))});}} aria-label="クリックして目的地マーカーを置く"/>
+      <div className="map-legend"><span><i style={{background:'#72f4ff'}}/>現在地</span><span><i style={{background:'#f6d880'}}/>目的地</span><span><i style={{background:'#a8f6e7'}}/>発見した道標</span><span><i style={{background:'#0b1925'}}/>未探索</span></div>
+      <div className="world-progress">探索済みチャンク：{rpg?.explored.length??0} / 25　発見した地点：{discovered.length} / {WORLD_SITES.length}</div>
+      <div className="world-travel">{WORLD_SITES.filter(site=>site.kind==='waypoint'&&discovered.includes(site.id)).map(site=><button key={site.id} onClick={()=>{send({type:'world:travel',id:site.id});onClose();}}>{site.name}へ移動</button>)}</div>
+      <p>道標の近くから、発見済みの道標へ移動できます。地図をタップすると目的地マーカーを置けます。</p>
+      <div className="world-events"><span>本日のイベント：{event.name}（{(rpg?.explored??[]).includes(chunkKey(event.tx,event.ty))?`${event.tx}, ${event.ty}`:'未探索地域'}）</span><button onClick={()=>send({type:'world:interact'})}>近くを調べる F</button></div>
+      {nearMerchant&&<div className="world-travel">商人ノア：{(['iron','wood','crystal'] as const).map(item=><button key={item} onClick={()=>send({type:'world:buy',item})}>{item==='iron'?'鉄':item==='wood'?'木':'結晶'}を購入（{item==='crystal'?25:10}コイン）</button>)}</div>}
+    </section></div>}
   </>;
 }

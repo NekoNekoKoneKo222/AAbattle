@@ -1,7 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { IncomingMessage } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { TILE, canStand, norm, zoneAt, compileSkill, compileWeapon, starterCraft, normalizeRpg, rollGear, gearBonus, QUESTS, WEAPON_BASES, type Actor, type CraftState, type Effect, type Input, type Projectile, type SkillProgram, type Snapshot, type Weapon } from '@glyph/shared';
+import { TILE, WORLD_SITES, BIOMES, biomeAt, chunkKey, chestAt, currentWorldEvent, canStand, norm, zoneAt, compileSkill, compileWeapon, starterCraft, normalizeRpg, rollGear, gearBonus, QUESTS, WEAPON_BASES, type Actor, type CraftState, type Effect, type Input, type Projectile, type SkillProgram, type Snapshot, type Weapon } from '@glyph/shared';
 
 export type User = { id: string; username: string };
 export type Profile = { x: number; y: number; hp: number; xp: number; level: number; coins: number };
@@ -12,7 +12,7 @@ type LoadCraft = (user: User) => Promise<CraftState>;
 type Enemy = Actor & { targetX: number; targetY: number; speed: number; damage: number; lastAttack: number; respawn: number; windupUntil: number; staggerUntil: number; slowUntil: number; dotUntil: number; dotAt: number };
 type EnemyProjectile = Projectile & { vx: number; vy: number; damage: number; expires: number };
 type FriendlyProjectile = Projectile & { vx: number; vy: number; damage: number; expires: number; program: SkillProgram | null; hitIds: Set<string>; pierce: number; special: string; element: string };
-type Session = { user: User; ws: WebSocket; player: Actor; input: Input; inputAt: number; profile: Profile; craft: CraftState; craftSave: Promise<void>; craftDirty: boolean; lastCraftAt: number; dungeon: number; dungeonReturn: {x:number;y:number}|null; enemies: Enemy[]; projectiles: EnemyProjectile[]; friendly: FriendlyProjectile[]; effects: Effect[]; lastSwing: number; combo: number; lastDash: number; dashLatch: boolean; rollUntil: number; rollX: number; rollY: number; lastTrail: number; invulnUntil: number; lastParry: number; parryUntil: number; parrySuccessUntil: number; ep: number; skillCooldowns: number[]; lastSave: number; lastSnapshot: number; kills: number };
+type Session = { user: User; ws: WebSocket; player: Actor; input: Input; inputAt: number; profile: Profile; craft: CraftState; craftSave: Promise<void>; craftDirty: boolean; pendingWorld:boolean; lastCraftAt: number; dungeon: number; dungeonReturn: {x:number;y:number}|null; wildChunk:string; enemies: Enemy[]; projectiles: EnemyProjectile[]; friendly: FriendlyProjectile[]; effects: Effect[]; lastSwing: number; combo: number; lastDash: number; dashLatch: boolean; rollUntil: number; rollX: number; rollY: number; lastTrail: number; invulnUntil: number; lastParry: number; parryUntil: number; parrySuccessUntil: number; ep: number; skillCooldowns: number[]; lastSave: number; lastSnapshot: number; kills: number };
 const emptyInput: Input = { x:0,y:0,aimX:1,aimY:0,attack:false,dash:false };
 const templates = [
   {kind:'melee',glyph:'g',name:'森のグリフ',hp:35,speed:42,damage:6},
@@ -29,6 +29,17 @@ function spawn(index:number):Enemy {
   let [x,y]=spots[index];
   if(!canStand(x,y)){for(let r=1;r<10&&!canStand(x,y);r++)for(let a=0;a<8;a++){const xx=spots[index][0]+Math.cos(a*Math.PI/4)*r*TILE, yy=spots[index][1]+Math.sin(a*Math.PI/4)*r*TILE;if(canStand(xx,yy)){x=xx;y=yy;break;}}}
   return {id:`e${index}`,name:t.name,x,y,hp:t.hp,maxHp:t.hp,glyph:t.glyph,kind:t.kind,targetX:x,targetY:y,speed:t.speed,damage:t.damage,lastAttack:0,respawn:0,windupUntil:0,staggerUntil:0,slowUntil:0,dotUntil:0,dotAt:0};
+}
+function spawnWild(cx:number,cy:number,index:number):Enemy{
+  const tx=cx*64+(index===0?18:46),ty=cy*64+(index===0?44:18),biome=biomeAt(tx,ty),danger=BIOMES[biome].danger;
+  const e=spawn(danger>=5&&index===0?8:danger>=3?7:index),pos=safeNear((tx+.5)*TILE,(ty+.5)*TILE);
+  e.id=`w:${cx},${cy},${index}`;e.name=`${BIOMES[biome].name}の${danger>=5&&index===0?'主':danger>=3?'守護文字':'野生文字'}`;
+  e.kind=danger>=5&&index===0?'boss':danger>=3?'elite':index===1?'ranged':'melee';
+  e.glyph=danger>=5&&index===0?'Ω':danger>=3?'◆':index===1?'r':'g';
+  e.x=pos.x;e.y=pos.y;e.targetX=pos.x;e.targetY=pos.y;
+  e.maxHp=35+danger*20+(e.kind==='boss'?130:0);e.hp=e.maxHp;
+  e.damage=6+danger*2;e.speed=36+danger*4;
+  return e;
 }
 function safeNumber(v:unknown):number { return typeof v==='number' && Number.isFinite(v) ? Math.max(-1,Math.min(1,v)) : 0; }
 function validInput(raw:unknown):Input|null {
@@ -70,6 +81,18 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
     return s.craftSave;
   };
   const sendCraft=(s:Session)=>{if(s.ws.readyState===WebSocket.OPEN)s.ws.send(JSON.stringify({type:'craft:state',craft:s.craft}));};
+  const refreshWild=(s:Session)=>{
+    const tx=Math.floor(s.player.x/TILE),ty=Math.floor(s.player.y/TILE),key=chunkKey(tx,ty);
+    if(s.wildChunk===key||s.dungeon)return;
+    s.wildChunk=key;const old=new Map(s.enemies.filter(e=>e.id.startsWith('w:')).map(e=>[e.id,e]));
+    s.enemies=s.enemies.filter(e=>!e.id.startsWith('w:'));
+    const cx=Math.floor(tx/64),cy=Math.floor(ty/64);
+    for(let x=cx-1;x<=cx+1;x++)for(let y=cy-1;y<=cy+1;y++)for(let i=0;i<2;i++){
+      const gx=x*64+(i===0?18:46),gy=y*64+(i===0?44:18);
+      if(Math.abs(gx)>120||Math.abs(gy)>120)continue;
+      const id=`w:${x},${y},${i}`;s.enemies.push(old.get(id)??spawnWild(x,y,i));
+    }
+  };
   const dungeonWave=(wave:number):Enemy[]=>{
     const count=wave===3?1:wave+1;
     return Array.from({length:count},(_,i)=>{
@@ -82,7 +105,7 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
   const leaveDungeon=(s:Session,now:number,complete:boolean)=>{
     if(complete){s.craft.rpg.dungeonClears++;s.profile.coins+=100;s.craft.materials.crystal=Math.min(9999,s.craft.materials.crystal+3);s.craftDirty=true;void queueCraftSave(s).catch(console.error);sendCraft(s);}
     const pos=s.dungeonReturn??{x:16,y:16};s.player.x=pos.x;s.player.y=pos.y;s.player.hp=s.player.maxHp;
-    s.dungeon=0;s.dungeonReturn=null;s.enemies=spots.map((_,i)=>spawn(i));s.projectiles=[];s.friendly=[];
+    s.dungeon=0;s.dungeonReturn=null;s.wildChunk='';s.enemies=spots.map((_,i)=>spawn(i));s.projectiles=[];s.friendly=[];
     addEffect(s,pos.x,pos.y,complete?'遺跡踏破！':'ダンジョンから帰還',complete?'#f6d77b':'#9ff4ec',now);
   };
   const equippedWeapon=(s:Session):Weapon|null=>s.craft.weapons.find(w=>w.id===s.craft.equippedWeaponId)??null;
@@ -130,8 +153,9 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
           const gear=rollGear(s.profile.level,e.kind==='boss',Math.random,randomUUID());s.craft.rpg.inventory.push(gear);
           addEffect(s,e.x,e.y,`◆ ${gear.rarity} ${gear.name}`,'#f9db89',now);
         }
-        const material=e.kind==='boss'?'crystal':e.kind==='ranged'?'wood':'iron';
-        s.craft.materials[material]++;
+        const wildBiome=e.id.startsWith('w:')?biomeAt(e.x/TILE,e.y/TILE):null;
+        const material=wildBiome&&['anomaly','abyss','boundary','secret'].includes(wildBiome)?'crystal':wildBiome==='forest'?'wood':e.kind==='boss'?'crystal':e.kind==='ranged'?'wood':'iron';
+        s.craft.materials[material]=Math.min(9999,s.craft.materials[material]+1);
         s.craftDirty=true;s.kills++;
         void queueCraftSave(s).catch(console.error);
         addEffect(s,e.x,e.y,`✧ +XP +${material}`,'#f5dc77',now);
@@ -205,11 +229,56 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
       addEffect(s,0,0,'虚無の遺跡：第1波','#d9acff',now);sendCraft(s);return;
     }
     if(type==='rpg:leave'){if(s.dungeon)leaveDungeon(s,now,false);return;}
-    if(!type.startsWith('craft:')&&!type.startsWith('rpg:'))return;
+    if(!type.startsWith('craft:')&&!type.startsWith('rpg:')&&!type.startsWith('world:'))return;
     if(now-s.lastCraftAt<200){s.ws.send(JSON.stringify({type:'craft:error',message:'操作が速すぎます。少し待ってください。'}));return;}
     s.lastCraftAt=now;
     try{
-      if(type==='rpg:equip'){
+      if(type==='world:interact'){
+        if(s.dungeon)throw new Error('ダンジョン内では探索できません。');
+        const event=currentWorldEvent(now),eventNear=Math.hypot(s.player.x-(event.tx+.5)*TILE,s.player.y-(event.ty+.5)*TILE)<80;
+        const site=WORLD_SITES.find(site=>Math.hypot(s.player.x-(site.tx+.5)*TILE,s.player.y-(site.ty+.5)*TILE)<80);
+        const chest=chestAt(Math.floor(s.player.x/TILE/64),Math.floor(s.player.y/TILE/64));
+        const chestNear=Math.hypot(s.player.x-(chest.tx+.5)*TILE,s.player.y-(chest.ty+.5)*TILE)<80;
+        let message='近くに調べられるものはありません。';
+        if(eventNear){
+          if(s.craft.rpg.eventClaims.includes(event.id))message=`${event.name}：今日の報酬は受け取り済みです。`;
+          else{
+            s.craft.rpg.eventClaims.push(event.id);s.craft.rpg.eventClaims=s.craft.rpg.eventClaims.slice(-16);
+            if(event.reward==='coins')s.profile.coins+=40;
+            else s.craft.materials[event.reward as 'iron'|'crystal']=Math.min(9999,s.craft.materials[event.reward as 'iron'|'crystal']+3);
+            message=`${event.name}を発見！ ${event.reward==='coins'?'40コイン':event.reward==='iron'?'鉄3個':'結晶3個'}を獲得。`;
+            await queueCraftSave(s);await save(s.user,{...s.profile});sendCraft(s);
+          }
+        }else if(chestNear){
+          if(s.craft.rpg.openedChests.includes(chest.id))message='この宝箱は開封済みです。';
+          else{
+            s.craft.rpg.openedChests.push(chest.id);
+            const danger=BIOMES[biomeAt(chest.tx,chest.ty)].danger,reward=20+danger*10;
+            s.profile.coins+=reward;s.craft.materials.crystal=Math.min(9999,s.craft.materials.crystal+Math.max(1,Math.floor(danger/2)));
+            message=`宝箱を開封！ ${reward}コインと結晶を獲得。`;
+            await queueCraftSave(s);await save(s.user,{...s.profile});sendCraft(s);
+          }
+        }else if(site?.kind==='merchant')message='商人ノア：鉄・木は各10コイン、結晶は25コイン。マップから購入できます。';
+        else if(site?.kind==='npc')message='案内人リラ：道標に近づくと地図に記録されます。記録した道標から別の道標へ移動できます。今日は光るイベント地点も探してみて。';
+        else if(site)message=`${site.name}を発見しました。マップからファストトラベルできます。`;
+        s.ws.send(JSON.stringify({type:'world:dialog',message}));return;
+      }else if(type==='world:buy'){
+        const merchant=WORLD_SITES.find(site=>site.id==='merchant')!;
+        if(s.dungeon||Math.hypot(s.player.x-(merchant.tx+.5)*TILE,s.player.y-(merchant.ty+.5)*TILE)>90)throw new Error('商人の近くで購入してください。');
+        const item=String(a.item??'');if(!['iron','wood','crystal'].includes(item))throw new Error('商品がありません。');
+        const cost=item==='crystal'?25:10;if(s.profile.coins<cost)throw new Error('コインが足りません。');
+        const key=item as 'iron'|'wood'|'crystal';if(s.craft.materials[key]>=9999)throw new Error('素材の所持上限です。');
+        s.profile.coins-=cost;s.craft.materials[key]++;
+      }else if(type==='world:travel'){
+        if(s.dungeon)throw new Error('ダンジョン内では移動できません。');
+        const target=WORLD_SITES.find(site=>site.id===a.id&&site.kind==='waypoint');
+        if(!target||!s.craft.rpg.discovered.includes(target.id))throw new Error('未発見の道標です。');
+        const origin=WORLD_SITES.find(site=>site.kind==='waypoint'&&s.craft.rpg.discovered.includes(site.id)&&Math.hypot(s.player.x-(site.tx+.5)*TILE,s.player.y-(site.ty+.5)*TILE)<100);
+        if(!origin)throw new Error('道標の近くから移動してください。');
+        const pos=safeNear((target.tx+.5)*TILE,(target.ty+.5)*TILE);s.player.x=pos.x;s.player.y=pos.y;s.profile.x=pos.x;s.profile.y=pos.y;
+        s.projectiles=[];s.friendly=[];s.player.hp=s.player.maxHp;s.profile.hp=s.player.hp;
+        addEffect(s,pos.x,pos.y,`${target.name}へ移動`,'#7feada',now);
+      }else if(type==='rpg:equip'){
         const id=String(a.id??''),gear=s.craft.rpg.inventory.find(g=>g.id===id);
         if(!gear)throw new Error('装備が見つかりません。');s.craft.rpg.equipped[gear.slot]=gear.id;
       }else if(type==='rpg:upgrade'){
@@ -270,7 +339,7 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
         if(s.craft.equippedWeaponId===id)s.craft.equippedWeaponId=null;
       }else return;
       await queueCraftSave(s);
-      if(type==='rpg:rebirth'||type==='rpg:claim'||type==='rpg:upgrade'||type==='rpg:reroll')await save(s.user,{...s.profile});
+      if(type==='rpg:rebirth'||type==='rpg:claim'||type==='rpg:upgrade'||type==='rpg:reroll'||type==='world:buy'||type==='world:travel')await save(s.user,{...s.profile});
       sendCraft(s);
     }catch(error){
       if(s.ws.readyState===WebSocket.OPEN)s.ws.send(JSON.stringify({type:'craft:error',message:error instanceof Error?error.message:'保存に失敗しました。'}));
@@ -295,6 +364,17 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
     const nx=p.x+moveX*speed*dt,ny=p.y+moveY*speed*dt;
     if(canStand(nx,p.y))p.x=nx;
     if(canStand(p.x,ny))p.y=ny;
+    refreshWild(s);
+    if(!s.dungeon){
+      const rpg=s.craft.rpg,key=chunkKey(Math.floor(p.x/TILE),Math.floor(p.y/TILE));let discovered=false;
+      if(!rpg.explored.includes(key)&&rpg.explored.length<36){rpg.explored.push(key);discovered=true;addEffect(s,p.x,p.y,'新しい地域を探索','#8fe9d9',now);}
+      for(const site of WORLD_SITES){
+        if(rpg.discovered.includes(site.id)||Math.hypot(p.x-(site.tx+.5)*TILE,p.y-(site.ty+.5)*TILE)>96)continue;
+        rpg.discovered.push(site.id);discovered=true;addEffect(s,p.x,p.y,`${site.name}を発見`,'#f7db8e',now);
+        if(site.kind==='secret'){s.craft.materials.crystal=Math.min(9999,s.craft.materials.crystal+5);addEffect(s,p.x,p.y,'秘密の結晶 +5','#dfa9ff',now);}
+      }
+      if(discovered){s.craftDirty=true;s.pendingWorld=true;void queueCraftSave(s).catch(console.error);}
+    }
     if(rolling && now-s.lastTrail>60){s.lastTrail=now;addEffect(s,p.x,p.y,'·','#6de8fb',now,'trail');}
 
     const weapon=equippedWeapon(s),weaponStats=weapon?compileWeapon(weapon).stats:null;
@@ -327,7 +407,7 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
 
     for(let n=0;n<s.enemies.length;n++){
       const e=s.enemies[n];
-      if(e.hp<=0){if(!s.dungeon&&now>=e.respawn)s.enemies[n]=spawn(n);continue;}
+      if(e.hp<=0){if(!s.dungeon&&now>=e.respawn){if(e.id.startsWith('w:')){const [cx,cy,index]=e.id.slice(2).split(',').map(Number);s.enemies[n]=spawnWild(cx,cy,index);}else s.enemies[n]=spawn(n);}continue;}
       if(s.dungeon&&e.kind==='boss'&&e.hp<e.maxHp/2&&e.damage<25){e.damage=25;e.speed=42;addEffect(s,e.x,e.y,'THE NULL : PHASE 2','#e389ff',now);}
       if(e.dotUntil>now&&e.dotAt<=now){e.dotAt=now+700;damageEnemy(s,e,3,now);}
       if(e.kind==='dummy')continue;
@@ -388,8 +468,9 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
     s.profile.x=p.x;s.profile.y=p.y;s.profile.hp=p.hp;
     if(now-s.lastSnapshot>=50&&s.ws.readyState===WebSocket.OPEN){
       s.lastSnapshot=now;
-      const snapshot:Snapshot={type:'state',you:s.user.id,players:[p],enemies:s.enemies.filter(e=>e.hp>0),projectiles:[...s.projectiles,...s.friendly].map(({id,x,y,glyph,color})=>({id,x,y,glyph,color})),effects:s.effects,xp:s.profile.xp,level:s.profile.level,coins:s.profile.coins,zone:s.dungeon?`虚無の遺跡 第${s.dungeon}波`:zoneAt(p.x,p.y),dungeon:s.dungeon,time:now,rollUntil:s.rollUntil,rollX:s.rollX,rollY:s.rollY,rollReadyAt:s.lastDash+1400,parryUntil:s.parryUntil,parryReadyAt:s.lastParry+1200,swingAt:s.lastSwing,combo:now-s.lastSwing<1000?s.combo:0,ep:Math.floor(s.ep),maxEp:100,skillCooldowns:s.skillCooldowns,weaponGlyph:weapon?.glyph??'⚔'};
+      const snapshot:Snapshot={type:'state',you:s.user.id,players:[p],enemies:s.enemies.filter(e=>e.hp>0&&(!e.id.startsWith('w:')||Math.hypot(e.x-p.x,e.y-p.y)<650)),projectiles:[...s.projectiles,...s.friendly].map(({id,x,y,glyph,color})=>({id,x,y,glyph,color})),effects:s.effects,xp:s.profile.xp,level:s.profile.level,coins:s.profile.coins,zone:s.dungeon?`虚無の遺跡 第${s.dungeon}波`:zoneAt(p.x,p.y),dungeon:s.dungeon,world:s.pendingWorld?{explored:s.craft.rpg.explored,discovered:s.craft.rpg.discovered}:undefined,time:now,rollUntil:s.rollUntil,rollX:s.rollX,rollY:s.rollY,rollReadyAt:s.lastDash+1400,parryUntil:s.parryUntil,parryReadyAt:s.lastParry+1200,swingAt:s.lastSwing,combo:now-s.lastSwing<1000?s.combo:0,ep:Math.floor(s.ep),maxEp:100,skillCooldowns:s.skillCooldowns,weaponGlyph:weapon?.glyph??'⚔'};
       s.ws.send(JSON.stringify(snapshot));
+      s.pendingWorld=false;
     }
     if(now-s.lastSave>15000){s.lastSave=now;void save(s.user,{...s.profile}).catch(console.error);if(s.craftDirty)void queueCraftSave(s).catch(console.error);}
   }
@@ -407,7 +488,7 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
         const maxHp=100+(profile.level-1)*8+gearBonus(craft.rpg,'hp');
         const hp=Math.min(maxHp,Math.max(1,profile.hp));
         const player:Actor={id:user.id,name:user.username,x:profile.x,y:profile.y,hp,maxHp,glyph:'@',facingX:1,facingY:0};
-        const s:Session={user,ws,player,input:{...emptyInput},inputAt:Date.now(),profile,craft,craftSave:Promise.resolve(),craftDirty:false,lastCraftAt:0,dungeon:0,dungeonReturn:null,enemies:spots.map((_,i)=>spawn(i)),projectiles:[],friendly:[],effects:[],lastSwing:0,combo:0,lastDash:0,dashLatch:false,rollUntil:0,rollX:0,rollY:0,lastTrail:0,invulnUntil:0,lastParry:0,parryUntil:0,parrySuccessUntil:0,ep:100,skillCooldowns:[0,0,0,0],lastSave:Date.now(),lastSnapshot:0,kills:0};
+        const s:Session={user,ws,player,input:{...emptyInput},inputAt:Date.now(),profile,craft,craftSave:Promise.resolve(),craftDirty:false,pendingWorld:false,lastCraftAt:0,dungeon:0,dungeonReturn:null,wildChunk:'',enemies:spots.map((_,i)=>spawn(i)),projectiles:[],friendly:[],effects:[],lastSwing:0,combo:0,lastDash:0,dashLatch:false,rollUntil:0,rollX:0,rollY:0,lastTrail:0,invulnUntil:0,lastParry:0,parryUntil:0,parrySuccessUntil:0,ep:100,skillCooldowns:[0,0,0,0],lastSave:Date.now(),lastSnapshot:0,kills:0};
         sessions.set(user.id,s);
         sendCraft(s);
         ws.on('message',data=>{try{void handleCommand(s,JSON.parse(data.toString()));}catch{}});
