@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { once } from 'node:events';
+import { readFileSync } from 'node:fs';
 import WebSocket from 'ws';
-import { tileAt, canStand, zoneAt } from '../glyph-infinity/shared/dist/index.js';
+import { TILE, tileAt, canStand, zoneAt, setWorldMap, authoredMapSize } from '../glyph-infinity/shared/dist/index.js';
 import { attachGlyphInfinity } from '../glyph-infinity/server/dist/index.js';
 import { GlyphStore } from '../src/glyph-store.js';
 
@@ -12,6 +13,22 @@ test('glyph world has reachable city gates and distinct zones',()=>{
   assert.equal(canStand(8*32+16,16),true);
   assert.equal(zoneAt(16,16),'始まりの街');
   assert.equal(zoneAt(600,0),'文字の森');
+});
+
+test('world.txt overrides terrain consistently for server collision and map',()=>{
+  const source=readFileSync(new URL('../glyph-infinity/world.txt',import.meta.url),'utf8');
+  setWorldMap(source);
+  try {
+    assert.deepEqual(authoredMapSize(),{originX:-24,originY:-18,width:49,height:37});
+    assert.equal(tileAt(0,0),'◎');
+    assert.equal(tileAt(8,3),'#');
+    assert.equal(canStand(8*TILE+16,3*TILE+16),false);
+    assert.equal(canStand(8*TILE+16,16),true);
+    setWorldMap('@origin 0 0\nS#\n..');
+    assert.equal(tileAt(0,0),'◎');
+    assert.equal(tileAt(1,0),'#');
+    assert.equal(canStand(48,16),false);
+  } finally { setWorldMap(''); }
 });
 
 test('server owns movement and saves profile when disconnected',async()=>{

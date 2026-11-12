@@ -4,10 +4,14 @@
 
 ## Play
 
-- PC: WASD or arrows to move, mouse to aim, click or Space to attack, Shift to dash.
-- iPad: left virtual stick to move, right buttons to attack and dash. Attacks face the travel direction.
+- PC or iPad with an external keyboard: WASD or arrows to move, J / Enter / Space to attack, Shift to dash, M to open the world map, Esc to close it. A mouse can still aim and attack.
+- iPad touch: left virtual stick to move, right buttons to attack and dash. Attacks face the travel direction. Tap the minimap or header map button to open the world map.
 - Leave the city through the gate and enter the forest. Enemies respawn; defeating them grants XP and coins. Defeat returns the player to the city.
 - Position, HP, level, XP and coins save on disconnect and every 15 seconds.
+
+## Edit the world
+
+Edit [`world.txt`](world.txt) to change the authored terrain. `@origin X Y` gives the tile coordinate of the first character in the first row; each character represents one tile, and all rows must have equal width. `.` and spaces are walkable ground, `:` is a road, `#` a wall, `T` a tree, `~` water, `^` rock, `+` a landmark, and `S` the starting point. Walls, trees, water and rocks block movement. Outside the text grid the existing procedural terrain remains. Restart the local server or commit the file and redeploy Render to apply edits for everyone. The game and collision server load the same file.
 
 ## Run
 

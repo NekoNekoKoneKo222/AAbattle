@@ -6,8 +6,31 @@ export type Actor = { id: string; name: string; x: number; y: number; hp: number
 export type Effect = { id: number; x: number; y: number; text: string; color: string; born: number };
 export type Snapshot = { type: 'state'; you: string; players: Actor[]; enemies: Actor[]; effects: Effect[]; xp: number; level: number; coins: number; zone: string; time: number };
 
+type AuthoredMap = { originX: number; originY: number; rows: string[][] };
+let authoredMap: AuthoredMap | null = null;
+
+/** A plain text grid. @origin is the tile coordinate of the top-left character. */
+export function setWorldMap(source: string): void {
+  if (!source.trim()) { authoredMap = null; return; }
+  const lines = source.replace(/\r/g, '').split('\n').filter(line => line.length > 0 && !line.startsWith(';'));
+  const header = /^@origin\s+(-?\d+)\s+(-?\d+)$/.exec(lines.shift() ?? '');
+  if (!header || !lines.length || lines.length > 161) throw new Error('world.txt: @origin と地形の行を確認してください。');
+  const rows = lines.map(line => Array.from(line));
+  const width = rows[0]?.length;
+  if (!width || width > 161 || rows.some(row => row.length !== width || row.some(c => !'. :#T~^+S'.includes(c)))) {
+    throw new Error('world.txt: 全行を同じ幅にし、指定された地形文字を使用してください。');
+  }
+  authoredMap = { originX: Number(header[1]), originY: Number(header[2]), rows };
+}
+
+export function authoredMapSize(): { originX: number; originY: number; width: number; height: number } | null {
+  return authoredMap ? { originX: authoredMap.originX, originY: authoredMap.originY, width: authoredMap.rows[0].length, height: authoredMap.rows.length } : null;
+}
+
 export function tileAt(tx: number, ty: number): string {
   if (Math.abs(tx) > WORLD || Math.abs(ty) > WORLD) return '#';
+  const authored = authoredMap?.rows[ty - authoredMap.originY]?.[tx - authoredMap.originX];
+  if (authored !== undefined) return ({ '.':'·', ':':'·', 'T':'♣', '~':'≋', '^':'▲', '+':'◈', 'S':'◎' } as Record<string,string>)[authored] ?? authored;
   if (Math.abs(tx) < 9 && Math.abs(ty) < 8) {
     if ((Math.abs(tx) === 8 || Math.abs(ty) === 7) && !(Math.abs(tx) <= 1 || Math.abs(ty) <= 1)) return '#';
     if (tx === 0 || ty === 0) return '·';
@@ -21,7 +44,7 @@ export function tileAt(tx: number, ty: number): string {
 export function blocked(x: number, y: number): boolean {
   const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
   const tile = tileAt(tx, ty);
-  return tile === '#' || tile === '▓' || tile === '♣' || tile === '♠';
+  return tile === '#' || tile === '▓' || tile === '♣' || tile === '♠' || tile === '≋' || tile === '▲';
 }
 export function canStand(x: number, y: number): boolean {
   const r = 8;

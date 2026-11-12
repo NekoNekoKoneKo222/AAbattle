@@ -4,6 +4,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import argon2 from 'argon2';
 import { WebSocketServer, WebSocket } from 'ws';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createStore, TradeError } from './store.js';
 import { ShiftStore } from './shift-store.js';
@@ -17,6 +18,10 @@ import { listPveEnemies, PVE_DIFFICULTIES, runPveBattle } from './pve.js';
 import { attachShiftArena } from '../shift-arena/apps/server/dist/index.js';
 import { attachGlyphInfinity } from '../glyph-infinity/server/dist/index.js';
 import { GlyphStore } from './glyph-store.js';
+import { setWorldMap } from '@glyph/shared';
+
+const glyphWorldPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'glyph-infinity', 'world.txt');
+setWorldMap(readFileSync(glyphWorldPath, 'utf8'));
 
 const store = createStore();
 const tournaments = new TournamentManager(store);
@@ -524,6 +529,7 @@ app.post('/api/pve/battle', wrap(async (req, res) => {
 
 app.get('/sam', (_req, res) => res.sendFile(path.join(staticRoot, 'sam', 'index.html')));
 app.get(['/GF', '/GF/'], (_req, res) => res.sendFile(path.join(staticRoot, 'GF', 'index.html')));
+app.get('/GF/world.txt', (_req, res) => res.type('text/plain; charset=utf-8').set('Cache-Control', 'no-store').sendFile(glyphWorldPath));
 app.get('/abn', (_req, res) => res.sendFile(path.join(staticRoot, 'abn', 'index.html')));
 app.get('/model', (_req, res) => res.sendFile(path.join(staticRoot, 'sam', 'index.html')));
 app.use(express.static(staticRoot, { index: 'index.html', maxAge: 60000 }));
