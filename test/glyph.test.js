@@ -83,7 +83,7 @@ test('keyboard melee auto-targets a nearby enemy without a mouse',async()=>{
     assert.ok(near,'an accessible melee position should exist');
     profile={...profile,...near,hp:100};
     ws=new WebSocket(url);await once(ws,'open');
-    const states=[];ws.on('message',m=>states.push(JSON.parse(m.toString())));
+    const states=[];ws.on('message',m=>{const value=JSON.parse(m.toString());if(value.type==='state')states.push(value);});
     const attack=()=>ws.send(JSON.stringify({type:'input',x:0,y:0,aimX:0,aimY:0,attack:true,dash:false}));
     attack();timer=setInterval(attack,50);
     await new Promise(resolve=>setTimeout(resolve,800));
@@ -121,7 +121,7 @@ test('ranged enemy warns before firing a dodgeable projectile',async()=>{
     assert.ok(near,'a clear ranged lane should exist');
     profile={...profile,...near,hp:100};
     ws=new WebSocket(url);await once(ws,'open');
-    const states=[];ws.on('message',m=>states.push(JSON.parse(m.toString())));
+    const states=[];ws.on('message',m=>{const value=JSON.parse(m.toString());if(value.type==='state')states.push(value);});
     await new Promise(resolve=>setTimeout(resolve,1300));
     assert.ok(states.some(s=>(s.enemies.find(e=>e.id==='e1')?.windupUntil??0)>s.time),'warning should precede the shot');
     assert.ok(states.some(s=>s.projectiles.length>0),'the enemy should fire a moving projectile');

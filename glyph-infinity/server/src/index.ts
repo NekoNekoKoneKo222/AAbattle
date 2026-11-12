@@ -1,7 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { IncomingMessage } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { TILE, WORLD_SITES, BIOMES, biomeAt, chunkKey, chestAt, currentWorldEvent, canStand, norm, zoneAt, compileSkill, compileWeapon, starterCraft, normalizeRpg, rollGear, gearBonus, QUESTS, WEAPON_BASES, type Actor, type CraftState, type Effect, type Input, type Projectile, type SkillProgram, type Snapshot, type Weapon } from '@glyph/shared';
+import { TILE, WORLD_SITES, BIOMES, BOSS_PARTS, biomeAt, chunkKey, chestAt, currentWorldEvent, canStand, norm, zoneAt, compileSkill, compileWeapon, starterCraft, normalizeRpg, rollGear, gearBonus, QUESTS, WEAPON_BASES, type Actor, type CraftState, type Effect, type Input, type Projectile, type SkillProgram, type Snapshot, type Weapon } from '@glyph/shared';
 
 export type User = { id: string; username: string };
 export type Profile = { x: number; y: number; hp: number; xp: number; level: number; coins: number };
@@ -10,17 +10,19 @@ type Load = (user: User) => Promise<Profile>;
 type SaveCraft = (user: User, craft: CraftState) => Promise<void>;
 type LoadCraft = (user: User) => Promise<CraftState>;
 type AreFriends = (firstId:string,secondId:string)=>Promise<boolean>;
-type Enemy = Actor & { targetX: number; targetY: number; speed: number; damage: number; lastAttack: number; respawn: number; windupUntil: number; staggerUntil: number; slowUntil: number; dotUntil: number; dotAt: number };
+type Enemy = Actor & { targetX: number; targetY: number; speed: number; damage: number; lastAttack: number; respawn: number; windupUntil: number; staggerUntil: number; staggerImmuneUntil: number; poise: number; poiseMax: number; knockbackUntil: number; slowUntil: number; dotUntil: number; dotAt: number; attackMode?: 'strike'|'sweep'|'volley' };
 type EnemyProjectile = Projectile & { vx: number; vy: number; damage: number; expires: number };
 type FriendlyProjectile = Projectile & { vx: number; vy: number; damage: number; expires: number; program: SkillProgram | null; hitIds: Set<string>; pierce: number; special: string; element: string };
-type Session = { user: User; ws: WebSocket; player: Actor; input: Input; inputAt: number; profile: Profile; craft: CraftState; craftSave: Promise<void>; craftDirty: boolean; pendingWorld:boolean; pendingCraft:boolean; lastCraftAt: number; lastChatAt:number; partyId:string|null; dungeon: number; dungeonReturn: {x:number;y:number}|null; wildChunk:string; enemies: Enemy[]; projectiles: EnemyProjectile[]; friendly: FriendlyProjectile[]; effects: Effect[]; lastSwing: number; combo: number; lastDash: number; dashLatch: boolean; rollUntil: number; rollX: number; rollY: number; lastTrail: number; invulnUntil: number; lastParry: number; parryUntil: number; parrySuccessUntil: number; ep: number; skillCooldowns: number[]; lastSave: number; lastSnapshot: number; kills: number };
+type Session = { user: User; ws: WebSocket; player: Actor; input: Input; inputAt: number; profile: Profile; craft: CraftState; craftSave: Promise<void>; craftDirty: boolean; pendingWorld:boolean; pendingCraft:boolean; lastCraftAt: number; lastChatAt:number; partyId:string|null; dungeon: number; abyssRun:number; dungeonReturn: {x:number;y:number}|null; pvpMatch:string|null; pvpReturn:{x:number;y:number;hp:number}|null; awakeningUntil:number; lastAwaken:number; wildChunk:string; enemies: Enemy[]; projectiles: EnemyProjectile[]; friendly: FriendlyProjectile[]; effects: Effect[]; lastSwing: number; combo: number; lastDash: number; dashLatch: boolean; rollUntil: number; rollX: number; rollY: number; lastTrail: number; invulnUntil: number; lastParry: number; parryUntil: number; parrySuccessUntil: number; ep: number; skillCooldowns: number[]; lastSave: number; lastSnapshot: number; lastPresence:number; kills: number };
+type PvpMatch={id:string;mode:'ranked'|'casual'|'unrestricted';size:number;teams:[string[],string[]];score:[number,number];round:number;roundStarted:number;intermissionUntil:number;finished:boolean};
+type PvpQueue={mode:PvpMatch['mode'];size:number;members:string[];joined:number;rating:number};
 const emptyInput: Input = { x:0,y:0,aimX:1,aimY:0,attack:false,dash:false };
 const templates = [
-  {kind:'melee',glyph:'g',name:'森のグリフ',hp:35,speed:42,damage:6},
-  {kind:'ranged',glyph:'r',name:'文字射手',hp:26,speed:30,damage:5},
-  {kind:'fast',glyph:'v',name:'疾走文字',hp:20,speed:75,damage:4},
-  {kind:'elite',glyph:'G',name:'古きグリフ',hp:90,speed:33,damage:9},
-  {kind:'boss',glyph:'Ø',name:'THE NULL',hp:240,speed:27,damage:14}
+  {kind:'melee',glyph:'g',name:'森のグリフ',hp:72,speed:54,damage:9},
+  {kind:'ranged',glyph:'r',name:'文字射手',hp:58,speed:42,damage:8},
+  {kind:'fast',glyph:'v',name:'疾走文字',hp:48,speed:85,damage:7},
+  {kind:'elite',glyph:'G',name:'古きグリフ',hp:190,speed:48,damage:15},
+  {kind:'boss',glyph:'Ø',name:'THE NULL',hp:680,speed:45,damage:22}
 ];
 const spots = [[410,50],[540,190],[340,-200],[-430,-90],[210,550],[390,650],[-360,520],[-470,650],[70,760],[-620,470]];
 let effectId=0;
@@ -29,7 +31,8 @@ function spawn(index:number):Enemy {
   const t=index===9?{kind:'dummy',glyph:'☷',name:'訓練人形',hp:250,speed:0,damage:0}:templates[index===8?4:index===7?3:index%3];
   let [x,y]=spots[index];
   if(!canStand(x,y)){for(let r=1;r<10&&!canStand(x,y);r++)for(let a=0;a<8;a++){const xx=spots[index][0]+Math.cos(a*Math.PI/4)*r*TILE, yy=spots[index][1]+Math.sin(a*Math.PI/4)*r*TILE;if(canStand(xx,yy)){x=xx;y=yy;break;}}}
-  return {id:`e${index}`,name:t.name,x,y,hp:t.hp,maxHp:t.hp,glyph:t.glyph,kind:t.kind,targetX:x,targetY:y,speed:t.speed,damage:t.damage,lastAttack:0,respawn:0,windupUntil:0,staggerUntil:0,slowUntil:0,dotUntil:0,dotAt:0};
+  const poiseMax=t.kind==='boss'?150:t.kind==='elite'?65:30;
+  return {id:`e${index}`,name:t.name,x,y,hp:t.hp,maxHp:t.hp,glyph:t.glyph,kind:t.kind,targetX:x,targetY:y,speed:t.speed,damage:t.damage,lastAttack:0,respawn:0,windupUntil:0,staggerUntil:0,staggerImmuneUntil:0,poise:poiseMax,poiseMax,knockbackUntil:0,slowUntil:0,dotUntil:0,dotAt:0};
 }
 function spawnWild(cx:number,cy:number,index:number):Enemy{
   const tx=cx*64+(index===0?18:46),ty=cy*64+(index===0?44:18),biome=biomeAt(tx,ty),danger=BIOMES[biome].danger;
@@ -38,8 +41,9 @@ function spawnWild(cx:number,cy:number,index:number):Enemy{
   e.kind=danger>=5&&index===0?'boss':danger>=3?'elite':index===1?'ranged':'melee';
   e.glyph=danger>=5&&index===0?'Ω':danger>=3?'◆':index===1?'r':'g';
   e.x=pos.x;e.y=pos.y;e.targetX=pos.x;e.targetY=pos.y;
-  e.maxHp=35+danger*20+(e.kind==='boss'?130:0);e.hp=e.maxHp;
-  e.damage=6+danger*2;e.speed=36+danger*4;
+  e.maxHp=65+danger*35+(e.kind==='boss'?430:e.kind==='elite'?120:0);e.hp=e.maxHp;
+  e.damage=8+danger*3;e.speed=45+danger*5;
+  e.poiseMax=e.kind==='boss'?150:e.kind==='elite'?65:30;e.poise=e.poiseMax;
   return e;
 }
 function safeNumber(v:unknown):number { return typeof v==='number' && Number.isFinite(v) ? Math.max(-1,Math.min(1,v)) : 0; }
@@ -61,7 +65,14 @@ function normalizeCraft(raw:unknown):CraftState {
   for(const key of ['iron','wood','crystal'] as const)bag[key]=Number.isSafeInteger(materials[key])?Math.max(0,Math.min(9999,Number(materials[key]))):seed.materials[key];
   const equippedSkills=Array.from({length:4},(_,i)=>{const id=Array.isArray(a.equippedSkills)?a.equippedSkills[i]:null;return typeof id==='string'&&ids.has(id)?id:null;});
   const equippedWeaponId=typeof a.equippedWeaponId==='string'&&weaponIds.has(a.equippedWeaponId)?a.equippedWeaponId:null;
-  return {skills,weapons,equippedSkills,equippedWeaponId,materials:bag,rpg:normalizeRpg(a.rpg)};
+  const legacyParts=[...skills.flatMap(skill=>skill.nodes.map(node=>node.part)),...weapons.map(weapon=>weapon.element)];
+  const unlockedParts=[...new Set([...(Array.isArray(a.unlockedParts)?a.unlockedParts:[]),...legacyParts].filter(v=>typeof v==='string'&&(BOSS_PARTS as readonly string[]).includes(v)))];
+  const bossParts=Number.isSafeInteger(a.bossParts)?Math.max(0,Math.min(999,Number(a.bossParts))):0;
+  const pvp=a.pvp&&typeof a.pvp==='object'?a.pvp as Record<string,unknown>:{};
+  const rating=Number.isSafeInteger(pvp.rating)?Math.max(0,Math.min(99999,Number(pvp.rating))):1000;
+  const wins=Number.isSafeInteger(pvp.wins)?Math.max(0,Number(pvp.wins)):0,losses=Number.isSafeInteger(pvp.losses)?Math.max(0,Number(pvp.losses)):0;
+  const abyssDepth=Number.isSafeInteger(a.abyssDepth)?Math.max(0,Math.min(999,Number(a.abyssDepth))):0;
+  return {skills,weapons,equippedSkills,equippedWeaponId,materials:bag,bossParts,unlockedParts,pvp:{rating,wins,losses,season:'1'},abyssDepth,awakened:a.awakened===true,rpg:normalizeRpg(a.rpg)};
 }
 function safeNear(x:number,y:number):{x:number;y:number} {
   if(canStand(x,y))return {x,y};
@@ -75,11 +86,14 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
   const wss=new WebSocketServer({noServer:true,maxPayload:16384});
   const sessions=new Map<string,Session>();
   const worldEnemies=spots.map((_,i)=>spawn(i));
-  const parties=new Map<string,{id:string;leaderId:string;members:Set<string>}>();
+  const contributors=new WeakMap<Enemy,Map<string,number>>();
+  const parties=new Map<string,{id:string;code:string;leaderId:string;members:Set<string>}>();
   const invites=new Map<string,{id:string;partyId:string;targetId:string;fromName:string;expiresAt:number}>();
-  const encounterMembers=(s:Session):Session[]=>s.dungeon?s.partyId?[...sessions.values()].filter(other=>other.dungeon>0&&other.partyId===s.partyId):[s]:[...sessions.values()].filter(other=>!other.dungeon);
+  const pvpQueue:PvpQueue[]=[];
+  const pvpMatches=new Map<string,PvpMatch>();
+  const encounterMembers=(s:Session):Session[]=>s.pvpMatch?[...sessions.values()].filter(other=>other.pvpMatch===s.pvpMatch):s.dungeon?s.partyId?[...sessions.values()].filter(other=>other.dungeon>0&&other.partyId===s.partyId):[s]:[...sessions.values()].filter(other=>!other.dungeon&&!other.pvpMatch);
   const sendJson=(s:Session,value:unknown)=>{if(s.ws.readyState===WebSocket.OPEN)s.ws.send(JSON.stringify(value));};
-  const partyView=(s:Session)=>{const party=s.partyId?parties.get(s.partyId):null;return {type:'party:state',party:party?{id:party.id,leaderId:party.leaderId,members:[...party.members].map(id=>({id,name:sessions.get(id)?.user.username??'オフライン'}))}:null,invites:[...invites.values()].filter(v=>v.targetId===s.user.id&&v.expiresAt>Date.now()).map(({id,fromName})=>({id,fromName})),onlineIds:[...sessions.keys()]};};
+  const partyView=(s:Session)=>{const party=s.partyId?parties.get(s.partyId):null;return {type:'party:state',party:party?{id:party.id,code:party.code,leaderId:party.leaderId,members:[...party.members].map(id=>({id,name:sessions.get(id)?.user.username??'オフライン'}))}:null,invites:[...invites.values()].filter(v=>v.targetId===s.user.id&&v.expiresAt>Date.now()).map(({id,fromName})=>({id,fromName})),onlineIds:[...sessions.keys()]};};
   const broadcastParty=(partyId:string)=>{const party=parties.get(partyId);if(party)for(const id of party.members){const member=sessions.get(id);if(member)sendJson(member,partyView(member));}};
   const leaveParty=(s:Session)=>{if(!s.partyId)return;const id=s.partyId,party=parties.get(id);s.partyId=null;if(party){party.members.delete(s.user.id);if(!party.members.size)parties.delete(id);else{if(party.leaderId===s.user.id)party.leaderId=party.members.values().next().value!;broadcastParty(id);}}sendJson(s,partyView(s));};
   const addEffect=(s:Session,x:number,y:number,text:string,color:string,now:number,kind?:Effect['kind'],dx?:number,dy?:number)=>s.effects.push({id:++effectId,x,y,text,color,born:now,kind,dx,dy});
@@ -101,12 +115,13 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
       const id=`w:${x},${y},${i}`;if(!worldEnemies.some(e=>e.id===id))worldEnemies.push(spawnWild(x,y,i));
     }
   };
-  const dungeonWave=(wave:number):Enemy[]=>{
+  const dungeonWave=(wave:number,depth=0):Enemy[]=>{
     const count=wave===3?1:wave+1;
     return Array.from({length:count},(_,i)=>{
       const e=spawn(wave===3?8:wave===2?7:i%3),pos=safeNear((i-(count-1)/2)*75,110);
       e.id=`d${wave}-${i}`;e.x=pos.x;e.y=pos.y;e.targetX=e.x;e.targetY=e.y;
-      e.maxHp=Math.round(e.maxHp*(wave===3?1.5:1+wave*.3));e.hp=e.maxHp;e.damage+=wave*2;
+      const scale=1+Math.min(10,depth)*.22;
+      e.maxHp=Math.round(e.maxHp*(wave===3?1.3:1+wave*.45)*scale);e.hp=e.maxHp;e.damage+=wave*3+Math.min(10,depth)*3;
       return e;
     });
   };
@@ -116,7 +131,7 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
       if(complete){member.craft.rpg.dungeonClears++;member.profile.coins+=100;member.craft.materials.crystal=Math.min(9999,member.craft.materials.crystal+3);member.craftDirty=true;void queueCraftSave(member).catch(console.error);sendCraft(member);}
       const pos=member.dungeonReturn??{x:16,y:16};member.player.x=pos.x;member.player.y=pos.y;member.player.hp=member.player.maxHp;
       member.profile.x=pos.x;member.profile.y=pos.y;member.profile.hp=member.player.hp;
-      member.dungeon=0;member.dungeonReturn=null;member.wildChunk='';member.enemies=worldEnemies;member.projectiles=[];member.friendly=[];
+      member.dungeon=0;member.abyssRun=0;member.dungeonReturn=null;member.wildChunk='';member.enemies=worldEnemies;member.projectiles=[];member.friendly=[];
       addEffect(member,pos.x,pos.y,complete?'遺跡踏破！':'ダンジョンから帰還',complete?'#f6d77b':'#9ff4ec',now);
     }
   };
@@ -126,17 +141,22 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
     if(gained){s.player.hp+=gained;addEffect(s,s.player.x,s.player.y,`+${gained}`,'#8effbc',now);}
   };
   const effectAllowed=(s:Session,guards:string[],now:number)=>guards.every(g=>g==='on_hit'||g==='low_hp'&&s.player.hp<=s.player.maxHp/2||g==='on_parry'&&now<s.parrySuccessUntil);
-  function damageEnemy(s:Session,e:Enemy,rawDamage:number,now:number,element='neutral',program:SkillProgram|null=null,special='none') {
+  function damageEnemy(s:Session,e:Enemy,rawDamage:number,now:number,element='neutral',program:SkillProgram|null=null,special='none',credit=true) {
     if(e.hp<=0)return;
-    const damage=Math.min(150,Math.max(1,Math.round(rawDamage+gearBonus(s.craft.rpg,'damage')+Math.min(10,Math.floor((s.craft.rpg.mastery[equippedWeapon(s)?.primary??'bare']??0)/20))+Math.min(10,s.craft.rpg.rebirths))));
-    e.hp=Math.max(0,e.hp-damage);e.windupUntil=0;e.staggerUntil=Math.max(e.staggerUntil,now+170);
+    let hits=contributors.get(e);if(!hits){hits=new Map();contributors.set(e,hits);}if(credit)hits.set(s.user.id,now);
+    const damage=Math.min(150,Math.max(1,Math.round((rawDamage+(element==='void'&&e.kind==='boss'?rawDamage*.2:0)+gearBonus(s.craft.rpg,'damage')+Math.min(10,Math.floor((s.craft.rpg.mastery[equippedWeapon(s)?.primary??'bare']??0)/20))+Math.min(10,s.craft.rpg.rebirths))*(s.awakeningUntil>now?1.25:1))));
+    e.hp=Math.max(0,e.hp-damage);
+    if(e.kind!=='dummy'&&now>=e.staggerImmuneUntil){
+      e.poise-=Math.max(3,damage*.45);
+      if(e.poise<=0){e.poise=e.poiseMax;e.staggerUntil=now+(e.kind==='boss'?650:e.kind==='elite'?800:500);e.staggerImmuneUntil=now+(e.kind==='boss'?5000:3000);e.windupUntil=0;addEffect(s,e.x,e.y,'BREAK!','#ffe08a',now);}
+    }
     addEffect(s,e.x,e.y,`-${damage}`,'#ff9393',now,'hit');
     if(element==='fire'||element==='poison'){e.dotUntil=now+(element==='fire'?2400:3600);e.dotAt=now+700;}
     if(element==='ice')e.slowUntil=now+2500;
     if(element==='light')heal(s,4,now);
     if(element==='dark'||special==='leech')heal(s,Math.min(10,damage*.2),now);
-    if(special==='stun')e.staggerUntil=now+500;
-    const push=(distance:number)=>{const v=norm(e.x-s.player.x,e.y-s.player.y);const x=e.x+v.x*distance,y=e.y+v.y*distance;if(canStand(x,y)){e.x=x;e.y=y;}};
+    if(special==='stun'&&e.kind!=='boss'&&now>=e.staggerImmuneUntil){e.staggerUntil=now+400;e.staggerImmuneUntil=now+2500;}
+    const push=(distance:number)=>{if(e.kind==='boss'||e.kind==='elite'||now<e.knockbackUntil)return;const v=norm(e.x-s.player.x,e.y-s.player.y);const x=e.x+v.x*distance,y=e.y+v.y*distance;if(canStand(x,y)){e.x=x;e.y=y;e.knockbackUntil=now+1100;}};
     if(special==='burst')for(const other of s.enemies)if(other!==e&&other.hp>0&&Math.hypot(other.x-e.x,other.y-e.y)<65){damageEnemy(s,other,Math.max(1,Math.floor(damage*.3)),now);addEffect(s,other.x,other.y,'✦','#ffb474',now);}
     if(element==='lightning'){
       const other=s.enemies.find(other=>other!==e&&other.hp>0&&Math.hypot(other.x-e.x,other.y-e.y)<90);
@@ -147,6 +167,8 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
       if(effect.part==='heal')heal(s,12,now);
       else if(effect.part==='absorb')heal(s,damage*.25,now);
       else if(effect.part==='knockback')push(32);
+      else if(effect.part==='sunder'){const extra=Math.max(1,Math.round(damage*.22));e.hp=Math.max(0,e.hp-extra);addEffect(s,e.x,e.y,`-${extra}`,'#d99bff',now);}
+      else if(effect.part==='ward')heal(s,16,now);
       else if(effect.part==='dot'){e.dotUntil=now+3000;e.dotAt=now+700;}
       else if(effect.part==='explosion'){
         addEffect(s,e.x,e.y,'✹','#ffbc6b',now);
@@ -158,12 +180,12 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
       if(e.kind!=='dummy'){
         const wildBiome=e.id.startsWith('w:')?biomeAt(e.x/TILE,e.y/TILE):null;
         const material=wildBiome&&['anomaly','abyss','boundary','secret'].includes(wildBiome)?'crystal':wildBiome==='forest'?'wood':e.kind==='boss'?'crystal':e.kind==='ranged'?'wood':'iron';
-        const recipients=s.partyId?[...sessions.values()].filter(member=>member.partyId===s.partyId&&member.dungeon===s.dungeon&&Math.hypot(member.player.x-e.x,member.player.y-e.y)<430):[s];
+        const recipients=[...sessions.values()].filter(member=>member.dungeon===s.dungeon&&member.pvpMatch===null&&Math.hypot(member.player.x-e.x,member.player.y-e.y)<430&&((hits?.get(member.user.id)??0)>=now-30000||!!s.partyId&&member.partyId===s.partyId));
         for(const member of recipients){
           member.profile.xp+=e.kind==='boss'?60:e.kind==='elite'?25:10;
           member.profile.coins+=e.kind==='boss'?50:5;
           member.craft.rpg.kills++;
-          if(e.kind==='boss')member.craft.rpg.bossKills++;
+          if(e.kind==='boss'){member.craft.rpg.bossKills++;member.craft.bossParts=Math.min(999,(member.craft.bossParts??0)+1);addEffect(member,e.x,e.y,'◆ ボスの核 +1','#f6aaff',now);}
           const masteryKey=equippedWeapon(member)?.primary??'bare';member.craft.rpg.mastery[masteryKey]=Math.min(10000,(member.craft.rpg.mastery[masteryKey]??0)+1);
           if(member.craft.rpg.inventory.length<60&&(e.kind==='boss'||Math.random()<.22)){
             const gear=rollGear(member.profile.level,e.kind==='boss',Math.random,randomUUID());member.craft.rpg.inventory.push(gear);
@@ -182,19 +204,65 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
     if(now<s.parryUntil){
       s.parrySuccessUntil=now+500;
       addEffect(s,s.player.x,s.player.y,'PARRY!','#b4f9ff',now);
-      if(source){source.staggerUntil=now+650;damageEnemy(s,source,Math.max(8,damage*2),now);}
+      if(source){damageEnemy(s,source,Math.max(8,damage*2),now);if(source.kind!=='boss'&&now>=source.staggerImmuneUntil){source.staggerUntil=now+550;source.staggerImmuneUntil=now+2500;source.windupUntil=0;}}
       return;
     }
     const received=Math.max(1,Math.round(damage-gearBonus(s.craft.rpg,'guard')));
     s.player.hp=Math.max(0,s.player.hp-received);
     addEffect(s,s.player.x,s.player.y,`-${received}`,'#ff7777',now,'hit');
   }
+  const pvpTargets=(s:Session):Session[]=>{const match=s.pvpMatch?pvpMatches.get(s.pvpMatch):null;if(!match||match.finished||match.intermissionUntil>Date.now())return [];const own=match.teams.findIndex(team=>team.includes(s.user.id));return own<0?[]:match.teams[1-own].map(id=>sessions.get(id)).filter((v):v is Session=>!!v&&v.player.hp>0);};
+  const damageOpponent=(attacker:Session,target:Session,raw:number,now:number)=>{
+    if(target.player.hp<=0||now<target.invulnUntil)return;
+    if(now<target.parryUntil){target.parrySuccessUntil=now+500;addEffect(target,target.player.x,target.player.y,'PARRY!','#b4f9ff',now);return;}
+    const match=attacker.pvpMatch?pvpMatches.get(attacker.pvpMatch):null;
+    const damage=Math.max(1,Math.round(Math.min(55,raw)*(match?.mode==='ranked'?.8:1)-(match?.mode==='ranked'?0:gearBonus(target.craft.rpg,'guard'))));
+    target.player.hp=Math.max(0,target.player.hp-damage);target.invulnUntil=now+180;
+    addEffect(target,target.player.x,target.player.y,`-${damage}`,'#ff7777',now,'hit');
+  };
+  const resetPvpRound=(match:PvpMatch,now:number)=>{
+    match.roundStarted=now;match.intermissionUntil=now+3000;match.round++;
+    for(let team=0;team<2;team++)for(const [index,id] of match.teams[team].entries()){
+      const member=sessions.get(id);if(!member)continue;
+      const pos=safeNear((team===0?-1:1)*170,(index-(match.size-1)/2)*65);
+      member.player.x=pos.x;member.player.y=pos.y;member.player.hp=match.mode==='ranked'?120:member.player.maxHp;
+      member.ep=100;member.invulnUntil=now+3000;member.projectiles=[];member.friendly=[];member.skillCooldowns=[0,0,0,0];
+      sendJson(member,{type:'pvp:notice',message:`第${match.round}ラウンド。3秒後に開始！`});
+    }
+  };
+  const finishPvp=(match:PvpMatch,winner:number,now:number)=>{
+    if(match.finished)return;match.finished=true;pvpMatches.delete(match.id);
+    const avg=(team:string[])=>team.reduce((n,id)=>n+(sessions.get(id)?.craft.pvp.rating??1000),0)/Math.max(1,team.length);
+    const expected=1/(1+Math.pow(10,(avg(match.teams[1])-avg(match.teams[0]))/400));
+    const delta=Math.max(8,Math.round(32*(1-expected)));
+    for(let team=0;team<2;team++)for(const id of match.teams[team]){
+      const member=sessions.get(id);if(!member)continue;
+      const won=team===winner;
+      if(match.mode==='ranked')member.craft.pvp.rating=Math.max(0,member.craft.pvp.rating+(won?delta:-delta));
+      if(won)member.craft.pvp.wins++;else member.craft.pvp.losses++;
+      member.craftDirty=true;void queueCraftSave(member).catch(console.error);sendCraft(member);
+      const pos=member.pvpReturn??{x:16,y:16,hp:member.player.maxHp};member.player.x=pos.x;member.player.y=pos.y;member.player.hp=Math.max(1,pos.hp);
+      member.pvpMatch=null;member.pvpReturn=null;member.enemies=worldEnemies;member.wildChunk='';member.projectiles=[];member.friendly=[];
+      sendJson(member,{type:'pvp:notice',message:`${won?'勝利':'敗北'}。${match.mode==='ranked'?`レーティング ${won?'+':'-'}${delta}`:'戦績を保存しました。'}`});
+    }
+  };
+  const updatePvp=(match:PvpMatch,now:number)=>{
+    if(match.finished||now<match.intermissionUntil)return;
+    const alive=match.teams.map(team=>team.some(id=>(sessions.get(id)?.player.hp??0)>0));
+    if(alive[0]&&alive[1]&&now-match.roundStarted<120000)return;
+    const hp=match.teams.map(team=>team.reduce((n,id)=>n+(sessions.get(id)?.player.hp??0),0));
+    const winner=!alive[0]?1:!alive[1]?0:hp[0]>=hp[1]?0:1;
+    match.score[winner]++;
+    for(const id of match.teams.flat()){const member=sessions.get(id);if(member)sendJson(member,{type:'pvp:notice',message:`ラウンド終了 ${match.score[0]} - ${match.score[1]}`});}
+    if(match.score[winner]>=2)finishPvp(match,winner,now);else resetPvpRound(match,now);
+  };
   function fireFriendly(s:Session,x:number,y:number,dx:number,dy:number,damage:number,now:number,program:SkillProgram|null,special:string,element:string,range:number,glyph:string){
     if(s.friendly.length>=36)return;
     const speed=program?.modifiers.includes('speed')?390:290;
     s.friendly.push({id:++projectileId,x,y,vx:dx*speed,vy:dy*speed,damage,expires:now+Math.min(2500,range/speed*1000),program,hitIds:new Set(),pierce:program?.effects.some(e=>e.part==='pierce')?2:0,special,element,glyph,color:element==='fire'?'#ffad72':element==='ice'?'#9beaff':'#e7d1ff'});
   }
   function castSkill(s:Session,slot:number,now:number){
+    if(s.player.hp<=0)return;
     if(!Number.isInteger(slot)||slot<0||slot>3)return;
     const id=s.craft.equippedSkills[slot],graph=s.craft.skills.find(g=>g.id===id);
     if(!graph)return;
@@ -220,6 +288,11 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
       const selected=program.shape==='laser'?d<=range&&cos>.93:program.shape==='cone'||program.trigger==='melee'?d<=range&&cos>.2:program.shape==='point'?Math.hypot(e.x-targetPoint.x,e.y-targetPoint.y)<75:d<=range;
       if(selected){damageEnemy(s,e,stats.damage,now,program.element,program);hits++;}
     }
+    for(const target of pvpTargets(s)){
+      const dx=target.player.x-p.x,dy=target.player.y-p.y,d=Math.hypot(dx,dy),cos=d?((dx*aim.x+dy*aim.y)/d):0;
+      const selected=program.shape==='laser'?d<=range&&cos>.93:program.shape==='cone'||program.trigger==='melee'?d<=range&&cos>.2:program.shape==='point'?Math.hypot(target.player.x-targetPoint.x,target.player.y-targetPoint.y)<75:d<=range;
+      if(selected){damageOpponent(s,target,stats.damage,now);hits++;}
+    }
     if(!hits)for(const effect of program.effects)if(effect.part==='heal'&&effectAllowed(s,effect.guards,now)&&!effect.guards.includes('on_hit'))heal(s,12,now);
   }
   async function handleCommand(s:Session,raw:unknown){
@@ -227,6 +300,29 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
     const a=raw as Record<string,unknown>,type=String(a.type??''),now=Date.now();
     if(type==='input'){const input=validInput(a);if(input){s.input=input;s.inputAt=now;}return;}
     if(type==='cast'){castSkill(s,Number(a.slot),now);return;}
+    if(type==='pvp:leave'){
+      for(let i=pvpQueue.length-1;i>=0;i--)if(pvpQueue[i].members.includes(s.user.id)){const entry=pvpQueue.splice(i,1)[0];for(const id of entry.members){const member=sessions.get(id);if(member)sendJson(member,{type:'pvp:notice',message:'対戦待機を解除しました。'});}}
+      if(s.pvpMatch){const match=pvpMatches.get(s.pvpMatch);if(match){const own=match.teams.findIndex(team=>team.includes(s.user.id));finishPvp(match,1-own,now);}}
+      return;
+    }
+    if(type==='pvp:queue'){
+      const mode=String(a.mode??''),size=Number(a.size);
+      if(!['ranked','casual','unrestricted'].includes(mode)||![1,2,3].includes(size)){sendJson(s,{type:'pvp:notice',message:'対戦形式が不正です。'});return;}
+      const party=s.partyId?parties.get(s.partyId):null;
+      const members=party?[...party.members].map(id=>sessions.get(id)).filter((v):v is Session=>!!v):[s];
+      if(party&&party.leaderId!==s.user.id){sendJson(s,{type:'pvp:notice',message:'パーティーのリーダーが申請してください。'});return;}
+      if(members.length!==size||members.some(member=>member.dungeon||member.pvpMatch||pvpQueue.some(entry=>entry.members.includes(member.user.id)))){sendJson(s,{type:'pvp:notice',message:`${size}人のグループで通常ワールドにいる必要があります。`});return;}
+      if(mode==='ranked'&&members.some(member=>member.craft.equippedSkills.some(id=>{const skill=member.craft.skills.find(g=>g.id===id);return skill?compileSkill(skill).stats.budget>80:false;}))){sendJson(s,{type:'pvp:notice',message:'ランク戦では予算80以下のスキルを装備してください。'});return;}
+      const rating=members.reduce((n,member)=>n+member.craft.pvp.rating,0)/members.length;
+      const entry:PvpQueue={mode:mode as PvpMatch['mode'],size,members:members.map(member=>member.user.id),joined:now,rating};
+      const opponentIndex=pvpQueue.map((other,index)=>({other,index})).filter(({other})=>other.mode===mode&&other.size===size&&other.members.every(id=>sessions.has(id))).sort((a,b)=>Math.abs(a.other.rating-rating)-Math.abs(b.other.rating-rating)||a.other.joined-b.other.joined)[0]?.index??-1;
+      if(opponentIndex<0){pvpQueue.push(entry);for(const member of members)sendJson(member,{type:'pvp:notice',message:`${size}対${size} ${mode} の対戦相手を探しています。`});return;}
+      const opponent=pvpQueue.splice(opponentIndex,1)[0],match:PvpMatch={id:randomUUID(),mode:entry.mode,size,teams:[opponent.members,entry.members],score:[0,0],round:0,roundStarted:now,intermissionUntil:now,finished:false};
+      pvpMatches.set(match.id,match);
+      for(const id of match.teams.flat()){const member=sessions.get(id);if(!member)continue;member.pvpReturn={x:member.player.x,y:member.player.y,hp:member.player.hp};member.pvpMatch=match.id;member.enemies=[];member.projectiles=[];member.friendly=[];}
+      resetPvpRound(match,now);return;
+    }
+    if(s.pvpMatch&&type!=='parry'&&type!=='rpg:surge'&&type!=='party:state'){sendJson(s,{type:'pvp:notice',message:'対戦中は装備やワールドを変更できません。'});return;}
     if(type.startsWith('party:')){
       try{
         if(type==='party:state'){sendJson(s,partyView(s));return;}
@@ -234,7 +330,12 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
         s.lastChatAt=now;
         if(type==='party:create'){
           if(s.partyId)throw new Error('すでにパーティーに参加しています。');
-          const id=randomUUID();parties.set(id,{id,leaderId:s.user.id,members:new Set([s.user.id])});s.partyId=id;broadcastParty(id);
+          const id=randomUUID();let code='';do{code=randomUUID().replace(/-/g,'').slice(0,6).toUpperCase();}while([...parties.values()].some(p=>p.code===code));parties.set(id,{id,code,leaderId:s.user.id,members:new Set([s.user.id])});s.partyId=id;broadcastParty(id);
+        }else if(type==='party:join-code'){
+          const code=String(a.code??'').trim().toUpperCase();const party=[...parties.values()].find(p=>p.code===code);
+          if(!/^[A-F0-9]{6}$/.test(code)||!party)throw new Error('参加コードが見つかりません。リーダーに最新のコードを確認してください。');
+          if(s.partyId||s.dungeon||party.members.size>=4||[...party.members].some(id=>sessions.get(id)?.dungeon))throw new Error('現在このパーティーには参加できません。');
+          s.partyId=party.id;party.members.add(s.user.id);broadcastParty(party.id);
         }else if(type==='party:invite'){
           const party=s.partyId?parties.get(s.partyId):null,target=sessions.get(String(a.targetId??''));
           if(!party||party.leaderId!==s.user.id)throw new Error('リーダーだけが招待できます。');
@@ -265,6 +366,10 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
       if(now-s.lastParry>=1200&&now>=s.rollUntil){s.lastParry=now;s.parryUntil=now+230;addEffect(s,s.player.x,s.player.y,'◇','#9bf8ff',now);}
       return;
     }
+    if(type==='rpg:surge'){
+      if(s.craft.awakened&&s.player.hp>0&&now-s.lastAwaken>=45000){s.lastAwaken=now;s.awakeningUntil=now+12000;addEffect(s,s.player.x,s.player.y,'覚醒！ 12秒間攻撃+25%','#ffd88a',now);}
+      return;
+    }
     if(type==='arena'){
       if(s.dungeon)return;
       const pos=a.enter===true?safeNear(-620,390):{x:16,y:16};
@@ -272,14 +377,15 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
       addEffect(s,pos.x,pos.y,a.enter===true?'訓練場':'街へ帰還','#9ff4ec',now);
       return;
     }
-    if(type==='rpg:dungeon'){
-      if(s.dungeon||s.profile.level<2)return;
+    if(type==='rpg:dungeon'||type==='rpg:abyss'){
+      const abyss=type==='rpg:abyss';
+      if(s.dungeon||s.pvpMatch||s.profile.level<(abyss?10:2))return;
       const party=s.partyId?parties.get(s.partyId):null;
       if(party&&party.leaderId!==s.user.id){sendJson(s,{type:'party:error',message:'リーダーが協力ダンジョンを開始します。'});return;}
       const members=party?[...party.members].map(id=>sessions.get(id)).filter((v):v is Session=>!!v):[s];
-      if(members.some(member=>member.dungeon||member.profile.level<2)){sendJson(s,{type:'party:error',message:'全員がLv.2以上で通常ワールドにいる必要があります。'});return;}
-      const enemies=dungeonWave(1);
-      for(const [index,member] of members.entries()){member.dungeonReturn={x:member.player.x,y:member.player.y};member.dungeon=1;const pos=safeNear((index-(members.length-1)/2)*24,-16);member.player.x=pos.x;member.player.y=pos.y;member.player.hp=member.player.maxHp;member.enemies=enemies;member.projectiles=[];member.friendly=[];addEffect(member,pos.x,pos.y,'虚無の遺跡：第1波','#d9acff',now);}
+      if(members.some(member=>member.dungeon||member.pvpMatch||member.profile.level<(abyss?10:2))){sendJson(s,{type:'party:error',message:`全員がLv.${abyss?10:2}以上で通常ワールドにいる必要があります。`});return;}
+      const enemies=dungeonWave(1,abyss?1:0);
+      for(const [index,member] of members.entries()){member.dungeonReturn={x:member.player.x,y:member.player.y};member.dungeon=1;member.abyssRun=abyss?1:0;const pos=safeNear((index-(members.length-1)/2)*24,-16);member.player.x=pos.x;member.player.y=pos.y;member.player.hp=member.player.maxHp;member.enemies=enemies;member.projectiles=[];member.friendly=[];addEffect(member,pos.x,pos.y,abyss?'無限深淵：第1層':'虚無の遺跡：第1波','#d9acff',now);}
       return;
     }
     if(type==='rpg:leave'){if(s.dungeon)leaveDungeon(s,now,false,false);return;}
@@ -360,8 +466,18 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
       }else if(type==='rpg:rebirth'){
         if(s.dungeon||s.profile.level<100)throw new Error('Lv.100で街にいると転生できます。');
         s.profile.level=1;s.profile.xp=0;s.craft.rpg.rebirths++;s.craft.rpg.rebirthPoints++;s.player.maxHp=100+gearBonus(s.craft.rpg,'hp');s.player.hp=s.player.maxHp;
+      }else if(type==='rpg:awaken'){
+        if(s.craft.awakened)throw new Error('覚醒済みです。');
+        if(s.craft.rpg.bossKills<5||s.craft.abyssDepth<3)throw new Error('ボス5体撃破と無限深淵3層到達で覚醒できます。');
+        s.craft.awakened=true;
+      }else if(type==='craft:unlock-part'){
+        const id=String(a.id??'');if(!(BOSS_PARTS as readonly string[]).includes(id))throw new Error('解放できないパーツです。');
+        if(s.craft.unlockedParts.includes(id))throw new Error('解放済みです。');
+        if(s.craft.bossParts<1)throw new Error('ボスの核が足りません。');
+        s.craft.bossParts--;s.craft.unlockedParts.push(id);
       }else if(type==='craft:save-skill'){
         const parsed=compileSkill(a.skill),index=s.craft.skills.findIndex(g=>g.id===parsed.skill.id);
+        if(parsed.skill.nodes.some(node=>(BOSS_PARTS as readonly string[]).includes(node.part)&&!s.craft.unlockedParts.includes(node.part)))throw new Error('ボスの核でパーツを解放してください。');
         if(index<0&&s.craft.skills.length>=12)throw new Error('保存できるスキルは12個までです。');
         const skill={...parsed.skill,id:index>=0?parsed.skill.id:randomUUID()};
         if(index>=0)s.craft.skills[index]=skill;else s.craft.skills.push(skill);
@@ -376,6 +492,7 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
         s.craft.equippedSkills[slot]=id;
       }else if(type==='craft:make-weapon'){
         const {weapon,stats}=compileWeapon(a.weapon);
+        if((BOSS_PARTS as readonly string[]).includes(weapon.element)&&!s.craft.unlockedParts.includes(weapon.element))throw new Error('ボスの核で属性を解放してください。');
         if(s.craft.weapons.length>=8)throw new Error('保存できる武器は8個までです。');
         for(const key of ['iron','wood','crystal'] as const)if(s.craft.materials[key]<stats.cost[key])throw new Error('武器素材が足りません。');
         for(const key of ['iron','wood','crystal'] as const)s.craft.materials[key]-=stats.cost[key];
@@ -402,7 +519,7 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
   function tick(s:Session,now:number,dt:number,simulateEnemies:boolean) {
     const p=s.player;
     s.ep=Math.min(100,s.ep+dt*9);
-    const i=now-s.inputAt<250?s.input:emptyInput;
+    const i=now-s.inputAt<250&&p.hp>0?s.input:emptyInput;
     const moving=i.x!==0||i.y!==0;
     if (i.aimX||i.aimY) {p.facingX=i.aimX;p.facingY=i.aimY;}
     else if (moving) {p.facingX=i.x;p.facingY=i.y;}
@@ -416,10 +533,10 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
     const moveX=rolling?s.rollX:i.x,moveY=rolling?s.rollY:i.y;
     const speed=rolling?320:120;
     const nx=p.x+moveX*speed*dt,ny=p.y+moveY*speed*dt;
-    if(canStand(nx,p.y))p.x=nx;
-    if(canStand(p.x,ny))p.y=ny;
-    refreshWild(s);
-    if(!s.dungeon){
+    if(canStand(nx,p.y)&&(!s.pvpMatch||Math.abs(nx)<290))p.x=nx;
+    if(canStand(p.x,ny)&&(!s.pvpMatch||Math.abs(ny)<230))p.y=ny;
+    if(!s.pvpMatch)refreshWild(s);
+    if(!s.dungeon&&!s.pvpMatch){
       const rpg=s.craft.rpg,key=chunkKey(Math.floor(p.x/TILE),Math.floor(p.y/TILE));let discovered=false;
       if(!rpg.explored.includes(key)&&rpg.explored.length<36){rpg.explored.push(key);discovered=true;addEffect(s,p.x,p.y,'新しい地域を探索','#8fe9d9',now);}
       for(const site of WORLD_SITES){
@@ -443,7 +560,8 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
       }
       p.facingX=aim.x;p.facingY=aim.y;
       addEffect(s,p.x,p.y,weapon?.glyph??'⚔','#ffe17f',now,'slash',aim.x,aim.y);
-      const damage=(weaponStats?.damage??12)+Math.min(12,s.profile.level*2)+(s.combo===3?9:s.combo===2?4:0);
+      const ranked=s.pvpMatch&&pvpMatches.get(s.pvpMatch)?.mode==='ranked';
+      const damage=(ranked?(weapon?WEAPON_BASES[weapon.primary].damage:12):(weaponStats?.damage??12)+Math.min(12,s.profile.level*2))+(s.combo===3?9:s.combo===2?4:0);
       if(weaponStats?.mode==='ranged'){
         fireFriendly(s,p.x,p.y,aim.x,aim.y,damage,now,null,weapon?.special??'none',weapon?.element??'neutral',weaponStats.range,weapon?.glyph??'✦');
       }else for(const e of s.enemies) {
@@ -451,19 +569,23 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
         const dx=e.x-p.x,dy=e.y-p.y,d=Math.hypot(dx,dy);
         if(d>(weaponStats?.range??78) || d<1 || (dx*aim.x+dy*aim.y)/d<0.05)continue;
         damageEnemy(s,e,damage,now,weapon?.element??'neutral',null,weapon?.special??'none');
-        const push=norm(dx,dy),knock=12+(s.combo===3?12:0);
-        if(canStand(e.x+push.x*knock,e.y+push.y*knock)){e.x+=push.x*knock;e.y+=push.y*knock;}
+        if(e.kind!=='boss'&&e.kind!=='elite'&&now>=e.knockbackUntil){const push=norm(dx,dy),knock=8+(s.combo===3?8:0);if(canStand(e.x+push.x*knock,e.y+push.y*knock)){e.x+=push.x*knock;e.y+=push.y*knock;e.knockbackUntil=now+900;}}
+      }
+      if(weaponStats?.mode!=='ranged')for(const target of pvpTargets(s)){
+        const dx=target.player.x-p.x,dy=target.player.y-p.y,d=Math.hypot(dx,dy);
+        if(d>Math.min(125,weaponStats?.range??78)||d<1||(dx*aim.x+dy*aim.y)/d<.05)continue;
+        damageOpponent(s,target,damage,now);
       }
     }
     while(s.profile.level<100&&s.profile.xp>=20*s.profile.level){s.profile.xp-=20*s.profile.level;s.profile.level++;p.maxHp=100+(s.profile.level-1)*8+gearBonus(s.craft.rpg,'hp');p.hp=p.maxHp;addEffect(s,p.x,p.y,'LEVEL UP!','#7bffa5',now);}
     if(s.profile.level>=100)s.profile.xp=0;
-    p.maxHp=100+(s.profile.level-1)*8+gearBonus(s.craft.rpg,'hp');p.hp=Math.min(p.hp,p.maxHp);
+    p.maxHp=s.pvpMatch&&pvpMatches.get(s.pvpMatch)?.mode==='ranked'?120:100+(s.profile.level-1)*8+gearBonus(s.craft.rpg,'hp');p.hp=Math.min(p.hp,p.maxHp);
 
     if(simulateEnemies)for(let n=0;n<s.enemies.length;n++){
       const e=s.enemies[n];
       if(e.hp<=0){if(!s.dungeon&&now>=e.respawn){if(e.id.startsWith('w:')){const [cx,cy,index]=e.id.slice(2).split(',').map(Number);s.enemies[n]=spawnWild(cx,cy,index);}else s.enemies[n]=spawn(n);}continue;}
-      if(s.dungeon&&e.kind==='boss'&&e.hp<e.maxHp/2&&e.damage<25){e.damage=25;e.speed=42;addEffect(s,e.x,e.y,'THE NULL : PHASE 2','#e389ff',now);}
-      if(e.dotUntil>now&&e.dotAt<=now){e.dotAt=now+700;damageEnemy(s,e,3,now);}
+      if(e.kind==='boss'&&e.hp<e.maxHp/2&&e.speed<70){e.damage+=8;e.speed=72;addEffect(s,e.x,e.y,'狂暴化 : PHASE 2','#e389ff',now);}
+      if(e.dotUntil>now&&e.dotAt<=now){e.dotAt=now+700;damageEnemy(s,e,3,now,'neutral',null,'none',false);}
       if(e.kind==='dummy')continue;
       const target=encounterMembers(s).filter(member=>member.player.hp>0).sort((a,b)=>Math.hypot(a.player.x-e.x,a.player.y-e.y)-Math.hypot(b.player.x-e.x,b.player.y-e.y))[0];
       if(!target){e.windupUntil=0;continue;}
@@ -471,22 +593,37 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
       if(d>330){e.windupUntil=0;continue;}
       if(now<e.staggerUntil)continue;
       const ranged=e.kind==='ranged';
-      const range=ranged?170:e.kind==='boss'?43:29;
+      const range=ranged?170:e.kind==='boss'?85:29;
       if(e.windupUntil){
         if(now<e.windupUntil)continue;
         e.windupUntil=0;e.lastAttack=now;
-        if(ranged){
+        if(e.kind==='boss'&&e.attackMode==='volley'){
+          const direction=Math.atan2(e.targetY-e.y,e.targetX-e.x);
+          for(const angle of [-.36,-.18,0,.18,.36]){
+            const a=direction+angle;
+            for(const member of encounterMembers(s))if(member.projectiles.length<30)member.projectiles.push({id:++projectileId,x:e.x,y:e.y,vx:Math.cos(a)*230,vy:Math.sin(a)*230,damage:e.damage,expires:now+1900,glyph:'◆',color:'#f581e9'});
+          }
+          addEffect(s,e.x,e.y,'五連弾','#ef87df',now);
+        }else if(e.kind==='boss'&&e.attackMode==='sweep'){
+          for(const member of encounterMembers(s))if(member.player.hp>0&&Math.hypot(member.player.x-e.x,member.player.y-e.y)<86)damagePlayer(member,e,e.damage+5,now);
+          addEffect(s,e.x,e.y,'薙ぎ払い','#f58d9d',now);
+        }else if(ranged){
           const v=norm(tp.x-e.x,tp.y-e.y);
           if(target.projectiles.length<24)target.projectiles.push({id:++projectileId,x:e.x,y:e.y,vx:v.x*220,vy:v.y*220,damage:e.damage,expires:now+1800,glyph:'✦',color:'#ff9e77'});
           addEffect(s,e.x,e.y,'✦','#ffb078',now);
-        } else if(d<range+13){
+        } else if(d<(e.kind==='boss'?55:range+13)){
           damagePlayer(target,e,e.damage,now);
         }
         continue;
       }
       if(d>range){const v=norm(dx,dy),speed=e.speed*(e.slowUntil>now?.55:1),ex=e.x+v.x*speed*dt,ey=e.y+v.y*speed*dt;if(canStand(ex,e.y))e.x=ex;if(canStand(e.x,ey))e.y=ey;}
-      else if(now-e.lastAttack>(ranged?1700:e.kind==='boss'?1800:1100)){
-        e.windupUntil=now+(ranged?520:e.kind==='fast'?230:e.kind==='boss'?650:380);
+      else if(now-e.lastAttack>(ranged?1700:e.kind==='boss'?1650:1100)){
+        if(e.kind==='boss'){
+          e.attackMode=Math.floor(now/1650)%3===0?'volley':Math.floor(now/1650)%3===1?'sweep':'strike';
+          e.targetX=tp.x;e.targetY=tp.y;
+          addEffect(s,e.x,e.y,e.attackMode==='volley'?'◆ 五連弾の予兆':e.attackMode==='sweep'?'◯ 薙ぎ払いの予兆':'! 強打の予兆','#ff7777',now);
+        }
+        e.windupUntil=now+(ranged?520:e.kind==='fast'?300:e.kind==='boss'?780:450);
       }
     }
     s.projectiles=s.projectiles.filter(b=>{
@@ -513,45 +650,58 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
         if(b.pierce>0){b.pierce--;return true;}
         return false;
       }
+      const opponent=pvpTargets(s).find(target=>!b.hitIds.has(target.user.id)&&Math.hypot(target.player.x-x,target.player.y-y)<18);
+      if(opponent){b.hitIds.add(opponent.user.id);damageOpponent(s,opponent,b.damage,now);if(b.pierce>0){b.pierce--;return true;}return false;}
       return true;
     });
-    if(p.hp<=0){if(s.dungeon&&encounterMembers(s).length>1){p.x=0;p.y=0;p.hp=Math.max(1,Math.floor(p.maxHp/2));s.invulnUntil=now+2500;addEffect(s,p.x,p.y,'仲間のもとで復活','#b6e9ff',now);}else if(s.dungeon)leaveDungeon(s,now,false);else{p.x=16;p.y=16;p.hp=p.maxHp;s.projectiles=[];addEffect(s,p.x,p.y,'街で復活','#b6e9ff',now);}}
+    if(p.hp<=0){if(s.pvpMatch){}else if(s.dungeon&&encounterMembers(s).length>1){p.x=0;p.y=0;p.hp=Math.max(1,Math.floor(p.maxHp/2));s.invulnUntil=now+2500;addEffect(s,p.x,p.y,'仲間のもとで復活','#b6e9ff',now);}else if(s.dungeon)leaveDungeon(s,now,false);else{p.x=16;p.y=16;p.hp=p.maxHp;s.projectiles=[];addEffect(s,p.x,p.y,'街で復活','#b6e9ff',now);}}
     if(simulateEnemies&&s.dungeon&&s.enemies.every(e=>e.hp<=0)){
-      if(s.dungeon===3)leaveDungeon(s,now,true);
-      else{const members=encounterMembers(s),wave=s.dungeon+1,enemies=dungeonWave(wave);for(const member of members){member.dungeon=wave;member.enemies=enemies;member.projectiles=[];addEffect(member,member.player.x,member.player.y,`第${wave}波`,'#d9acff',now);}}
+      if(s.dungeon===3&&!s.abyssRun)leaveDungeon(s,now,true);
+      else{
+        const members=encounterMembers(s),clearedDepth=s.dungeon===3&&s.abyssRun>0,completedDepth=s.abyssRun,nextDepth=s.dungeon===3?s.abyssRun+1:s.abyssRun,wave=s.dungeon===3?1:s.dungeon+1,enemies=dungeonWave(wave,nextDepth);
+        for(const member of members){
+          if(clearedDepth){member.craft.abyssDepth=Math.max(member.craft.abyssDepth,completedDepth);member.profile.coins+=80+completedDepth*20;member.craft.materials.crystal=Math.min(9999,member.craft.materials.crystal+2);member.craftDirty=true;void queueCraftSave(member).catch(console.error);sendCraft(member);}
+          member.abyssRun=nextDepth;member.dungeon=wave;member.enemies=enemies;member.projectiles=[];member.player.hp=Math.min(member.player.maxHp,member.player.hp+Math.round(member.player.maxHp*.25));addEffect(member,member.player.x,member.player.y,nextDepth?`深淵 第${nextDepth}層 第${wave}波`:`第${wave}波`,'#d9acff',now);
+        }
+      }
     }
     s.effects=s.effects.filter(e=>now-e.born<650);
-    s.profile.x=p.x;s.profile.y=p.y;s.profile.hp=p.hp;
+    if(!s.pvpMatch){s.profile.x=p.x;s.profile.y=p.y;s.profile.hp=p.hp;}
     if(now-s.lastSnapshot>=50&&s.ws.readyState===WebSocket.OPEN){
       s.lastSnapshot=now;
       const nearby=encounterMembers(s).filter(member=>member===s||Math.hypot(member.player.x-p.x,member.player.y-p.y)<700);
-      const snapshot:Snapshot={type:'state',you:s.user.id,players:[p,...nearby.filter(member=>member!==s).map(member=>({...member.player,kind:member.partyId&&member.partyId===s.partyId?'party':'player'}))],enemies:s.enemies.filter(e=>e.hp>0&&(!e.id.startsWith('w:')||Math.hypot(e.x-p.x,e.y-p.y)<650)),projectiles:nearby.flatMap(member=>[...member.projectiles,...member.friendly]).filter(b=>Math.hypot(b.x-p.x,b.y-p.y)<700).map(({id,x,y,glyph,color})=>({id,x,y,glyph,color})),effects:nearby.flatMap(member=>member.effects).filter(effect=>Math.hypot(effect.x-p.x,effect.y-p.y)<700).slice(-120),xp:s.profile.xp,level:s.profile.level,coins:s.profile.coins,zone:s.dungeon?`虚無の遺跡 第${s.dungeon}波`:zoneAt(p.x,p.y),dungeon:s.dungeon,world:s.pendingWorld?{explored:s.craft.rpg.explored,discovered:s.craft.rpg.discovered}:undefined,craft:s.pendingCraft?s.craft:undefined,time:now,rollUntil:s.rollUntil,rollX:s.rollX,rollY:s.rollY,rollReadyAt:s.lastDash+1400,parryUntil:s.parryUntil,parryReadyAt:s.lastParry+1200,swingAt:s.lastSwing,combo:now-s.lastSwing<1000?s.combo:0,ep:Math.floor(s.ep),maxEp:100,skillCooldowns:s.skillCooldowns,weaponGlyph:weapon?.glyph??'⚔'};
+      const match=s.pvpMatch?pvpMatches.get(s.pvpMatch):null;
+      const snapshot:Snapshot={type:'state',you:s.user.id,players:[p,...nearby.filter(member=>member!==s).map(member=>({...member.player,kind:member.partyId&&member.partyId===s.partyId?'party':'player'}))],enemies:s.enemies.filter(e=>e.hp>0&&(!e.id.startsWith('w:')||Math.hypot(e.x-p.x,e.y-p.y)<650)),projectiles:nearby.flatMap(member=>[...member.projectiles,...member.friendly]).filter(b=>Math.hypot(b.x-p.x,b.y-p.y)<700).map(({id,x,y,glyph,color})=>({id,x,y,glyph,color})),effects:nearby.flatMap(member=>member.effects).filter(effect=>Math.hypot(effect.x-p.x,effect.y-p.y)<700).slice(-120),xp:s.profile.xp,level:s.profile.level,coins:s.profile.coins,zone:match?'PvP アリーナ':s.dungeon?s.abyssRun?`無限深淵 第${s.abyssRun}層 第${s.dungeon}波`:`虚無の遺跡 第${s.dungeon}波`:zoneAt(p.x,p.y),dungeon:s.dungeon,pvp:match?{mode:match.mode,size:match.size,round:match.round,score:match.score,remaining:Math.max(0,Math.ceil((120000-(now-match.roundStarted))/1000)),team:match.teams.findIndex(team=>team.includes(s.user.id))}:undefined,world:s.pendingWorld?{explored:s.craft.rpg.explored,discovered:s.craft.rpg.discovered}:undefined,craft:s.pendingCraft?s.craft:undefined,time:now,rollUntil:s.rollUntil,rollX:s.rollX,rollY:s.rollY,rollReadyAt:s.lastDash+1400,parryUntil:s.parryUntil,parryReadyAt:s.lastParry+1200,swingAt:s.lastSwing,combo:now-s.lastSwing<1000?s.combo:0,ep:Math.floor(s.ep),maxEp:100,skillCooldowns:s.skillCooldowns,weaponGlyph:weapon?.glyph??'⚔'};
       s.ws.send(JSON.stringify(snapshot));
       s.pendingWorld=false;
       s.pendingCraft=false;
     }
-    if(now-s.lastSave>15000){s.lastSave=now;void save(s.user,{...s.profile}).catch(console.error);if(s.craftDirty)void queueCraftSave(s).catch(console.error);}
+    if(now-s.lastSave>15000){s.lastSave=now;if(!s.pvpMatch)void save(s.user,{...s.profile}).catch(console.error);if(s.craftDirty)void queueCraftSave(s).catch(console.error);}
+    if(!s.dungeon&&!s.pvpMatch&&now-s.lastPresence>=1000){
+      s.lastPresence=now;
+      sendJson(s,{type:'world:presence',players:[...sessions.values()].filter(member=>!member.dungeon&&!member.pvpMatch).map(member=>({id:member.user.id,name:member.user.username,x:member.player.x,y:member.player.y,hp:member.player.hp,maxHp:member.player.maxHp,party:!!s.partyId&&member.partyId===s.partyId})),enemies:worldEnemies.filter(e=>e.hp>0&&e.kind!=='dummy').map(e=>({id:e.id,name:e.name,x:e.x,y:e.y,hp:e.hp,maxHp:e.maxHp,kind:e.kind}))});
+    }
   }
   let lastTick=Date.now();
-  const timer=setInterval(()=>{const now=Date.now(),dt=Math.min(.05,Math.max(0,(now-lastTick)/1000));lastTick=now;const processed=new Set<string>();for(const s of sessions.values()){const key=s.dungeon?s.partyId??s.user.id:'world',simulate=!processed.has(key);processed.add(key);tick(s,now,dt,simulate);}},1000/30);
+  const timer=setInterval(()=>{const now=Date.now(),dt=Math.min(.05,Math.max(0,(now-lastTick)/1000));lastTick=now;const processed=new Set<string>();for(const s of sessions.values()){const key=s.pvpMatch?s.pvpMatch:s.dungeon?s.partyId??s.user.id:'world',simulate=!processed.has(key);processed.add(key);tick(s,now,dt,simulate);}for(const match of pvpMatches.values())updatePvp(match,now);},1000/30);
   return {
     async upgrade(req:IncomingMessage,socket:any,head:Buffer,user:User){
       let profile:Profile,craft:CraftState;
       let existing:Session|undefined;
       try{
         existing=sessions.get(user.id);
-        if(existing){if(existing.dungeon)leaveDungeon(existing,Date.now(),false,false);await save(existing.user,{...existing.profile});await queueCraftSave(existing);existing.ws.close(4000,'new connection');sessions.delete(user.id);}
+        if(existing){if(existing.dungeon)leaveDungeon(existing,Date.now(),false,false);if(existing.pvpMatch){const match=pvpMatches.get(existing.pvpMatch);if(match){const own=match.teams.findIndex(team=>team.includes(user.id));finishPvp(match,1-own,Date.now());}}for(let i=pvpQueue.length-1;i>=0;i--)if(pvpQueue[i].members.includes(user.id))pvpQueue.splice(i,1);await save(existing.user,{...existing.profile});await queueCraftSave(existing);existing.ws.close(4000,'new connection');sessions.delete(user.id);}
         [profile,craft]=await Promise.all([load(user),loadCraft(user).then(normalizeCraft)]);
       }catch{socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');socket.destroy();return;}
       wss.handleUpgrade(req,socket,head,ws=>{
         const maxHp=100+(profile.level-1)*8+gearBonus(craft.rpg,'hp');
         const hp=Math.min(maxHp,Math.max(1,profile.hp));
         const player:Actor={id:user.id,name:user.username,x:profile.x,y:profile.y,hp,maxHp,glyph:'@',facingX:1,facingY:0};
-        const s:Session={user,ws,player,input:{...emptyInput},inputAt:Date.now(),profile,craft,craftSave:Promise.resolve(),craftDirty:false,pendingWorld:false,pendingCraft:false,lastCraftAt:0,lastChatAt:0,partyId:existing?.partyId??null,dungeon:0,dungeonReturn:null,wildChunk:'',enemies:worldEnemies,projectiles:[],friendly:[],effects:[],lastSwing:0,combo:0,lastDash:0,dashLatch:false,rollUntil:0,rollX:0,rollY:0,lastTrail:0,invulnUntil:0,lastParry:0,parryUntil:0,parrySuccessUntil:0,ep:100,skillCooldowns:[0,0,0,0],lastSave:Date.now(),lastSnapshot:0,kills:0};
+        const s:Session={user,ws,player,input:{...emptyInput},inputAt:Date.now(),profile,craft,craftSave:Promise.resolve(),craftDirty:false,pendingWorld:false,pendingCraft:false,lastCraftAt:0,lastChatAt:0,partyId:existing?.partyId??null,dungeon:0,abyssRun:0,dungeonReturn:null,pvpMatch:null,pvpReturn:null,awakeningUntil:0,lastAwaken:0,wildChunk:'',enemies:worldEnemies,projectiles:[],friendly:[],effects:[],lastSwing:0,combo:0,lastDash:0,dashLatch:false,rollUntil:0,rollX:0,rollY:0,lastTrail:0,invulnUntil:0,lastParry:0,parryUntil:0,parrySuccessUntil:0,ep:100,skillCooldowns:[0,0,0,0],lastSave:Date.now(),lastSnapshot:0,lastPresence:0,kills:0};
         sessions.set(user.id,s);
         sendCraft(s);
         ws.on('message',data=>{try{void handleCommand(s,JSON.parse(data.toString()));}catch{}});
-        ws.on('close',()=>{if(sessions.get(user.id)===s){if(s.dungeon)leaveDungeon(s,Date.now(),false,false);sessions.delete(user.id);leaveParty(s);void Promise.all([save(user,{...s.profile}),queueCraftSave(s)]).catch(console.error);}});
+        ws.on('close',()=>{if(sessions.get(user.id)===s){if(s.dungeon)leaveDungeon(s,Date.now(),false,false);if(s.pvpMatch){const match=pvpMatches.get(s.pvpMatch);if(match){const own=match.teams.findIndex(team=>team.includes(s.user.id));finishPvp(match,1-own,Date.now());}}for(let i=pvpQueue.length-1;i>=0;i--)if(pvpQueue[i].members.includes(user.id))pvpQueue.splice(i,1);sessions.delete(user.id);leaveParty(s);void Promise.all([save(user,{...s.profile}),queueCraftSave(s)]).catch(console.error);}});
       });
     },
     async shutdown(){clearInterval(timer);for(const s of sessions.values())s.ws.close();await Promise.all([...sessions.values()].flatMap(s=>[save(s.user,{...s.profile}),queueCraftSave(s)]));wss.close();}

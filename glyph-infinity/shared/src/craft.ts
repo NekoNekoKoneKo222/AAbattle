@@ -23,7 +23,8 @@ export const PARTS: Record<PartKind, readonly Part[]> = {
     {id:'lightning',name:'雷',cost:11,description:'近くの敵へ連鎖'},
     {id:'poison',name:'毒',cost:8,description:'継続ダメージ'},
     {id:'light',name:'光',cost:9,description:'少量の自己回復'},
-    {id:'dark',name:'闇',cost:9,description:'ダメージを吸収'}
+    {id:'dark',name:'闇',cost:9,description:'ダメージを吸収'},
+    {id:'void',name:'虚無',cost:14,description:'ボスへの威力を上げる。ボスの核で解放'}
   ],
   effect: [
     {id:'explosion',name:'爆発',cost:18,description:'着弾地点の周囲にもダメージ'},
@@ -31,7 +32,9 @@ export const PARTS: Record<PartKind, readonly Part[]> = {
     {id:'heal',name:'回復',cost:16,description:'HPを回復'},
     {id:'knockback',name:'ノックバック',cost:9,description:'敵を押し戻す'},
     {id:'dot',name:'継続ダメージ',cost:12,description:'数秒間ダメージ'},
-    {id:'absorb',name:'吸収',cost:15,description:'与えたダメージで回復'}
+    {id:'absorb',name:'吸収',cost:15,description:'与えたダメージで回復'},
+    {id:'sunder',name:'破砕',cost:17,description:'追加ダメージ。ボスの核で解放'},
+    {id:'ward',name:'守護',cost:17,description:'命中時にHPを回復。ボスの核で解放'}
   ],
   condition: [
     {id:'on_hit',name:'敵に命中したら',cost:5,description:'命中したときだけ次を実行'},
@@ -46,6 +49,7 @@ export const PARTS: Record<PartKind, readonly Part[]> = {
   ]
 };
 export const PART_KINDS: PartKind[] = ['trigger','shape','element','effect','condition','modifier'];
+export const BOSS_PARTS = ['void','sunder','ward'] as const;
 export type SkillNode = { id: string; kind: PartKind; part: string; x: number; y: number };
 export type SkillEdge = { from: string; to: string };
 export type SkillGraph = { id: string; name: string; glyph: string; nodes: SkillNode[]; edges: SkillEdge[] };
@@ -144,8 +148,9 @@ export type Material = keyof typeof MATERIALS;
 export type MaterialBag = { iron: number; wood: number; crystal: number };
 export type Weapon = { id: string; name: string; primary: WeaponBase; secondary: WeaponBase | null; material: Material; element: string; special: string; glyph: string };
 export type WeaponStats = { damage: number; interval: number; range: number; mode: 'melee' | 'ranged'; cost: MaterialBag; rarity: string };
-export type CraftState = { skills: SkillGraph[]; weapons: Weapon[]; equippedSkills: (string | null)[]; equippedWeaponId: string | null; materials: MaterialBag; rpg:import('./rpg.js').RpgState };
-export const starterCraft = ():CraftState=>({skills:[],weapons:[],equippedSkills:[null,null,null,null],equippedWeaponId:null,materials:{iron:4,wood:4,crystal:2},rpg:{inventory:[],equipped:{head:null,body:null,feet:null,charm:null},kills:0,bossKills:0,dungeonClears:0,claimed:[],rebirths:0,rebirthPoints:0,mastery:{},explored:[],discovered:['city'],eventClaims:[],openedChests:[]}});
+export type PvpRecord={rating:number;wins:number;losses:number;season:string};
+export type CraftState = { skills: SkillGraph[]; weapons: Weapon[]; equippedSkills: (string | null)[]; equippedWeaponId: string | null; materials: MaterialBag; bossParts:number; unlockedParts:string[]; pvp:PvpRecord; abyssDepth:number; awakened:boolean; rpg:import('./rpg.js').RpgState };
+export const starterCraft = ():CraftState=>({skills:[],weapons:[],equippedSkills:[null,null,null,null],equippedWeaponId:null,materials:{iron:4,wood:4,crystal:2},bossParts:0,unlockedParts:[],pvp:{rating:1000,wins:0,losses:0,season:'1'},abyssDepth:0,awakened:false,rpg:{inventory:[],equipped:{head:null,body:null,feet:null,charm:null},kills:0,bossKills:0,dungeonClears:0,claimed:[],rebirths:0,rebirthPoints:0,mastery:{},explored:[],discovered:['city'],eventClaims:[],openedChests:[]}});
 
 export function compileWeapon(raw: unknown): { weapon: Weapon; stats: WeaponStats } {
   if(!raw||typeof raw!=='object')throw new Error('武器データが不正です。');

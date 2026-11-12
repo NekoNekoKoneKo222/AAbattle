@@ -258,6 +258,10 @@ app.get('/api/me', wrap(async (req, res) => {
   const titleState = await titles.get(user.id);
   res.json({ user: { ...publicUser(user), equippedTitle: titleState.definitions.find(t => t.id === titleState.equipped_title)?.name || null } });
 }));
+app.get('/api/GF/leaderboard', wrap(async (req,res) => {
+  const user=await requireUser(req,res);
+  if(user)res.json({season:'1',players:await glyphStore.leaderboard()});
+}));
 app.get('/api/titles', shiftWrap(async (req,res) => { const user = await requireUser(req,res); if (user) res.json(await titles.get(user.id)); }));
 app.post('/api/titles/equip', shiftWrap(async (req,res) => { const user = await requireUser(req,res); if (user) res.json(await titles.equip(user.id,req.body?.titleId ?? null)); }));
 app.get('/api/tournaments', shiftWrap(async (req,res) => { const user = await requireUser(req,res); if (user) res.json({ tournaments:await tournaments.list() }); }));

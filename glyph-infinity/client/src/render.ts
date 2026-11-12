@@ -102,9 +102,12 @@ export function startRenderer(canvas: HTMLCanvasElement, frames: RefObject<Frame
       if (pos.x < -40 || pos.x > width + 40 || pos.y < -50 || pos.y > height + 40) return;
       const warning = enemy && (actor.windupUntil ?? 0) > serverNow;
       if (warning) {
-        const remaining = (actor.windupUntil! - serverNow) / 650;
-        ctx!.strokeStyle = '#f79263'; ctx!.lineWidth = 2;
-        ctx!.beginPath(); ctx!.arc(pos.x, pos.y, 22 + 9 * (1 - remaining), 0, Math.PI * 2); ctx!.stroke();
+        const remaining = clamp((actor.windupUntil! - serverNow) / (actor.kind==='boss'?780:650),0,1);
+        ctx!.strokeStyle = remaining<.3?'#ffe29b':'#f79263'; ctx!.lineWidth = actor.kind==='boss'?3:2;
+        ctx!.setLineDash(actor.kind==='boss'?[7,5]:[]);
+        if(actor.kind==='boss'&&actor.attackMode==='volley'&&actor.targetX!==undefined&&actor.targetY!==undefined){const aim=toScreen(actor.targetX,actor.targetY);ctx!.beginPath();ctx!.moveTo(pos.x,pos.y);ctx!.lineTo(aim.x,aim.y);ctx!.stroke();}
+        else{ctx!.beginPath();ctx!.arc(pos.x,pos.y,(actor.kind==='boss'?(actor.attackMode==='sweep'?86:55):22)*scale,0,Math.PI*2);ctx!.stroke();}
+        ctx!.setLineDash([]);
         ctx!.fillStyle = '#ffd29b'; ctx!.font = 'bold 21px Consolas, monospace'; ctx!.textAlign = 'center'; ctx!.fillText('!', pos.x, pos.y - 39);
       }
       ctx!.fillStyle = enemy ? (actor.staggerUntil ?? 0) > serverNow ? '#fff1a3' : '#ff8290' : actor.kind==='party' ? '#a5ffa0' : actor.kind==='player' ? '#d4b6ff' : rolling ? '#81f4ff' : '#6be5ff';
