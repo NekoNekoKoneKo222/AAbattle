@@ -107,10 +107,10 @@ export function startRenderer(canvas: HTMLCanvasElement, frames: RefObject<Frame
         ctx!.beginPath(); ctx!.arc(pos.x, pos.y, 22 + 9 * (1 - remaining), 0, Math.PI * 2); ctx!.stroke();
         ctx!.fillStyle = '#ffd29b'; ctx!.font = 'bold 21px Consolas, monospace'; ctx!.textAlign = 'center'; ctx!.fillText('!', pos.x, pos.y - 39);
       }
-      ctx!.fillStyle = enemy ? (actor.staggerUntil ?? 0) > serverNow ? '#fff1a3' : '#ff8290' : rolling ? '#81f4ff' : '#6be5ff';
+      ctx!.fillStyle = enemy ? (actor.staggerUntil ?? 0) > serverNow ? '#fff1a3' : '#ff8290' : actor.kind==='party' ? '#a5ffa0' : actor.kind==='player' ? '#d4b6ff' : rolling ? '#81f4ff' : '#6be5ff';
       ctx!.font = `bold ${Math.round((enemy ? 27 : 32) * scale)}px Consolas, monospace`;
       ctx!.textAlign = 'center'; ctx!.textBaseline = 'middle';
-      ctx!.fillText(enemy ? actor.glyph : rolling ? '◇' : actor.glyph, pos.x, pos.y);
+      ctx!.fillText(!enemy&&actor.id===s.you&&rolling?'◇':actor.glyph, pos.x, pos.y);
       ctx!.fillStyle = '#cfdfeb'; ctx!.font = '11px system-ui';
       ctx!.fillText(actor.name, pos.x, pos.y - 28 * scale);
       ctx!.fillStyle = '#513043'; ctx!.fillRect(pos.x - 20, pos.y - 19 * scale, 40, 4);
@@ -120,6 +120,7 @@ export function startRenderer(canvas: HTMLCanvasElement, frames: RefObject<Frame
 
     const enemies = s.enemies.map(e => interpolate(e, frame.previous?.enemies, alpha));
     enemies.forEach(e => drawActor(e, true));
+    s.players.filter(actor=>actor.id!==s.you).forEach(actor=>drawActor(interpolate(actor,frame.previous?.players,alpha),false));
     for (const projectile of s.projectiles || []) {
       const b = interpolate<Projectile>(projectile, frame.previous?.projectiles, alpha);
       const point = toScreen(b.x, b.y);

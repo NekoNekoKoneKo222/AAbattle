@@ -36,7 +36,7 @@ const shiftArena = attachShiftArena(server, async (cookie) => {
   const user = await currentUser({ headers: { cookie } });
   return user ? { id: user.id, username: user.username } : null;
 }, { profile: (user) => shiftStore.getProfile(user), award: (user, result) => shiftStore.awardMatch(user, result), presence: (id, event) => { if (event === 'connect') shiftParties.connect(id); else if (event === 'disconnect') shiftParties.disconnect(id); else shiftParties.setPlaying(id, event === 'playing'); }, sameParty: (a, b) => shiftParties.sameParty(a, b) });
-const glyphInfinity = attachGlyphInfinity((user) => glyphStore.load(user), (user, profile) => glyphStore.save(user, profile), (user) => glyphStore.loadCraft(user), (user, craft) => glyphStore.saveCraft(user, craft));
+const glyphInfinity = attachGlyphInfinity((user) => glyphStore.load(user), (user, profile) => glyphStore.save(user, profile), (user) => glyphStore.loadCraft(user), (user, craft) => glyphStore.saveCraft(user, craft), (a,b) => shiftStore.areFriends(a,b));
 const queued = new Map();
 const playing = new Set();
 const trading = new Set();

@@ -1,4 +1,4 @@
-# GLYPH INFINITY — Phases 1–4
+# GLYPH INFINITY — Phases 1–5
 
 `/GF` is a text-only Canvas action game. It uses the existing AAbattle account and an authoritative WebSocket simulation at `/GF/ws`.
 
@@ -32,6 +32,12 @@ Explore to reveal chunks on the world map (**M**) and discover waypoints. From a
 
 In the city, press **F** near the guide or merchant to talk. At the merchant, open the map and buy iron or wood for 10 coins, or crystal for 25 coins. The server checks proximity, costs, visited waypoints, and reward claims. Fast travel is disabled inside dungeons.
 
+## Phase 5 online play
+
+The existing AAbattle login and Neon PostgreSQL profile/crafting tables continue to own accounts and saves. `/GF/ws` now places connected players in one authoritative world: nearby players, shared enemy HP and attacks, projectiles, skills and hit effects appear on all clients. Movement and combat are validated by the server; player progress is saved every 15 seconds and on disconnect. Solitary play remains available.
+
+Open **Online** with **O** or the header button. Search users and manage friend requests through the existing AAbattle/SHIFT ARENA friendship tables. A party leader can invite an online friend, up to four total players. Invites expire after five minutes. Party members can chat and enter the three-wave dungeon together. The leader starts the run; enemy state and wave progression are shared. Nearby party members each receive kill rewards, and all remaining participants receive the clear reward. Disconnecting removes a member from the temporary party and returns that player from the dungeon. Party and chat state is live only; friendship and character progress persist in PostgreSQL. No new database migration is required for Phase 5.
+
 ## Edit the world
 
 Edit [`world.txt`](world.txt) to change the authored terrain. `@origin X Y` gives the tile coordinate of the first character in the first row; each character represents one tile, and all rows must have equal width. `.` and spaces are walkable ground, `:` is a road, `#` a wall, `T` a tree, `~` water, `^` rock, `+` a landmark, and `S` the starting point. Walls, trees, water and rocks block movement. Outside the text grid the existing procedural terrain remains. Restart the local server or commit the file and redeploy Render to apply edits for everyone. The game and collision server load the same file.
@@ -42,6 +48,6 @@ From repository root: `npm ci`, `npm run build:shift`, `npm start`. Apply `migra
 
 ## Phase scope
 
-Implemented: character world, camera and collision, PC/touch movement, melee combat, enemy movement and attacks, five enemy tiers including THE NULL, progression and persistent saves. The city, forest, ruins and training arena have distinct procedural glyph terrain. Phase 2 adds the working workshop, saved skill graphs, four skill slots, weapon crafting, timed parry and a training dummy. Phase 3 adds the account inventory, equipment options and enhancement, quests, a three-wave dungeon, mastery and rebirth. Phase 4 adds chunk generation, biomes, exploration saves, waypoints, chests, NPCs, a merchant, daily events and a hidden area.
+Implemented: character world, camera and collision, PC/touch movement, melee combat, enemy movement and attacks, five enemy tiers including THE NULL, progression and persistent saves. The city, forest, ruins and training arena have distinct procedural glyph terrain. Phase 2 adds the working workshop, saved skill graphs, four skill slots, weapon crafting, timed parry and a training dummy. Phase 3 adds the account inventory, equipment options and enhancement, quests, a three-wave dungeon, mastery and rebirth. Phase 4 adds chunk generation, biomes, exploration saves, waypoints, chests, NPCs, a merchant, daily events and a hidden area. Phase 5 adds shared world combat, visible players, friends, parties, chat and cooperative dungeons.
 
 Planned later: the remaining skill parts, equipment sets and inheritance, co-op, ranked PvP and seasonal systems.
