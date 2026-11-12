@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS glyph_crafting (
+  user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
