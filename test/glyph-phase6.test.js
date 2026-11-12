@@ -106,15 +106,27 @@ test('PvP melee collision damages the opposing player, not a world enemy',async(
   }finally{await f.close();}
 });
 
-test('defeating a boss grants a craft core to the account',async()=>{
+test('holding only basic attack no longer wins a high-level boss duel',async()=>{
   const f=await fixture(null,{x:70,y:720,hp:892,level:100});
   try{
     await until(()=>f.am.some(v=>v.type==='state'&&v.enemies.some(e=>e.id==='e8')));
     const boss=f.am.find(v=>v.type==='state').enemies.find(e=>e.id==='e8');
     const aimX=Math.max(-1,Math.min(1,boss.x-70)),aimY=Math.max(-1,Math.min(1,boss.y-720));
     const attack=setInterval(()=>f.a.send(JSON.stringify({type:'input',x:0,y:0,aimX,aimY,attack:true,dash:false})),40);
-    try{await until(()=>f.crafts.get('phase6-a')?.bossParts>=1,18000);}finally{clearInterval(attack);}
-    assert.ok(f.crafts.get('phase6-a').rpg.bossKills>=1);
+    try{await until(()=>f.am.some(v=>v.type==='state'&&v.players.find(p=>p.id==='phase6-a')?.x===16),20000);}finally{clearInterval(attack);}
+    assert.equal(f.crafts.get('phase6-a')?.bossParts??0,0);
+  }finally{await f.close();}
+});
+
+test('world chat reaches both players, sanitizes text, and limits rapid messages',async()=>{
+  const f=await fixture();
+  try{
+    f.a.send(JSON.stringify({type:'chat:world',message:'合流\nしよう'}));
+    await until(()=>f.bm.some(v=>v.type==='chat:world'&&v.message==='合流 しよう'));
+    assert.ok(f.am.some(v=>v.type==='chat:world'&&v.from==='A'));
+    f.a.send(JSON.stringify({type:'chat:world',message:'連打'}));
+    await until(()=>f.am.some(v=>v.type==='chat:error'));
+    assert.equal(f.bm.filter(v=>v.type==='chat:world').length,1);
   }finally{await f.close();}
 });
 
