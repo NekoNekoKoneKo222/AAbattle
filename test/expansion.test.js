@@ -48,8 +48,12 @@ test('tournaments handle 8, 16 and 32 unique accounts, resume and settle once', 
     const created=await manager.create(users[0].user,`大会${size}`,size);
     await manager.join(created.id,users[0].user,users[0].fighter.id);
     await assert.rejects(manager.join(created.id,users[0].user,users[0].fighter.id));
+    await assert.rejects(manager.start(created.id,users[0].user.id),{status:409});
     const second=new TournamentManager(store);
     for(const {user,fighter} of users.slice(1)) await second.join(created.id,user,fighter.id);
+    assert.equal((await second.get(created.id)).status,'open');
+    await assert.rejects(second.start(created.id,users[1].user.id),{status:403});
+    await second.start(created.id,users[0].user.id);
     const result=await second.resume(created.id);
     assert.equal(result.status,'complete');
     assert.equal(result.matches.length,size-1);
@@ -57,6 +61,22 @@ test('tournaments handle 8, 16 and 32 unique accounts, resume and settle once', 
     assert.equal(await titles.awardTournament(created.id,result.championId),true);
     assert.equal(await titles.awardTournament(created.id,result.championId),false);
     assert.ok((await titles.get(result.championId)).earned.includes('champion'));
+  }
+});
+test('host can start with two players or an odd number, with byes and no duplicate rounds', async () => {
+  for (const count of [2,3,5]) {
+    const store=new MemoryStore(), manager=new TournamentManager(store), users=[];
+    for (let i=0;i<count;i++) { const user=await store.createUser(`p${i}`,`p${i}`,'hash'); const fighter=await store.saveFighter(user.id,`P${i}`,'<o>',plain(`P${i}`).definition,'local'); users.push({user,fighter}); }
+    const tournament=await manager.create(users[0].user,`早期開始${count}`,8);
+    for (const {user,fighter} of users) await manager.join(tournament.id,user,fighter.id);
+    assert.equal((await manager.get(tournament.id)).status,'open');
+    await manager.start(tournament.id,users[0].user.id);
+    const restarted=new TournamentManager(store);
+    const finished=await restarted.resume(tournament.id);
+    assert.equal(finished.status,'complete');
+    assert.equal(finished.matches.filter(match=>match.b !== null).length,count-1);
+    assert.equal((await restarted.resume(tournament.id)).matches.length,finished.matches.length);
+    if (count%2) assert.ok(finished.matches.some(match=>match.b===null));
   }
 });
 test('titles cannot be equipped before server award and can be removed', async () => {

@@ -267,8 +267,14 @@ app.get('/api/tournaments/:id', shiftWrap(async (req,res) => {
 app.post('/api/tournaments/:id/join', shiftWrap(async (req,res) => {
   const user = await requireUser(req,res); if (!user) return;
   if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(req.params.id) || !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(String(req.body?.fighterId || ''))) return res.status(400).json({error:'大会IDとAAを確認してください。'});
-  let tournament = await tournaments.join(req.params.id,user,String(req.body?.fighterId || ''));
-  if (tournament.status === 'running') tournament = await tournaments.resume(tournament.id);
+  const tournament = await tournaments.join(req.params.id,user,String(req.body?.fighterId || ''));
+  res.json({ tournament });
+}));
+app.post('/api/tournaments/:id/start', shiftWrap(async (req,res) => {
+  const user = await requireUser(req,res); if (!user) return;
+  if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(req.params.id)) return res.status(400).json({error:'大会IDが不正です。'});
+  let tournament = await tournaments.start(req.params.id,user.id);
+  tournament = await tournaments.resume(tournament.id);
   if (tournament.status === 'complete') await titles.awardTournament(tournament.id,tournament.championId);
   res.json({ tournament });
 }));

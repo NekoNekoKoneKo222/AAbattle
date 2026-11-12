@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import { createBattle, stepBattle } from './battle.js';
 import { hideAwakening } from './awakening.js';
 
@@ -67,16 +67,25 @@ export class TournamentManager {
       if (!fighter || fighter.owner_id !== user.id) throw new TournamentError('所持中のAAを選んでください。',403);
       row.state.entries.push({ userId: user.id, username: user.username, fighterId, fighter: {
         id: fighter.id, name: fighter.name, art: fighter.art, definition: fighter.definition } });
-      if (row.state.entries.length === row.size) {
-        for (const entry of row.state.entries) {
-          const current = client ? (await client.query('SELECT * FROM fighters WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL',[entry.fighterId,entry.userId])).rows[0] : await this.store.getFighter(entry.fighterId);
-          if (!current || current.owner_id !== entry.userId) throw new TournamentError('参加AAの所有者が変更されています。該当者は参加を取り消してください。');
-          entry.fighter = { id: current.id, name: current.name, art: current.art, definition: current.definition };
-        }
-        row.status = 'running';
-      }
     });
   }
+  async start(id, userId) { return this.mutate(id, async (row, client) => {
+    if (row.creator_id !== userId) throw new TournamentError('主催者だけが大会を開始できます。', 403);
+    if (row.status !== 'open') throw new TournamentError('この大会は開始できません。');
+    if (row.state.entries.length < 2) throw new TournamentError('2人以上の参加者が必要です。');
+    for (const entry of row.state.entries) {
+      const current = client ? (await client.query('SELECT * FROM fighters WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL',[entry.fighterId,entry.userId])).rows[0] : await this.store.getFighter(entry.fighterId);
+      if (!current || current.owner_id !== entry.userId) throw new TournamentError('参加AAの所有者が変更されています。該当者は参加を取り消してください。');
+      entry.fighter = { id: current.id, name: current.name, art: current.art, definition: current.definition };
+    }
+    const contenders = row.state.entries.map(entry => entry.userId);
+    for (let i = contenders.length - 1; i > 0; i--) {
+      const j = randomInt(i + 1);
+      [contenders[i], contenders[j]] = [contenders[j], contenders[i]];
+    }
+    row.state.contenders = contenders;
+    row.status = 'running';
+  }); }
   async withdraw(id, userId) { return this.mutate(id, row => {
     if (row.status !== 'open') throw new TournamentError('開始後は取り消せません。');
     const old = row.state.entries.length; row.state.entries = row.state.entries.filter(e => e.userId !== userId);
@@ -90,16 +99,28 @@ export class TournamentManager {
   async advance(id) { return this.mutate(id, async (row, client) => {
     if (row.status !== 'running') return publicState(row);
     const { entries, matches, round } = row.state;
-    const survivors = round === 0 ? entries : entries.filter(e => matches.some(m => m.round === round && m.winnerId === e.userId));
-    if (survivors.length < 2 || survivors.length % 2) throw new TournamentError('大会の対戦表が不正です。');
+    const survivorIds = row.state.contenders || (round === 0 ? entries.map(e => e.userId) : entries.filter(e => matches.some(m => m.round === round && m.winnerId === e.userId)).map(e => e.userId));
+    const survivors = survivorIds.map(id => entries.find(entry => entry.userId === id));
+    if (survivors.length < 2 || survivors.some(entry => !entry)) throw new TournamentError('大会の対戦表が不正です。');
     const nextRound = round + 1;
-    for (let slot = 0; slot < survivors.length / 2; slot++) {
-      if (matches.some(m => m.round === nextRound && m.slot === slot)) continue;
-      matches.push(play(survivors[slot * 2], survivors[slot * 2 + 1], nextRound, slot));
+    const nextContenders = [];
+    for (let slot = 0; slot < Math.ceil(survivors.length / 2); slot++) {
+      const first = survivors[slot * 2];
+      const second = survivors[slot * 2 + 1];
+      let match = matches.find(m => m.round === nextRound && m.slot === slot);
+      if (!match) {
+        match = second ? play(first, second, nextRound, slot) : {
+          id: randomUUID(), round: nextRound, slot, a: first.userId, b: null,
+          winnerId: first.userId, aName: first.fighter.name, bName: '不戦勝', log: []
+        };
+        matches.push(match);
+      }
+      nextContenders.push(match.winnerId);
     }
     row.state.round = nextRound;
-    if (survivors.length === 2) {
-      row.state.championId = matches.find(m => m.round === nextRound).winnerId;
+    row.state.contenders = nextContenders;
+    if (nextContenders.length === 1) {
+      row.state.championId = nextContenders[0];
       row.status = 'complete';
       if (client) await client.query('INSERT INTO tournament_rewards (tournament_id,user_id,reward) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
         [row.id,row.state.championId,'champion']);

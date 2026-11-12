@@ -106,9 +106,14 @@ async function refreshTournaments() {
     if (!tournaments.length) list.append(node('p','muted','大会はまだありません。'));
     for (const item of tournaments) {
       const card = node('article','trade-entry');
-      card.append(node('h3','',`${item.name} / ${item.size}人`), node('p','muted',`${item.status} / ${item.entries.length}人参加 / 第${item.round}回戦`));
+      card.append(node('h3','',`${item.name} / 最大${item.size}人`), node('p','muted',`${item.status} / ${item.entries.length}人参加 / 第${item.round}回戦`));
       if (item.championId) card.append(node('b','',`優勝: ${item.entries.find(e => e.userId === item.championId)?.username || item.championId}`));
       card.append(node('div','muted',item.entries.map(e => e.username).join(' / ') || '参加者募集中'));
+      if (item.status === 'running') {
+        const resume=node('button','secondary-button','[ 試合進行を再開 ]');
+        resume.addEventListener('click',async()=>{resume.disabled=true;try{await api(`tournaments/${item.id}`);await refreshTournaments();}catch(error){resume.disabled=false;notify(error.message,true);}});
+        card.append(resume);
+      }
       if (item.status === 'open' && !item.entries.some(e => e.userId === app.user.id) && app.fighters.length) {
         const select = node('select'); for (const fighter of app.fighters) { const option=node('option','',fighter.name); option.value=fighter.id; select.append(option); }
         const button=node('button','secondary-button','[ このAAで参加 ]'); button.addEventListener('click',async()=>{ button.disabled=true; try { await api(`tournaments/${item.id}/join`,{method:'POST',body:JSON.stringify({fighterId:select.value})}); await refreshTournaments(); } catch(error){button.disabled=false;notify(error.message,true);} });
@@ -118,6 +123,10 @@ async function refreshTournaments() {
         const button=node('button','secondary-button','[ 参加取消 ]'); button.addEventListener('click',async()=>{try{await api(`tournaments/${item.id}/withdraw`,{method:'POST'});await refreshTournaments();}catch(error){notify(error.message,true);}});card.append(button);
       }
       if (item.status === 'open' && item.creatorId === app.user.id) {
+        const start=node('button','primary-button',item.entries.length < 2 ? '[ 開始には2人必要 ]' : '[ 大会を開始 ]');
+        start.disabled=item.entries.length < 2;
+        start.addEventListener('click',async()=>{start.disabled=true;try{await api(`tournaments/${item.id}/start`,{method:'POST'});await refreshTournaments();await refreshTitles();}catch(error){start.disabled=false;notify(error.message,true);}});
+        card.append(start);
         const button=node('button','secondary-button','[ 大会中止 ]'); button.addEventListener('click',async()=>{try{await api(`tournaments/${item.id}/cancel`,{method:'POST'});await refreshTournaments();}catch(error){notify(error.message,true);}});card.append(button);
       }
       if (item.matches.length) {
