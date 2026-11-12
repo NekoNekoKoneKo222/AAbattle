@@ -106,6 +106,13 @@ test('account registration, authentication, character saving and online matchmak
   assert.equal((await request('history', null, ac)).body.matches.length, 0);
   assert.equal((await request('me', null, ac)).body.user.wins, 0);
   assert.equal((await request('me', null, ac)).body.user.losses, 0);
+  for (let i = 0; i < 24; i++) {
+    const repeat = await request('pve/battle', { difficulty: 'easy', fighterId: fighterB.body.fighter.id }, ac);
+    assert.equal(repeat.status, 201, `PvE challenge ${i + 2}: ${JSON.stringify(repeat.body)}`);
+  }
+  const unlimitedHistory = await request('pve/history', null, ac);
+  assert.equal(unlimitedHistory.body.wins + unlimitedHistory.body.losses, 25);
+  assert.equal(unlimitedHistory.body.matches.length, 20);
   const wsA = new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers: { Origin: url, Cookie: ac } });
   const wsB = new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers: { Origin: url, Cookie: bc } });
   t.after(() => { wsA.close(); wsB.close(); });

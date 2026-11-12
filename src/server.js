@@ -37,7 +37,6 @@ let activeFighterProvider = null;
 const MAX_PENDING_FIGHTER_JOBS = 4;
 const FIGHTER_JOB_TTL_MS = 30 * 60 * 1000;
 const tradeRequests = new Map();
-const pveAttempts = new Map();
 const SESSION_AGE = 7 * 24 * 60 * 60 * 1000;
 const secure = process.env.NODE_ENV === 'production';
 const staticRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
@@ -451,9 +450,6 @@ app.post('/api/pve/battle', wrap(async (req, res) => {
   }
   if (playing.has(user.id) || queued.has(user.id) || trading.has(user.id) || pveRunning.has(user.id)) {
     return res.status(409).json({ error: 'ほかの対戦・マッチング・交換処理中はPvEを開始できません。' });
-  }
-  if (!limit(pveAttempts, user.id, 24, 60 * 60 * 1000)) {
-    return res.status(429).json({ error: 'PvEの上限は1時間に24回です。' });
   }
   pveRunning.add(user.id);
   try {
