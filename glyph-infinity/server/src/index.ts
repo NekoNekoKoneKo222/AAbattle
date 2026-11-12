@@ -710,6 +710,41 @@ export function attachGlyphInfinity(load:Load,save:Save,loadCraft:LoadCraft=asyn
   let lastTick=Date.now();
   const timer=setInterval(()=>{const now=Date.now(),dt=Math.min(.05,Math.max(0,(now-lastTick)/1000));lastTick=now;const processed=new Set<string>();for(const s of sessions.values()){const key=s.pvpMatch?s.pvpMatch:s.dungeon?s.partyId??s.user.id:'world',simulate=!processed.has(key);processed.add(key);tick(s,now,dt,simulate);}for(const match of pvpMatches.values())updatePvp(match,now);},1000/30);
   return {
+    onlineCount(){return sessions.size;},
+    broadcast(payload:unknown){for(const s of sessions.values())sendJson(s,payload);},
+    refreshWorld(world:{source:string;version:number}){
+      for(const s of sessions.values()){
+        if(!s.dungeon&&!s.pvpMatch&&!canStand(s.player.x,s.player.y)){
+          const pos=safeNear(s.player.x,s.player.y);s.player.x=pos.x;s.player.y=pos.y;s.profile.x=pos.x;s.profile.y=pos.y;
+        }
+        s.wildChunk='';sendJson(s,{type:'world:map',source:world.source,version:world.version});
+      }
+      for(const e of worldEnemies){if(!canEnemyStand(e.x,e.y)){const pos=safeEnemyNear(e.x,e.y);e.x=pos.x;e.y=pos.y;e.targetX=pos.x;e.targetY=pos.y;}}
+    },
+    async adminAction(userId:string,raw:unknown){
+      const s=sessions.get(userId);
+      if(!s)return {ok:false,error:'ゲームに接続してから操作してください。'};
+      if(!raw||typeof raw!=='object')return {ok:false,error:'操作が不正です。'};
+      const a=raw as Record<string,unknown>,action=a.action;
+      if(action==='heal'){
+        s.player.hp=s.player.maxHp;s.profile.hp=s.player.hp;addEffect(s,s.player.x,s.player.y,'管理者：HP回復','#a4ffbd',Date.now());
+      }else if(action==='travel'){
+        if(s.dungeon||s.pvpMatch)return {ok:false,error:'戦闘中は移動できません。'};
+        const site=WORLD_SITES.find(v=>v.id===a.site&&v.kind==='waypoint');
+        if(!site)return {ok:false,error:'移動先が不正です。'};
+        const pos=safeNear((site.tx+.5)*TILE,(site.ty+.5)*TILE);
+        s.player.x=pos.x;s.player.y=pos.y;s.profile.x=pos.x;s.profile.y=pos.y;s.wildChunk='';
+      }else if(action==='resources'){
+        const amount=a.amount;
+        if(!Number.isSafeInteger(amount)||Number(amount)<1||Number(amount)>100)return {ok:false,error:'補充数は1～100にしてください。'};
+        for(const key of ['iron','wood','crystal'] as const)s.craft.materials[key]=Math.min(9999,s.craft.materials[key]+Number(amount));
+        s.craft.bossParts=Math.min(999,s.craft.bossParts+Number(amount));
+        s.craftDirty=true;sendCraft(s);
+        await queueCraftSave(s);
+      }else return {ok:false,error:'操作が不正です。'};
+      await save(s.user,{...s.profile});
+      return {ok:true,action};
+    },
     async upgrade(req:IncomingMessage,socket:any,head:Buffer,user:User){
       if(upgrading.has(user.id)){socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');socket.destroy();return;}
       upgrading.add(user.id);

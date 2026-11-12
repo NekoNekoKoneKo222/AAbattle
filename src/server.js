@@ -4,7 +4,6 @@ import { createHash, randomBytes } from 'node:crypto';
 import argon2 from 'argon2';
 import { WebSocketServer, WebSocket } from 'ws';
 import { fileURLToPath } from 'node:url';
-import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createStore, TradeError } from './store.js';
 import { ShiftStore } from './shift-store.js';
@@ -18,16 +17,16 @@ import { listPveEnemies, PVE_DIFFICULTIES, runPveBattle } from './pve.js';
 import { attachShiftArena } from '../shift-arena/apps/server/dist/index.js';
 import { attachGlyphInfinity } from '../glyph-infinity/server/dist/index.js';
 import { GlyphStore } from './glyph-store.js';
-import { setWorldMap } from '@glyph/shared';
+import { GlyphAdminStore, isGlyphAdmin } from './glyph-admin.js';
 
 const glyphWorldPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'glyph-infinity', 'world.txt');
-setWorldMap(readFileSync(glyphWorldPath, 'utf8'));
 
 const store = createStore();
 const tournaments = new TournamentManager(store);
 const titles = new TitleManager(store);
 const shiftStore = new ShiftStore(store.pool || null);
 const glyphStore = new GlyphStore(store.pool || null);
+const glyphAdmin = new GlyphAdminStore(store.pool || null, glyphWorldPath);
 const shiftParties = new ShiftPartyManager();
 const app = express();
 const server = http.createServer(app);
@@ -87,7 +86,7 @@ async function issueSession(res, user) {
   cookie(res, token, SESSION_AGE / 1000);
 }
 function publicUser(user) {
-  return { id: user.id, username: user.username, wins: user.wins, losses: user.losses };
+  return { id: user.id, username: user.username, wins: user.wins, losses: user.losses, glyphAdmin: isGlyphAdmin(user) };
 }
 async function visibleFighter(userId, fighter) {
   if (!fighter) return fighter;
@@ -159,6 +158,19 @@ function shiftWrap(callback) {
     if (error.status >= 400 && error.status < 500) return res.status(error.status).json({ error: error.message });
     console.error('SHIFT ARENA request failed:', error.message);
     res.status(500).json({ error: '処理に失敗しました。' });
+  });
+}
+function glyphAdminWrap(callback) {
+  return (req, res) => Promise.resolve().then(async () => {
+    const user = await requireUser(req, res);
+    if (!user) return;
+    if (!isGlyphAdmin(user)) return res.status(403).json({ error: '管理者のみ利用できます。' });
+    if (req.method !== 'GET' && req.get('origin') !== `${req.protocol}://${req.get('host')}`) return res.status(403).json({ error: '送信元を確認できません。' });
+    await callback(req, res, user);
+  }).catch(error => {
+    const status = /マップ|通知|地形|座標|編集|操作|ワールド/.test(error.message) ? 400 : 500;
+    if (status === 500) console.error('GF admin:', error);
+    res.status(status).json({ error: status === 400 ? error.message : '管理操作に失敗しました。' });
   });
 }
 async function requireUser(req, res) {
@@ -533,7 +545,26 @@ app.post('/api/pve/battle', wrap(async (req, res) => {
 
 app.get('/sam', (_req, res) => res.sendFile(path.join(staticRoot, 'sam', 'index.html')));
 app.get(['/GF', '/GF/'], (_req, res) => res.sendFile(path.join(staticRoot, 'GF', 'index.html')));
-app.get('/GF/world.txt', (_req, res) => res.type('text/plain; charset=utf-8').set('Cache-Control', 'no-store').sendFile(glyphWorldPath));
+app.get('/GF/world.txt', (_req, res) => res.type('text/plain; charset=utf-8').set('Cache-Control', 'no-store').send(glyphAdmin.source));
+app.get('/api/GF/announcements', wrap(async (_req,res) => res.json({ notices: await glyphAdmin.notices() })));
+app.get('/api/GF/admin', glyphAdminWrap(async (_req,res) => res.json({ source:glyphAdmin.source, version:glyphAdmin.version, defaultSource:glyphAdmin.defaultSource, online:glyphInfinity.onlineCount() })));
+app.post('/api/GF/admin/notice', glyphAdminWrap(async (req,res,user) => {
+  const notice = await glyphAdmin.addNotice(req.body?.message,user.id);
+  glyphInfinity.broadcast({ type:'admin:notice', notice });
+  res.status(201).json({ notice });
+}));
+app.put('/api/GF/admin/world', glyphAdminWrap(async (req,res,user) => {
+  const {source,version} = req.body || {};
+  if (!Number.isSafeInteger(version)) return res.status(400).json({ error:'マップのバージョンが不正です。' });
+  const saved = await glyphAdmin.saveWorld(source,user.id,version);
+  glyphInfinity.refreshWorld(saved);
+  res.json(saved);
+}));
+app.post('/api/GF/admin/test', glyphAdminWrap(async (req,res,user) => {
+  const result = await glyphInfinity.adminAction(user.id,req.body);
+  if (!result.ok) return res.status(400).json({ error:result.error });
+  res.json(result);
+}));
 app.get('/abn', (_req, res) => res.sendFile(path.join(staticRoot, 'abn', 'index.html')));
 app.get('/model', (_req, res) => res.sendFile(path.join(staticRoot, 'sam', 'index.html')));
 app.use(express.static(staticRoot, { index: 'index.html', maxAge: 60000 }));
@@ -659,6 +690,8 @@ server.on('upgrade', async (req, socket, head) => {
 
 const port = Number(process.env.PORT || 3000);
 await store.init();
+await glyphAdmin.init();
+glyphInfinity.refreshWorld({ source: glyphAdmin.source, version: glyphAdmin.version });
 await shiftStore.init();
 await shiftArena.listen(port);
 console.log(`AABattle and SHIFT ARENA listening on ${port}; generation: ${generationMode()}`);

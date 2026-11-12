@@ -21,7 +21,7 @@ function drawTiles(ctx:CanvasRenderingContext2D,left:number,top:number,count:num
     ctx.fillRect(col*cell,row*cell,cell,cell);
   }
 }
-export function WorldMap({player,rpg,presence,open,onClose,onOpen,send}:{player?:Actor;rpg?:RpgState;presence?:WorldPresence;open:boolean;onClose:()=>void;onOpen:()=>void;send:(message:Record<string,unknown>)=>void}){
+export function WorldMap({player,rpg,presence,revision,open,onClose,onOpen,send}:{player?:Actor;rpg?:RpgState;presence?:WorldPresence;revision:number;open:boolean;onClose:()=>void;onOpen:()=>void;send:(message:Record<string,unknown>)=>void}){
   const mini=useRef<HTMLCanvasElement>(null),full=useRef<HTMLCanvasElement>(null),base=useRef<HTMLCanvasElement|null>(null),baseKey=useRef('pending');
   const [marker,setMarker]=useState<{x:number;y:number}|null>(null);
   const px=Math.floor((player?.x??16)/TILE),py=Math.floor((player?.y??16)/TILE);
@@ -34,13 +34,13 @@ export function WorldMap({player,rpg,presence,open,onClose,onOpen,send}:{player?
     for(const enemy of presence?.enemies??[]){const x=(enemy.x/TILE-(px-16))*4,y=(enemy.y/TILE-(py-16))*4;if(x>=0&&x<132&&y>=0&&y<132){ctx.fillStyle=enemy.kind==='boss'?'#e88bff':'#f2848d';ctx.fillRect(x-2,y-2,4,4);}}
     for(const other of presence?.players??[]){if(other.id===player?.id)continue;const x=(other.x/TILE-(px-16))*4,y=(other.y/TILE-(py-16))*4;if(x>=0&&x<132&&y>=0&&y<132){ctx.fillStyle=other.party?'#a5ffa0':'#d4b6ff';ctx.beginPath();ctx.arc(x,y,3,0,Math.PI*2);ctx.fill();}}
     ctx.fillStyle='#41e9ff';ctx.fillRect(62,62,8,8);
-  },[px,py,presence,player?.id]);
+  },[px,py,presence,player?.id,revision]);
   useEffect(()=>{
     if(!open)return;const ctx=full.current?.getContext('2d');if(!ctx)return;
     if(!base.current){base.current=document.createElement('canvas');base.current.width=SIZE;base.current.height=SIZE;}
-    if(baseKey.current!==exploredKey){
+    if(baseKey.current!==`${exploredKey}:${revision}`){
       const bg=base.current.getContext('2d');if(bg)drawTiles(bg,-WORLD,-WORLD,COUNT,CELL,new Set(rpg?.explored??[]));
-      baseKey.current=exploredKey;
+      baseKey.current=`${exploredKey}:${revision}`;
     }
     ctx.drawImage(base.current,0,0);
     const dot=(tx:number,ty:number,color:string,radius:number)=>{
@@ -53,7 +53,7 @@ export function WorldMap({player,rpg,presence,open,onClose,onOpen,send}:{player?
     for(const enemy of presence?.enemies??[]){const tx=enemy.x/TILE,ty=enemy.y/TILE;dot(tx,ty,enemy.kind==='boss'?'#e88bff':'#f2848d',enemy.kind==='boss'?5:3);const x=(tx+WORLD+.5)*CELL,y=(ty+WORLD+.5)*CELL;ctx.strokeStyle='#8cffa6';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(x,y,enemy.kind==='boss'?6:4,-Math.PI/2,-Math.PI/2+Math.PI*2*enemy.hp/enemy.maxHp);ctx.stroke();}
     for(const other of presence?.players??[])if(other.id!==player?.id)dot(other.x/TILE,other.y/TILE,other.party?'#a5ffa0':'#d4b6ff',4);
     dot(px,py,'#72f4ff',7);
-  },[open,px,py,exploredKey,discovered.join('|'),marker,event.id,presence,player?.id]);
+  },[open,px,py,exploredKey,revision,discovered.join('|'),marker,event.id,presence,player?.id]);
   return <>
     <button className="minimap" onClick={onOpen} aria-label="ワールドマップを開く" title="ワールドマップ (M)"><canvas ref={mini} width="132" height="132"/><span>◎ MAP　M</span></button>
     {open&&<div className="map-backdrop" role="dialog" aria-modal="true" aria-label="ワールドマップ"><section className="world-map">

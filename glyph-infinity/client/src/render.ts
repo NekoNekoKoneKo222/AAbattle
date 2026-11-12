@@ -27,7 +27,8 @@ export function startRenderer(canvas: HTMLCanvasElement, frames: RefObject<Frame
   let lastFrame = 0, frameId = 0;
 
   function rebuildTiles(left: number, top: number, cols: number, rows: number) {
-    if (left === cachedLeft && top === cachedTop && cols === cachedCols && rows === cachedRows) return;
+    if (left >= cachedLeft && top >= cachedTop && left + cols <= cachedLeft + cachedCols && top + rows <= cachedTop + cachedRows) return;
+    left -= 6; top -= 6; cols += 12; rows += 12;
     cachedLeft = left; cachedTop = top; cachedCols = cols; cachedRows = rows;
     tileCanvas.width = cols * TILE; tileCanvas.height = rows * TILE;
     tileCtx!.fillStyle = '#0e1721'; tileCtx!.fillRect(0, 0, tileCanvas.width, tileCanvas.height);
@@ -68,7 +69,9 @@ export function startRenderer(canvas: HTMLCanvasElement, frames: RefObject<Frame
     if (!p) return;
     const age = Math.max(0, now - frame.receivedAt);
     const serverNow = s.time + age;
-    const alpha = clamp(age / frame.interval, 0, 1);
+    // Draw enemies from the newest server position and predict only a small
+    // fraction of the next step. Delayed packets no longer rewind their pose.
+    const alpha = clamp(1 + age / frame.interval, 1, 1.6);
     const moving = input.current.x !== 0 || input.current.y !== 0;
     const rolling = s.rollUntil > serverNow;
     const lead = Math.min(age, 60) / 1000;
@@ -94,7 +97,7 @@ export function startRenderer(canvas: HTMLCanvasElement, frames: RefObject<Frame
     const cols = Math.ceil(width / scale / TILE) + 5;
     const rows = Math.ceil(height / scale / TILE) + 5;
     rebuildTiles(left, top, cols, rows);
-    const screen = toScreen(left * TILE, top * TILE);
+    const screen = toScreen(cachedLeft * TILE, cachedTop * TILE);
     ctx!.drawImage(tileCanvas, screen.x, screen.y, tileCanvas.width * scale, tileCanvas.height * scale);
 
     const drawActor = (actor: Actor, enemy: boolean) => {
