@@ -22,25 +22,37 @@ export function startRenderer(canvas: HTMLCanvasElement, frames: RefObject<Frame
   const tileCanvas = document.createElement('canvas');
   const tileCtx = tileCanvas.getContext('2d', { alpha: false });
   if (!tileCtx) return () => {};
+  const glyphTiles = new Map<string,HTMLCanvasElement>();
   let cachedLeft = Infinity, cachedTop = Infinity, cachedCols = 0, cachedRows = 0;
   let self: Position | null = null, camera: Position | null = null;
   let lastFrame = 0, frameId = 0;
 
   function rebuildTiles(left: number, top: number, cols: number, rows: number) {
     if (left >= cachedLeft && top >= cachedTop && left + cols <= cachedLeft + cachedCols && top + rows <= cachedTop + cachedRows) return;
-    left -= 6; top -= 6; cols += 12; rows += 12;
+    left -= 3; top -= 3; cols += 6; rows += 6;
     cachedLeft = left; cachedTop = top; cachedCols = cols; cachedRows = rows;
     tileCanvas.width = cols * TILE; tileCanvas.height = rows * TILE;
     tileCtx!.fillStyle = '#0e1721'; tileCtx!.fillRect(0, 0, tileCanvas.width, tileCanvas.height);
-    tileCtx!.textAlign = 'center'; tileCtx!.textBaseline = 'middle';
-    tileCtx!.font = '22px Consolas, monospace';
+    tileCtx!.imageSmoothingEnabled = false;
     for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) {
       const tx = left + col, ty = top + row, glyph = tileAt(tx, ty);
       const x = col * TILE, y = row * TILE;
       if (Math.abs(tx) < 9 && Math.abs(ty) < 8) {tileCtx!.fillStyle = '#182a38'; tileCtx!.fillRect(x, y, TILE, TILE);}
       else if (ty > 15 && Math.abs(tx) < 18) {tileCtx!.fillStyle = '#201d2c'; tileCtx!.fillRect(x, y, TILE, TILE);}
-      tileCtx!.fillStyle = terrainColor(glyph);
-      tileCtx!.fillText(glyph, x + TILE / 2, y + TILE / 2);
+      if(glyph===' '||glyph==='·')continue;
+      if(glyph===':'||glyph==='░'||glyph==='▒'||glyph==='#'||glyph==='▓'){
+        tileCtx!.fillStyle=terrainColor(glyph);
+        tileCtx!.fillRect(x+4,y+4,TILE-8,TILE-8);
+        continue;
+      }
+      const color=terrainColor(glyph),key=`${glyph}:${color}`;
+      let image=glyphTiles.get(key);
+      if(!image){
+        image=document.createElement('canvas');image.width=TILE;image.height=TILE;
+        const g=image.getContext('2d')!;g.textAlign='center';g.textBaseline='middle';g.font='22px Consolas, monospace';g.fillStyle=color;g.fillText(glyph,TILE/2,TILE/2);
+        glyphTiles.set(key,image);
+      }
+      tileCtx!.drawImage(image,x,y);
     }
   }
 
@@ -54,7 +66,7 @@ export function startRenderer(canvas: HTMLCanvasElement, frames: RefObject<Frame
     if (now - lastFrame < 1000 / 65) return;
     const dt = lastFrame ? clamp(now - lastFrame, 0, 50) : 16;
     lastFrame = now;
-    const ratio = Math.min(window.devicePixelRatio || 1, 1.5);
+    const ratio = Math.min(window.devicePixelRatio || 1, 1.25);
     const width = canvas.clientWidth, height = canvas.clientHeight;
     if (!width || !height) return;
     if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) {

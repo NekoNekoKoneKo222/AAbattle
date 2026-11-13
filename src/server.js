@@ -547,6 +547,7 @@ app.get('/sam', (_req, res) => res.sendFile(path.join(staticRoot, 'sam', 'index.
 app.get(['/GF', '/GF/'], (_req, res) => res.sendFile(path.join(staticRoot, 'GF', 'index.html')));
 app.get('/GF/world.txt', (_req, res) => res.type('text/plain; charset=utf-8').set('Cache-Control', 'no-store').send(glyphAdmin.source));
 app.get('/api/GF/announcements', wrap(async (_req,res) => res.json({ notices: await glyphAdmin.notices() })));
+app.get('/api/GF/chat', wrap(async (req,res) => { const user=await requireUser(req,res); if(user)res.json({ messages:glyphInfinity.chatHistory() }); }));
 app.get('/api/GF/admin', glyphAdminWrap(async (_req,res) => res.json({ source:glyphAdmin.source, version:glyphAdmin.version, defaultSource:glyphAdmin.defaultSource, online:glyphInfinity.onlineCount() })));
 app.post('/api/GF/admin/notice', glyphAdminWrap(async (req,res,user) => {
   const notice = await glyphAdmin.addNotice(req.body?.message,user.id);

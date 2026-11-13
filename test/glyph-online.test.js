@@ -45,7 +45,11 @@ test('two accounts share world combat and can form a friend-only co-op party',as
     try{await until(()=>am.some(v=>v.type==='state'&&v.dungeon===1&&v.enemies.some(e=>e.hp<e.maxHp))||am.some(v=>v.type==='state'&&v.dungeon===2),6000);}finally{clearInterval(attack);}
     assert.ok(am.some(v=>v.type==='state'&&v.dungeon===1&&v.players.some(p=>p.id===bob.id)));
     wa.close();await once(wa,'close');
-    await until(()=>bm.some(v=>v.type==='party:state'&&v.party?.leaderId===bob.id));
-    await until(()=>Math.abs(profiles.get(alice.id).x-360)<40);
+    await until(()=>bm.some(v=>v.type==='party:state'&&v.party?.leaderId===alice.id&&!v.onlineIds.includes(alice.id)));
+    const resumed=new WebSocket(url+'/alice');const resumedMessages=[];resumed.on('message',data=>resumedMessages.push(JSON.parse(data.toString())));
+    await once(resumed,'open');
+    await until(()=>resumedMessages.some(v=>v.type==='state'&&v.dungeon===1));
+    assert.ok(resumedMessages.some(v=>v.type==='party:state'&&v.party?.leaderId===alice.id));
+    resumed.terminate();
   }finally{wa.terminate();wb.terminate();await game.shutdown();await new Promise(resolve=>server.close(resolve));}
 });

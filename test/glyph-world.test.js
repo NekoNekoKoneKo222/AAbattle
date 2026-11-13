@@ -22,13 +22,14 @@ test('64-square chunks and eight biomes are deterministic and traversable',()=>{
 });
 
 test('merchant, exploration, chest and travel are server-authoritative and saved',async()=>{
-  const user={id:'world-test',username:'Explorer'},merchant=WORLD_SITES.find(s=>s.id==='merchant');
+  let user={id:'world-test',username:'Explorer'};const merchant=WORLD_SITES.find(s=>s.id==='merchant');
   let profile={...location(merchant.tx,merchant.ty),hp:100,xp:0,level:2,coins:100},craft=starterCraft();
   const server=http.createServer(),game=attachGlyphInfinity(async()=>({...profile}),async(_u,p)=>{profile={...p};},async()=>structuredClone(craft),async(_u,c)=>{craft=structuredClone(c);});
   server.on('upgrade',(req,socket,head)=>void game.upgrade(req,socket,head,user));server.listen(0,'127.0.0.1');await once(server,'listening');
   const url=`ws://127.0.0.1:${server.address().port}`;
   let ws,messages=[];
-  const connect=async()=>{messages=[];ws=new WebSocket(url);ws.on('message',data=>messages.push(JSON.parse(data.toString())));await once(ws,'open');await until(()=>messages.some(m=>m.type==='state'));};
+  let connections=0;
+  const connect=async()=>{if(connections++)user={...user,id:`world-test-${connections}`};messages=[];ws=new WebSocket(url);ws.on('message',data=>messages.push(JSON.parse(data.toString())));await once(ws,'open');await until(()=>messages.some(m=>m.type==='state'));};
   const close=async()=>{ws.close();await once(ws,'close');await pause(30);};
   try{
     await connect();await until(()=>messages.some(m=>m.type==='state'&&m.world?.discovered.includes('merchant')));

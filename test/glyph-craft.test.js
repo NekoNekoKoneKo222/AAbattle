@@ -84,7 +84,7 @@ test('craft, equip, cast, parry, and test arena are authoritative and persistent
 });
 
 test('a crafted skill really damages the training dummy',async()=>{
-  const user={id:'skill-test',username:'SkillTest'};
+  let user={id:'skill-test',username:'SkillTest'};
   let profile={x:16,y:16,hp:100,xp:0,level:1,coins:0};
   const craft=starterCraft();craft.skills=[{...skill(),id:'test-skill'}];craft.equippedSkills[0]='test-skill';
   const httpServer=http.createServer();
@@ -104,6 +104,7 @@ test('a crafted skill really damages the training dummy',async()=>{
       if(!near&&canStand(x,y))near={x,y};
     }
     assert.ok(near);profile={...profile,...near,hp:100};
+    user={...user,id:'skill-test-near'};
     ws=new WebSocket(url);const messages=[];ws.on('message',m=>messages.push(JSON.parse(m.toString())));
     await once(ws,'open');ws.send(JSON.stringify({type:'cast',slot:0}));
     await until(()=>messages.some(m=>m.type==='state'&&m.enemies.find(e=>e.kind==='dummy')?.hp<250));
@@ -116,7 +117,7 @@ test('a crafted skill really damages the training dummy',async()=>{
 });
 
 test('timed parry blocks a warned melee hit and staggers the enemy',async()=>{
-  const user={id:'parry-test',username:'Parry'};
+  let user={id:'parry-test',username:'Parry'};
   let profile={x:16,y:16,hp:100,xp:0,level:1,coins:0};
   const httpServer=http.createServer();
   const game=attachGlyphInfinity(async()=>({...profile}),async(_user,value)=>{profile={...value};});
@@ -135,6 +136,7 @@ test('timed parry blocks a warned melee hit and staggers the enemy',async()=>{
       if(!near&&canStand(x,y))near={x,y};
     }
     assert.ok(near);profile={...profile,...near,hp:100};
+    user={...user,id:'parry-test-near'};
     ws=new WebSocket(url);const states=[];ws.on('message',m=>{const v=JSON.parse(m.toString());if(v.type==='state')states.push(v);});
     await once(ws,'open');
     await until(()=>states.some(s=>{const e=s.enemies.find(e=>e.id==='e0');return e&&e.windupUntil-s.time>50&&e.windupUntil-s.time<180;}),3000);

@@ -60,7 +60,7 @@ test('server owns movement and saves profile when disconnected',async()=>{
 });
 
 test('keyboard melee auto-targets a nearby enemy without a mouse',async()=>{
-  const user={id:'melee-player',username:'Melee'};
+  let user={id:'melee-player',username:'Melee'};
   let profile={x:16,y:16,hp:100,xp:0,level:1,coins:0};
   const httpServer=http.createServer();
   const game=attachGlyphInfinity(async()=>({...profile}),async(_user,value)=>{profile={...value};});
@@ -82,6 +82,7 @@ test('keyboard melee auto-targets a nearby enemy without a mouse',async()=>{
     }
     assert.ok(near,'an accessible melee position should exist');
     profile={...profile,...near,hp:100};
+    user={...user,id:'melee-player-near'};
     ws=new WebSocket(url);await once(ws,'open');
     const states=[];ws.on('message',m=>{const value=JSON.parse(m.toString());if(value.type==='state')states.push(value);});
     const attack=()=>ws.send(JSON.stringify({type:'input',x:0,y:0,aimX:0,aimY:0,attack:true,dash:false}));
@@ -97,7 +98,7 @@ test('keyboard melee auto-targets a nearby enemy without a mouse',async()=>{
 });
 
 test('ranged enemy warns before firing a dodgeable projectile',async()=>{
-  const user={id:'ranged-player',username:'Ranged'};
+  let user={id:'ranged-player',username:'Ranged'};
   let profile={x:16,y:16,hp:100,xp:0,level:1,coins:0};
   const httpServer=http.createServer();
   const game=attachGlyphInfinity(async()=>({...profile}),async(_user,value)=>{profile={...value};});
@@ -111,7 +112,7 @@ test('ranged enemy warns before firing a dodgeable projectile',async()=>{
     const target=initial.enemies.find(e=>e.id==='e1');assert.ok(target);
     ws.close();await once(ws,'close');await new Promise(resolve=>setTimeout(resolve,30));
     let near=null;
-    for(const radius of [36,48,64,80,100,120,140])for(let a=0;a<16;a++){
+    for(const radius of [120,140,100,80,64,48,36])for(let a=0;a<16;a++){
       const x=target.x+Math.cos(a*Math.PI/8)*radius,y=target.y+Math.sin(a*Math.PI/8)*radius;
       if(!canStand(x,y))continue;
       let clear=true;
@@ -120,6 +121,7 @@ test('ranged enemy warns before firing a dodgeable projectile',async()=>{
     }
     assert.ok(near,'a clear ranged lane should exist');
     profile={...profile,...near,hp:100};
+    user={...user,id:'ranged-player-near'};
     ws=new WebSocket(url);await once(ws,'open');
     const states=[];ws.on('message',m=>{const value=JSON.parse(m.toString());if(value.type==='state')states.push(value);});
     await new Promise(resolve=>setTimeout(resolve,1300));

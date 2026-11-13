@@ -29,6 +29,8 @@ test('admin endpoints require the named account and a same-origin request',{time
   const admin=await register('nekonekokoneko'),other=await register('tester123');
   const req=(route,cookie,method='GET',body,origin=base)=>fetch(`${base}${route}`,{method,headers:{Cookie:cookie,Origin:origin,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
   assert.equal((await req('/api/GF/admin',other)).status,403);
+  assert.equal((await fetch(`${base}/api/GF/chat`)).status,401);
+  assert.deepEqual((await (await req('/api/GF/chat',other)).json()).messages,[]);
   assert.equal((await req('/api/GF/admin',admin)).status,200);
   assert.equal((await req('/api/GF/admin/notice',admin,'POST',{message:'hello'},'https://evil.example')).status,403);
   assert.equal((await req('/api/GF/admin/notice',other,'POST',{message:'hello'})).status,403);
