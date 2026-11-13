@@ -39,6 +39,7 @@ export function mountPixelRoutes(app,{pool,currentUser}) {
     const name=nameOf(body?.name);
     const project=validatePixelProject(body?.project);
     const png=validatePixelImage(body?.png,project.size);
+    if(!project.layers.some(layer=>layer.visible&&layer.opacity>0&&Buffer.from(layer.pixels,'base64').some((value,index)=>index%4===3&&value>0)))fail('絵を1ピクセル以上描いてください。');
     return {name,project,png};
   };
   const doAnalysis=async(user,input)=>{

@@ -25,6 +25,11 @@ test('Gemini vision generation uses actual image and validates response',async()
   const calls=[];const fake=async(url,options)=>{calls.push({url,body:JSON.parse(options.body)});return {ok:true,json:async()=>({candidates:[{content:{parts:[{text:JSON.stringify(calls.length===1?analysis:judgment)}]}}]})};};
   try{assert.equal((await analyzePixel({name:'騎士',png:png()},fake)).title,analysis.title);assert.equal((await judgePixel({name:'騎士',png:png(),analysis},{name:'敵',png:png(),analysis},'夜',fake)).winner,'a');assert.equal(calls.length,2);assert.equal(calls[0].body.contents[0].parts[1].inlineData.mimeType,'image/png');assert.equal(calls[1].body.contents[0].parts.length,3);}finally{if(old===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=old;}
 });
+test('temporary Gemini 503 is retried without inventing a result',async()=>{
+  const old=process.env.GEMINI_API_KEY;process.env.GEMINI_API_KEY='test-only';let calls=0;
+  const fake=async()=>{calls++;return calls===1?{ok:false,status:503}:{ok:true,json:async()=>({candidates:[{content:{parts:[{text:JSON.stringify(analysis)}]}}]})};};
+  try{assert.equal((await analyzePixel({name:'騎士',png:png()},fake)).title,analysis.title);assert.equal(calls,2);}finally{if(old===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=old;}
+});
 test('library revisions, battle idempotency and room claim survive in store',async()=>{
   const s=new PixelStore(null),alice={id:randomUUID(),username:'alice'},bob={id:randomUUID(),username:'bob'};
   const a=await s.create(alice,{name:'星騎士',project:project(),png:png(),analysis});

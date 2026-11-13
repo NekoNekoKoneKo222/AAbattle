@@ -51,11 +51,16 @@ const imagePart = png => ({ inlineData: { mimeType: 'image/png', data: png.slice
 async function generate(parts, system, fetchImpl=fetch) {
   if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEYが未設定です。');
   const model = process.env.DRAW_GEMINI_MODEL || process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
-  const response = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-    method:'POST', signal:AbortSignal.timeout(45000), headers:{'Content-Type':'application/json','x-goog-api-key':process.env.GEMINI_API_KEY},
-    body:JSON.stringify({systemInstruction:{parts:[{text:system}]},contents:[{role:'user',parts}],generationConfig:{responseMimeType:'application/json',temperature:1,maxOutputTokens:4200}})
-  });
-  if(response.status===429)throw new Error('Geminiの利用上限です。時間をおいて再試行してください。');
+  let response;
+  for(let attempt=0;attempt<3;attempt++){
+    response=await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+      method:'POST', signal:AbortSignal.timeout(30000), headers:{'Content-Type':'application/json','x-goog-api-key':process.env.GEMINI_API_KEY},
+      body:JSON.stringify({systemInstruction:{parts:[{text:system}]},contents:[{role:'user',parts}],generationConfig:{responseMimeType:'application/json',temperature:1,maxOutputTokens:4200}})
+    });
+    if(response.status===429)throw new Error('Geminiの利用上限です。時間をおいて再試行してください。');
+    if(![500,502,503,504].includes(response.status)||attempt===2)break;
+    await new Promise(resolve=>setTimeout(resolve,500*(attempt+1)));
+  }
   if(!response.ok)throw new Error(`Geminiが応答しませんでした（HTTP ${response.status}）。`);
   const data=await response.json(),body=data.candidates?.[0]?.content?.parts?.map(p=>p.text||'').join('');
   if(!body)throw new Error('Geminiから有効な応答がありません。');
