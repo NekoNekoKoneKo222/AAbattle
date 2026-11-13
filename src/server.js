@@ -19,6 +19,7 @@ import { attachGlyphInfinity } from '../glyph-infinity/server/dist/index.js';
 import { GlyphStore } from './glyph-store.js';
 import { GlyphAdminStore, isGlyphAdmin } from './glyph-admin.js';
 import { mountPixelRoutes } from './pixel-routes.js';
+import { mountChaosShogi } from './chaos-routes.js';
 
 const glyphWorldPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'glyph-infinity', 'world.txt');
 
@@ -68,6 +69,7 @@ app.use((req, res, next) => {
 });
 app.use('/api/draw', express.json({ limit: '2mb', type: 'application/json' }));
 app.use(express.json({ limit: '128kb', type: 'application/json' }));
+mountChaosShogi(app);
 
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 function cookieToken(req) {
@@ -572,6 +574,7 @@ app.post('/api/GF/admin/test', glyphAdminWrap(async (req,res,user) => {
 app.get('/abn', (_req, res) => res.sendFile(path.join(staticRoot, 'abn', 'index.html')));
 app.get('/model', (_req, res) => res.sendFile(path.join(staticRoot, 'sam', 'index.html')));
 app.get(['/draw', '/draw/'], (_req, res) => res.sendFile(path.join(staticRoot, 'draw', 'index.html')));
+app.get(['/CSH', '/CSH/'], (_req, res) => res.sendFile(path.join(staticRoot, 'CSH', 'index.html')));
 app.use(express.static(staticRoot, { index: 'index.html', maxAge: 60000 }));
 app.use((err, _req, res, _next) => {
   res.status(err.status || 400).json({ error: 'リクエストを処理できませんでした。' });
