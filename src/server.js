@@ -70,7 +70,7 @@ app.use((req, res, next) => {
 });
 app.use('/api/draw', express.json({ limit: '2mb', type: 'application/json' }));
 app.use(express.json({ limit: '128kb', type: 'application/json' }));
-const chaosOnline = mountChaosShogi(app, { currentUser, collection: createChaosCollection(store.pool || null) });
+const chaosOnline = mountChaosShogi(app, { currentUser, findUser: key => store.findUser(key), collection: createChaosCollection(store.pool || null) });
 
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 function cookieToken(req) {

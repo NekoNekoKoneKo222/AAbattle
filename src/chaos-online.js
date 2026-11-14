@@ -12,7 +12,7 @@ const RANK_BANNED=new Set(['world-end','avada-ex','forced-ending','infinity','ad
 const RANK_DEFAULT=DEFAULT_DECK.map((id,i)=>id==='infinity'?(i%2?'grant':'insight'):id);
 const standardSettings=()=>({collapse:false,minutes:10,allowEquipment:true,allowCombos:true,allowPermanent:true,kingDestruction:false,cpCap:10,cpRecovery:2,initialHand:4,slots:3,activationLimit:1,randomEvents:false,cardPool:'all'});
 
-export function createChaosOnline({currentUser,collection}){
+export function createChaosOnline({currentUser,collection,findUser}){
   const rooms=new Map(),games=new Map(),queues={casual:[],ranked:[],tag:[]},ratings=new Map(),sockets=new Map(),wss=new WebSocketServer({noServer:true,maxPayload:4096});
   const router=express.Router();
   const send=(ws,payload)=>{if(ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify(payload));};
@@ -35,10 +35,13 @@ export function createChaosOnline({currentUser,collection}){
   const removeQueue=id=>{for(const queue of Object.values(queues)){const index=queue.findIndex(entry=>entry.user.id===id);if(index>=0)queue.splice(index,1);}};
   const leave=(room,id)=>{if(room.gameId&&games.get(room.gameId)?.game.status==='playing')throw fail(409,'対局中です。投了するか、再接続してください。');for(const side of ['b','w'])room.teams[side]=room.teams[side].filter(p=>p.id!==id);room.spectators=room.spectators.filter(p=>p.id!==id);room.ready.delete(id);room.decks.delete(id);if(room.hostId===id)room.hostId=participants(room)[0]?.id||null;if(!room.hostId&&room.spectators.length===0)rooms.delete(room.code);else sendRoom(room);};
   const matchQueue=mode=>{const queue=queues[mode],size=mode==='tag'?4:2;while(queue.length>=size){const group=queue.splice(0,size),room=createRoom(mode,group[0].user,{collapse:false,allowPermanent:mode!=='ranked'});room.teams.b=mode==='tag'?[group[0].user,group[2].user]:[group[0].user];room.teams.w=mode==='tag'?[group[1].user,group[3].user]:[group[1].user];for(const entry of group){room.ready.add(entry.user.id);room.decks.set(entry.user.id,entry.deck);}startMatch(room);}};
-  router.use(async(req,res,next)=>{try{res.set('Cache-Control','no-store');const user=await currentUser(req);if(!user)return res.status(401).json({error:'AAbattleアカウントでログインしてください。'});req.chaosUser={id:user.id,username:safeName(user)};if(req.method!=='GET'){const origin=req.get('origin');if(origin&&new URL(origin).host!==req.get('host'))return res.status(403).json({error:'送信元が一致しません。'});if(!req.is('application/json'))return res.status(415).json({error:'JSONで送信してください。'});}next();}catch(error){next(error);}});
+  router.use(async(req,res,next)=>{try{res.set('Cache-Control','no-store');const user=await currentUser(req);if(!user)return res.status(401).json({error:'AAbattleアカウントでログインしてください。'});req.chaosUser={id:user.id,username:safeName(user),admin:user.username_key==='nekonekokoneko'};if(req.method!=='GET'){const origin=req.get('origin');if(origin&&new URL(origin).host!==req.get('host'))return res.status(403).json({error:'送信元が一致しません。'});if(!req.is('application/json'))return res.status(415).json({error:'JSONで送信してください。'});}next();}catch(error){next(error);}});
   const route=handler=>async(req,res)=>{try{const result=await handler(req);res.json(result);}catch(error){res.status(error.status||400).json({error:error.message});}};
   router.get('/me',route(async req=>{const id=req.chaosUser.id,room=roomFor(id),profile=collection?await collection.profile(id):null;if(profile)ratings.set(id,profile.rating);return {user:req.chaosUser,rating:profile?.rating??ratings.get(id)??1000,room:room?publicRoom(room):null,queue:Object.entries(queues).find(([,q])=>q.some(e=>e.user.id===id))?.[0]||null};}));
   if(collection){
+    const adminUser=async req=>{if(!req.chaosUser.admin)throw fail(403,'管理者のみ利用できます。');const key=String(req.params.username||req.body?.username||'').normalize('NFKC').trim().toLocaleLowerCase('und');if(!/^[\p{L}\p{N}_]{3,20}$/u.test(key))throw fail(400,'ユーザー名が不正です。');const user=await findUser?.(key);if(!user)throw fail(404,'ユーザーが見つかりません。');return user;};
+    router.get('/admin/players/:username',route(async req=>{const user=await adminUser(req);return {username:user.username,profile:await collection.profile(user.id)};}));
+    router.post('/admin/grant',route(async req=>{const user=await adminUser(req);return {username:user.username,profile:await collection.adminGrant(user.id,{coins:req.body?.coins,cardId:req.body?.cardId,count:req.body?.count})};}));
     router.get('/collection',route(req=>collection.profile(req.chaosUser.id)));
     router.post('/collection/daily',route(req=>collection.claimDaily(req.chaosUser.id)));
     router.post('/collection/packs',route(req=>collection.openPacks(req.chaosUser.id,req.body?.count)));

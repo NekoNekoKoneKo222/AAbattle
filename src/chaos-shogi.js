@@ -90,7 +90,7 @@ export function legalActions(s,side=s.turn,{checkPawnDropMate=true}={}){
   return actions;
 }
 function key(s){return JSON.stringify([s.turn,sizeOf(s),s.board.map(p=>p?`${p.side}${p.type}${p.promoted?'1':'0'}`:'').join(','),TYPES.map(t=>s.hands.b[t]),TYPES.map(t=>s.hands.w[t])]);}
-export function newGame({cpu=false,minutes=10,decks={},collapse=false}={}){
+export function newGame({cpu=false,minutes=10,decks={},collapse=false,cpuDifficulty='normal',cpuThinkMs=2400}={}){
   const board=Array(81).fill(null),hands={b:{},w:{}};
   for(const t of TYPES){hands.b[t]=0;hands.w[t]=0;}
   for(let x=0;x<9;x++){
@@ -99,7 +99,7 @@ export function newGame({cpu=false,minutes=10,decks={},collapse=false}={}){
   }
   for(const [x,y,side,type] of [[1,1,'w','R'],[7,1,'w','B'],[1,7,'b','B'],[7,7,'b','R']])board[index({size:9},x,y)]={side,type,promoted:false};
   const now=Date.now(),timeMs=Math.max(1,Math.min(60,Number(minutes)||10))*60000;
-  const s={id:randomUUID(),size:9,mode:collapse?'collapse':'normal',chaos:{rules:{},terrain:{},counters:{},pendingBonus:{},kingGuard:{}},board,hands,cards:initCards(decks),movesLeft:1,turn:'b',status:'playing',winner:null,reason:null,revision:0,cpu:Boolean(cpu),remaining:{b:timeMs,w:timeMs},turnStartedAt:now,history:[],log:[],comboEvents:[],createdAt:now};
+  const s={id:randomUUID(),size:9,mode:collapse?'collapse':'normal',chaos:{rules:{},terrain:{},counters:{},pendingBonus:{},kingGuard:{}},board,hands,cards:initCards(decks),movesLeft:1,turn:'b',status:'playing',winner:null,reason:null,revision:0,cpu:Boolean(cpu),cpuDifficulty:['easy','normal','hard'].includes(cpuDifficulty)?cpuDifficulty:'normal',cpuThinkMs:Math.max(800,Math.min(5000,Number(cpuThinkMs)||2400)),cpuReadyAt:null,cpuStepCount:0,remaining:{b:timeMs,w:timeMs},turnStartedAt:now,history:[],log:[],comboEvents:[],createdAt:now};
   s.history.push(key(s));return s;
 }
 export function remainingMs(s,now=Date.now()){return {b:Math.max(0,s.remaining.b-(s.status==='playing'&&s.turn==='b'?now-s.turnStartedAt:0)),w:Math.max(0,s.remaining.w-(s.status==='playing'&&s.turn==='w'?now-s.turnStartedAt:0))};}
@@ -140,5 +140,23 @@ export function applyAction(s,action,now=Date.now()){
   n.comboEvents=[];
   return n;
 }
-export function cpuAction(s){const options=legalActions(s);if(!options.length)return null;const valued=options.map(a=>({a,score:(a.kind==='move'&&s.board[a.to]?{P:1,L:3,N:3,S:4,G:5,B:8,R:10}[s.board[a.to].type]*10:0)+(a.promote?4:0)+Math.random()*5}));valued.sort((a,b)=>b.score-a.score);return valued[0].a;}
+export function cpuAction(s,difficulty='normal'){
+  const options=legalActions(s);if(!options.length)return null;
+  if(difficulty==='easy')return options[Math.floor(Math.random()*options.length)];
+  const value={P:1,L:3,N:3,S:4,G:5,B:8,R:10,K:100};
+  const scored=options.map(a=>({a,score:(a.kind==='move'&&s.board[a.to]?value[s.board[a.to].type]*10:0)+(a.promote?7:0)+Math.random()*(difficulty==='hard'?.5:5)})).sort((a,b)=>b.score-a.score);
+  if(difficulty!=='hard')return scored[0].a;
+  const candidates=scored.slice(0,16);
+  for(const entry of candidates){
+    const a=entry.a,board=[...s.board];
+    if(a.kind==='move'){board[a.to]={...board[a.from],promoted:board[a.from].promoted||a.promote};board[a.from]=null;}
+    else board[a.to]={side:'w',type:a.type,promoted:false};
+    const next={...s,board,turn:'b'};
+    const check=inCheck(next,'b');if(check)entry.score+=18;
+    const replies=legalActions(next,'b',{checkPawnDropMate:false});
+    if(check&&!replies.length)entry.score+=1000;
+    if(replies.some(reply=>reply.kind==='move'&&reply.to===a.to))entry.score-=(value[board[a.to]?.type]||1)*11;
+  }
+  candidates.sort((a,b)=>b.score-a.score);return candidates[0].a;
+}
 export function view(s,now=Date.now()){expire(s,now);return {...s,cards:cardView(s),remaining:remainingMs(s,now),legal:s.status==='playing'?legalActions(s):[],check:s.status==='playing'?{b:inCheck(s,'b'),w:inCheck(s,'w')}:{b:false,w:false},history:undefined,undoSnapshot:undefined};}
