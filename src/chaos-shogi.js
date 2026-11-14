@@ -132,6 +132,7 @@ export function applyAction(s,action,now=Date.now()){
   if(victim)emitEffect(n,'ON_PIECE_CAPTURED',{side,defender:victim.side,pieceType:victim.type,to:legal.to});
   n.remaining=remainingMs(s,now);n.movesLeft=(s.movesLeft||1)-1;n.turn=n.movesLeft>0?side:opposite(side);n.turnStartedAt=now;n.revision=s.revision+1;
   n.log.push(`${side==='b'?'先手':'後手'} ${legal.kind==='drop'?GLYPHS[legal.type]+'打':(p.promoted?PROMOTED[p.type]:GLYPHS[p.type])+(legal.promote?'成':'')} ${Math.floor(legal.to/sizeOf(n))+1}段${legal.to%sizeOf(n)+1}筋`);
+  if(n.turn===side&&!legalActions(n).length){n.turn=opposite(side);n.movesLeft=0;n.log.push('追加行動できる手がないため手番を終了');}
   const defending=opposite(side),defenderState={...n,turn:defending};
   if(!legalActions(defenderState).length){n.status='finished';n.reason=inCheck(n,defending)?'詰み':'合法手なし';n.winner=side;n.log.push(`${side==='b'?'先手':'後手'}の勝ち`);}
   else if(n.turn!==side){emitEffect(n,'ON_TURN_END',{side});resolveChaosTurnEnd(n,side);n.movesLeft=1;startTurnCards(n);n.history.push(key(n));if(n.history.filter(v=>v===n.history.at(-1)).length>=4){n.status='finished';n.reason='千日手';n.winner=null;n.log.push('千日手で引き分け');}}

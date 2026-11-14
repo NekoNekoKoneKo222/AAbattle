@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import { createServer } from 'node:http';
-import { mountChaosShogi } from '../src/chaos-routes.js';
+import { mountChaosShogi, resolveCpuTurn } from '../src/chaos-routes.js';
 import { DEFAULT_DECK } from '../src/chaos-cards.js';
+import { newGame, applyAction, legalActions } from '../src/chaos-shogi.js';
 
 test('CHAOS SHOGI API keeps moves authoritative and opponent cards private',async()=>{
   const app=express();app.use(express.json());mountChaosShogi(app);const server=createServer(app);
@@ -19,4 +20,25 @@ test('CHAOS SHOGI API keeps moves authoritative and opponent cards private',asyn
     const invalidDeck=await post('/api/CSH/games',{cpu:true,decks:{b:[...DEFAULT_DECK.slice(0,19),'unknown']}});assert.equal(invalidDeck.status,400);
     const customDeck=await post('/api/CSH/games',{cpu:true,decks:{b:[...DEFAULT_DECK.slice(0,18),'grant','insight']}});assert.equal(customDeck.status,201);
   }finally{await new Promise(resolve=>server.close(resolve));}
+});
+
+test('CPU completes both moves granted by the double-action card',()=>{
+  let state=newGame({cpu:true});
+  state=applyAction(state,legalActions(state).find(action=>action.kind==='move'));
+  state.cards.w.hand=['double'];state.cards.w.cp=10;state.cards.w.cardPlayed=false;
+  const result=resolveCpuTurn(state);
+  assert.equal(result.game.turn,'b');
+  assert.equal(result.game.movesLeft,1);
+  assert.equal(result.events.filter(event=>event.kind==='move'||event.kind==='drop').length,2);
+  assert.equal(result.events[0].cardId,'double');
+  assert.equal(result.game.revision,state.revision+3);
+  assert.ok(result.events.every(event=>event.side==='w'));
+});
+
+test('CPU also completes a three-move turn without waiting for a human action',()=>{
+  let state=newGame({cpu:true});state=applyAction(state,legalActions(state).find(action=>action.kind==='move'));
+  state.movesLeft=3;state.cards.w.cardPlayed=true;
+  const result=resolveCpuTurn(state);
+  assert.equal(result.game.turn,'b');
+  assert.equal(result.events.filter(event=>event.kind==='move'||event.kind==='drop').length,3);
 });

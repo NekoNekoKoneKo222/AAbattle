@@ -1,4 +1,6 @@
 import { initDeckBuilder } from './decks.js';
+import { createMotionPlayer } from './motion.js';
+import { installChaosLayout } from './layout.js';
 const $=id=>document.getElementById(id);
 const PIECES={K:'王',R:'飛',B:'角',G:'金',S:'銀',N:'桂',L:'香',P:'歩'};
 const PROMOTED={R:'龍',B:'馬',S:'全',N:'圭',L:'杏',P:'と'};
@@ -98,4 +100,7 @@ const onlineChooseActive=chooseActive;chooseActive=function(slot){if(game?.onlin
 const onlineRender=render;render=function(){onlineRender();if(!game?.online)return;const active=onlineActive(),side=game.online.side;for(const square of $('board').children)square.disabled=!active;for(const button of $('cardHand').children)if(!active)button.disabled=true;for(const button of $('blackHand').querySelectorAll('button'))if(!active||side!=='b')button.disabled=true;for(const button of $('whiteHand').querySelectorAll('button'))if(!active||side!=='w')button.disabled=true;$('resign').disabled=!active||game.status!=='playing';$('newGame').hidden=true;$('matchTitle').textContent=`${{casual:'カジュアル',ranked:'ランク',tag:'2対2',friend:'フレンド'}[game.online.mode]} · ${game.online.roomCode}${game.mode==='collapse'?' · 完全崩壊':''}`;$('whiteName').textContent=game.online.teams.w.map(p=>p.username).join('・');document.querySelector('.self .player b').textContent=game.online.teams.b.map(p=>p.username).join('・');$('cpDisplay').textContent=`先手 ${game.cards.cp.b}/${game.settings.cpCap} CP · 後手 ${game.cards.cp.w}/${game.settings.cpCap} CP`;$('cardHint').textContent=active?$('cardHint').textContent:side==='spectator'?'観戦中。手札と山札は非公開です。':'仲間か相手の手番です。';};
 const onlineLocalRender=render;render=function(){onlineLocalRender();if(game&&!game.online){$('newGame').hidden=false;document.querySelector('.self .player b').textContent='先手';}};
 setInterval(async()=>{if(!onlineUser||onlineWs?.readyState===WebSocket.OPEN)return;try{const data=await onlineApi('/me');onlineRoom=data.room;onlineQueue=data.queue;if(data.room?.gameId){const match=await onlineApi(`/games/${data.room.gameId}`);acceptOnlineGame(match);}renderOnline();}catch{}},10000);
+const motionPlayer=createMotionPlayer({board:$('board'),cardName:id=>catalog[id]?.name||'カード効果',sound:tone=>beep(tone==='capture'?320:tone==='card'?620:tone==='promote'?760:440,.06)});
+const chaosLayout=installChaosLayout();
+const motionRender=render;render=function(){motionRender();chaosLayout.update(game,catalog,selection);motionPlayer.play(game);};
 onlineInit();

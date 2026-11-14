@@ -2,6 +2,20 @@ import express from 'express';
 import { newGame, applyAction, cpuAction, view } from './chaos-shogi.js';
 import { CARD_CATALOG, COMBOS, DEFAULT_DECK, cpuCardAction } from './chaos-cards.js';
 import { createChaosOnline } from './chaos-online.js';
+import { visualEvent } from './chaos-visual.js';
+
+export function resolveCpuTurn(state){
+  let next=state;const events=[],comboEvents=[];
+  if(!next.cpu||next.status!=='playing'||next.turn!=='w')return {game:next,events,comboEvents};
+  const card=cpuCardAction(next);
+  if(card)try{const before=next;next=applyAction(next,card);const event=visualEvent(before,next,card);if(event)events.push(event);comboEvents.push(...next.comboEvents);}catch{/* An optional card must not block the CPU turn. */}
+  for(let count=0;count<8&&next.status==='playing'&&next.turn==='w';count++){
+    const move=cpuAction(next);
+    if(!move){next={...next,status:'finished',winner:'b',reason:'CPUに合法手なし',revision:next.revision+1,log:[...next.log,'CPUに合法手がなく先手の勝ち']};break;}
+    const before=next;next=applyAction(next,move);const event=visualEvent(before,next,move);if(event)events.push(event);comboEvents.push(...next.comboEvents);
+  }
+  return {game:next,events,comboEvents};
+}
 
 export function mountChaosShogi(app,{currentUser}={}){
   const games=new Map(),router=express.Router();
@@ -29,12 +43,10 @@ export function mountChaosShogi(app,{currentUser}={}){
     if(game.cpu&&game.turn==='w')return fail(res,409,'CPUの手番です。');
     try{
       let next=applyAction(game,req.body.action);
-      const comboEvents=[...next.comboEvents];
-      if(next.cpu&&next.status==='playing'&&next.turn==='w'){
-        const card=cpuCardAction(next);if(card)try{next=applyAction(next,card);comboEvents.push(...next.comboEvents);}catch{/* CPU skips an invalid optional card. */}
-        const move=cpuAction(next);if(move){next=applyAction(next,move);comboEvents.push(...next.comboEvents);}
-      }
-      next.comboEvents=comboEvents;
+      const comboEvents=[...next.comboEvents],visualEvents=[];
+      const first=visualEvent(game,next,req.body.action);if(first)visualEvents.push(first);
+      const cpu=resolveCpuTurn(next);next=cpu.game;comboEvents.push(...cpu.comboEvents);visualEvents.push(...cpu.events);
+      next.comboEvents=comboEvents;next.visualEvents=visualEvents;
       games.set(game.id,next);res.json(view(next));
     }catch(error){return fail(res,400,error.message);}
   });
