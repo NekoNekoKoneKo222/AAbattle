@@ -20,6 +20,7 @@ import { GlyphStore } from './glyph-store.js';
 import { GlyphAdminStore, isGlyphAdmin } from './glyph-admin.js';
 import { mountPixelRoutes } from './pixel-routes.js';
 import { mountChaosShogi } from './chaos-routes.js';
+import { createChaosCollection } from './chaos-collection.js';
 
 const glyphWorldPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'glyph-infinity', 'world.txt');
 
@@ -69,7 +70,7 @@ app.use((req, res, next) => {
 });
 app.use('/api/draw', express.json({ limit: '2mb', type: 'application/json' }));
 app.use(express.json({ limit: '128kb', type: 'application/json' }));
-const chaosOnline = mountChaosShogi(app, { currentUser });
+const chaosOnline = mountChaosShogi(app, { currentUser, collection: createChaosCollection(store.pool || null) });
 
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 function cookieToken(req) {

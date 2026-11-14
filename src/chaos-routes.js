@@ -17,7 +17,7 @@ export function resolveCpuTurn(state){
   return {game:next,events,comboEvents};
 }
 
-export function mountChaosShogi(app,{currentUser}={}){
+export function mountChaosShogi(app,{currentUser,collection}={}){
   const games=new Map(),router=express.Router();
   const fail=(res,status,message)=>res.status(status).json({error:message});
   router.use((req,res,next)=>{
@@ -52,5 +52,5 @@ export function mountChaosShogi(app,{currentUser}={}){
   });
   const timer=setInterval(()=>{const cutoff=Date.now()-24*60*60*1000;for(const [id,game] of games)if(game.createdAt<cutoff)games.delete(id);},60*60*1000);timer.unref?.();
   app.use('/api/CSH',router);
-  if(currentUser){const online=createChaosOnline({currentUser});app.use('/api/CSH/online',online.router);return online;}
+  if(currentUser){const online=createChaosOnline({currentUser,collection});app.use('/api/CSH/online',online.router);return online;}
 }

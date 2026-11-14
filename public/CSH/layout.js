@@ -1,10 +1,10 @@
 export function installChaosLayout(){
   const header=document.querySelector('header'),grid=document.querySelector('.arena-grid');
   const top=document.createElement('nav');top.className='chaos-top-nav';top.setAttribute('aria-label','CHAOS SHOGI メニュー');
-  top.innerHTML='<button type="button" data-go="home">⌂ ホーム</button><button type="button" data-go="deck">▣ デッキ</button><button type="button" data-go="catalog">▤ カード図鑑</button><button type="button" disabled title="第8段階で追加予定">✦ ガチャ</button><button type="button" disabled title="第8段階で追加予定">🛒 ショップ</button><button type="button" data-go="online">♜ オンライン</button>';
+  top.innerHTML='<button type="button" data-go="home">⌂ ホーム</button><button type="button" data-go="deck">▣ デッキ</button><button type="button" data-go="catalog">▤ カード図鑑</button><button type="button" data-go="collection">✦ 収集・ガチャ</button><button type="button" data-go="online">♜ オンライン</button>';
   header.querySelector('.brand').after(top);
   const nav=document.createElement('aside');nav.className='chaos-side-nav';nav.setAttribute('aria-label','対局メニュー');
-  nav.innerHTML='<button type="button" class="active" data-go="match">⚔ <span>対局</span></button><button type="button" data-go="deck">▣ <span>デッキ編集</span></button><button type="button" data-go="catalog">▤ <span>カード図鑑</span></button><button type="button" data-go="online">♟ <span>友達・観戦</span></button><button type="button" data-go="log">◉ <span>対局ログ</span></button><button type="button" disabled title="第8段階で追加予定">✦ <span>ガチャ</span></button><button type="button" disabled title="今後追加予定">⚙ <span>設定</span></button>';
+  nav.innerHTML='<button type="button" class="active" data-go="match">⚔ <span>対局</span></button><button type="button" data-go="deck">▣ <span>デッキ編集</span></button><button type="button" data-go="catalog">▤ <span>カード図鑑</span></button><button type="button" data-go="online">♟ <span>友達・観戦</span></button><button type="button" data-go="log">◉ <span>対局ログ</span></button><button type="button" data-go="collection">✦ <span>収集・ガチャ</span></button>';
   const preview=document.createElement('aside');preview.className='chaos-preview';preview.innerHTML='<div class="preview-frame"><div class="preview-top"><span id="previewType">CARD PREVIEW</span><b id="previewRarity">—</b></div><div id="previewArt" class="preview-art">✦</div><h3 id="previewName">カードを選択</h3><div id="previewCost" class="preview-cost">カードに触れると詳細を表示</div><p id="previewDescription">カードの効果と必要CPをここで確認できます。</p></div>';
   grid.prepend(nav,preview);
   document.querySelector('.journal').append(document.querySelector('#ruleDisplay'),document.querySelector('.equipment-row'));
@@ -13,6 +13,7 @@ export function installChaosLayout(){
     if(target==='home')return scrollTo('.intro');
     if(target==='match')return scrollTo('#arena');
     if(target==='online')return scrollTo('#onlinePanel');
+    if(target==='collection')return scrollTo('#collectionPanel');
     if(target==='log')return scrollTo('.journal');
     const body=document.querySelector('#deckBody');if(body?.hidden)document.querySelector('#deckToggle')?.click();
     scrollTo(target==='catalog'?'#deckCatalog':'#deckBuilder');
