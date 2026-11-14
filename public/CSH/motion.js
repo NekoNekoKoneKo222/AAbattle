@@ -2,20 +2,22 @@ const GLYPHS={K:'王',R:'飛',B:'角',G:'金',S:'銀',N:'桂',L:'香',P:'歩'};
 const PROMOTED={R:'龍',B:'馬',S:'全',N:'圭',L:'杏',P:'と'};
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
-export function createMotionPlayer({board,cardName,sound}){
+export function createMotionPlayer({board,cardDetails,sound,reducedMotion}){
   let lastGame='',lastRevision=-1,chain=Promise.resolve(),generation=0;
-  const reduced=()=>window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduced=()=>reducedMotion?.()??window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   function square(index){return Number.isInteger(index)?board.children[index]||null:null;}
   function center(index){const rect=square(index)?.getBoundingClientRect();return rect?{x:rect.left+rect.width/2,y:rect.top+rect.height/2,width:rect.width,height:rect.height}:null;}
   function impact(index,tone='move'){
     const point=center(index);if(!point)return;
     const ring=document.createElement('span');ring.className=`motion-impact motion-${tone}`;ring.style.left=`${point.x}px`;ring.style.top=`${point.y}px`;ring.style.width=`${point.width*1.3}px`;ring.style.height=`${point.height*1.3}px`;document.body.append(ring);setTimeout(()=>ring.remove(),reduced()?120:520);
   }
-  function label(text){if(!text)return;const rect=board.getBoundingClientRect(),el=document.createElement('span');el.className='motion-card-label';el.textContent=text;el.style.left=`${rect.left+rect.width/2}px`;el.style.top=`${rect.top+Math.min(60,rect.height/5)}px`;document.body.append(el);setTimeout(()=>el.remove(),reduced()?180:750);}
+  function label(id){const card=cardDetails?.(id);if(!card)return;const rect=board.getBoundingClientRect(),el=document.createElement('div');el.className='motion-card-label';el.style.left=`${rect.left+rect.width/2}px`;el.style.top=`${rect.top+Math.min(80,rect.height/5)}px`;if(card.imagePath){const art=document.createElement('img');art.src=card.imagePath;art.alt='';el.append(art);}const title=document.createElement('strong');title.textContent=card.name;el.append(title);document.body.append(el);setTimeout(()=>el.remove(),reduced()?180:900);}
+  function boardEffect(kind){if(reduced())return;const effect=document.createElement('span');effect.className=`motion-board-effect motion-board-${kind}`;board.parentElement?.append(effect);setTimeout(()=>effect.remove(),700);}
   async function animate(event,token){
     if(token!==generation||!board.isConnected||document.hidden)return;
-    const tone=event.kind==='card'||event.kind==='activate'?'card':event.capture?'capture':event.promoted?'promote':'move';
-    if(event.kind==='card')label(cardName(event.cardId));
+    const tone=event.fx|| (event.kind==='card'||event.kind==='activate'?'card':event.capture?'capture':event.promoted?'promote':'move');
+    if(event.kind==='card'||event.kind==='activate')label(event.cardId);
+    if(event.fx==='rule'||event.fx==='steal')boardEffect(event.fx);
     if(event.kind==='move'||event.kind==='drop'||Number.isInteger(event.from)&&Number.isInteger(event.to)){
       const end=center(event.to),start=event.kind==='drop'?end&&{...end,y:end.y-end.height}:center(event.from);
       if(start&&end){

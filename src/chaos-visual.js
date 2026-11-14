@@ -1,3 +1,5 @@
+import { CARD_CATALOG } from './chaos-cards.js';
+
 export function visualEvent(before,after,action){
   if(!action||!['move','drop','card','activate'].includes(action.kind))return null;
   const side=before.turn,removed=[];
@@ -10,7 +12,9 @@ export function visualEvent(before,after,action){
     event.to=action.to;event.pieceType=action.type;
   }else{
     event.target=Number.isInteger(action.target)?action.target:null;
-    event.cardId=action.kind==='card'?action.cardId:null;
+    event.cardId=action.kind==='card'?action.cardId:before.cards?.[side]?.equipment?.[action.slot]?.id||null;
+    const card=CARD_CATALOG[event.cardId];
+    event.fx=card?.type==='rule'||after.mode!==before.mode||after.size!==before.size?'rule':action.choice==='steal'||['snatch','tax','gianism'].includes(event.cardId)?'steal':card?.type==='equipment'?'equip':'card';
     if(Number.isInteger(action.from)&&Number.isInteger(action.target)&&before.board[action.from]){
       event.from=action.from;event.to=action.target;event.pieceType=before.board[action.from].type;
     }

@@ -16,7 +16,7 @@ test('CHAOS SHOGI API keeps moves authoritative and opponent cards private',asyn
     const invalid=await post(`/api/CSH/games/${game.id}/actions`,{revision:game.revision,action:{kind:'move',from:58,to:31,promote:false}});assert.equal(invalid.status,400);
     const moved=await post(`/api/CSH/games/${game.id}/actions`,{revision:game.revision,action:{kind:'move',from:58,to:49,promote:false}});assert.equal(moved.status,200);const after=await moved.json();assert.equal(after.turn,'b');assert.ok(after.revision>=2);assert.equal(after.cards.w,undefined);
     const stale=await post(`/api/CSH/games/${game.id}/actions`,{revision:game.revision,action:{kind:'resign'}});assert.equal(stale.status,409);
-    const cards=await fetch(base+'/api/CSH/cards').then(r=>r.json());assert.ok(cards.cards.dobby);assert.ok(cards.combos.some(c=>c.id==='eternal-dobby'));
+    const cards=await fetch(base+'/api/CSH/cards').then(r=>r.json());assert.ok(cards.cards.dobby);assert.ok(cards.combos.some(c=>c.id==='eternal-dobby'));assert.equal(cards.cards.dobby.imagePath,'/api/CSH/cards/dobby/art.svg');const art=await fetch(base+cards.cards.dobby.imagePath);assert.equal(art.status,200);assert.match(art.headers.get('content-type'),/image\/svg\+xml/);
     const invalidDeck=await post('/api/CSH/games',{cpu:true,decks:{b:[...DEFAULT_DECK.slice(0,19),'unknown']}});assert.equal(invalidDeck.status,400);
     const customDeck=await post('/api/CSH/games',{cpu:true,decks:{b:[...DEFAULT_DECK.slice(0,18),'grant','insight']}});assert.equal(customDeck.status,201);
   }finally{await new Promise(resolve=>server.close(resolve));}

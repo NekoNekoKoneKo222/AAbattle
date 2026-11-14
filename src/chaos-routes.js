@@ -1,8 +1,13 @@
 import express from 'express';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { newGame, applyAction, cpuAction, view } from './chaos-shogi.js';
 import { CARD_CATALOG, COMBOS, cpuCardAction } from './chaos-cards.js';
 import { createChaosOnline } from './chaos-online.js';
 import { STARTER_DECK, packTargets } from './chaos-collection.js';
+import { cardArtSvg } from './chaos-art.js';
+const cardArtDirectory=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../public/CSH/card-art');
 import { visualEvent } from './chaos-visual.js';
 
 export function resolveCpuTurn(state){
@@ -33,7 +38,8 @@ export function mountChaosShogi(app,{currentUser,collection}={}){
     try{const cpu=req.body?.cpu===true,decks={b:req.body?.decks?.b,w:cpu?undefined:req.body?.decks?.w};const game=newGame({cpu,minutes:req.body?.minutes,decks,collapse:req.body?.collapse===true});games.set(game.id,game);res.status(201).json(view(game));}
     catch(error){fail(res,400,error.message);}
   });
-  router.get('/cards',(_req,res)=>res.json({cards:CARD_CATALOG,combos:COMBOS,defaultDeck:STARTER_DECK,packTargets:packTargets(),deckRules:{size:20,maxCopies:2,maxCounters:5,maxMythic:1,maxSaved:10}}));
+  router.get('/cards',(_req,res)=>res.json({cards:Object.fromEntries(Object.entries(CARD_CATALOG).map(([id,card])=>[id,{...card,imagePath:`/api/CSH/cards/${encodeURIComponent(id)}/art.svg`}])),combos:COMBOS,defaultDeck:STARTER_DECK,packTargets:packTargets(),deckRules:{size:20,maxCopies:2,maxCounters:5,maxMythic:1,maxSaved:10}}));
+  router.get('/cards/:id/art.svg',(req,res)=>{const card=Object.hasOwn(CARD_CATALOG,req.params.id)?CARD_CATALOG[req.params.id]:null;if(!card)return res.status(404).end();for(const extension of ['webp','png','svg']){const file=path.join(cardArtDirectory,`${card.id}.${extension}`);if(existsSync(file))return res.set('Cache-Control','public, max-age=86400').sendFile(file);}res.type('image/svg+xml').set('Cache-Control','public, max-age=86400').send(cardArtSvg(card));});
   router.get('/games/:id',(req,res)=>{
     const game=games.get(req.params.id);if(!game)return fail(res,404,'対局が見つかりません。サーバー更新後は新しい対局を始めてください。');
     res.set('Cache-Control','no-store').json(view(game));
