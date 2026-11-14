@@ -69,7 +69,7 @@ app.use((req, res, next) => {
 });
 app.use('/api/draw', express.json({ limit: '2mb', type: 'application/json' }));
 app.use(express.json({ limit: '128kb', type: 'application/json' }));
-mountChaosShogi(app);
+const chaosOnline = mountChaosShogi(app, { currentUser });
 
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 function cookieToken(req) {
@@ -685,12 +685,13 @@ server.on('upgrade', async (req, socket, head) => {
   try {
     const origin = req.headers.origin;
     const expectedHost = req.headers['x-forwarded-host'] || req.headers.host;
-    if (!origin || new URL(origin).host !== expectedHost || (req.url !== '/ws' && req.url !== '/GF/ws' && req.url !== '/draw/ws' && !req.url?.startsWith('/sam/colyseus/'))) {
+    if (!origin || new URL(origin).host !== expectedHost || (req.url !== '/ws' && req.url !== '/GF/ws' && req.url !== '/draw/ws' && req.url !== '/CSH/ws' && !req.url?.startsWith('/sam/colyseus/'))) {
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); socket.destroy(); return;
     }
     if (req.url.startsWith('/sam/colyseus/')) return shiftArena.upgrade(req, socket, head);
     const user = await currentUser(req);
     if (!user) { socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n'); socket.destroy(); return; }
+    if (req.url === '/CSH/ws') return chaosOnline.upgrade(req, socket, head, user);
     if (req.url === '/draw/ws') return pixelMyth.upgrade(req, socket, head, user);
     if (req.url === '/GF/ws') return glyphInfinity.upgrade(req, socket, head, { id: user.id, username: user.username });
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req, user));
@@ -707,6 +708,7 @@ console.log(`AABattle and SHIFT ARENA listening on ${port}; generation: ${genera
 
 async function shutdown() {
   wss.clients.forEach((c) => c.close());
+  chaosOnline.close();
   await shiftArena.shutdown();
   await glyphInfinity.shutdown();
   await store.close();
