@@ -8,7 +8,13 @@ export const CARD_CATALOG=Object.freeze({
   dobby:{id:'dobby',name:'ドビーは悪い子',type:'equipment',rarity:'ultraRare',cost:5,target:'choice',description:'装備時に強奪か駒破壊。通常は対局中1回。無下限呪術と装備すると毎ターン3CPで再発動。',activeCost:3,matchLimit:1,turnLimit:1},
   infinity:{id:'infinity',name:'無下限呪術',type:'equipment',rarity:'ultraRare',cost:8,target:'none',description:'装備中、自分の装備能力の対局中使用回数制限を解除する。'},
   greed:{id:'greed',name:'強欲な手',type:'equipment',rarity:'superRare',cost:3,target:'none',description:'相手からカードを奪うと、自分のデッキから追加で1枚ドロー。'},
-  shield:{id:'shield',name:'神の盾',type:'equipment',rarity:'superRare',cost:3,target:'none',description:'自分の駒が最初に受けるカード破壊を1回防ぐ。'}
+  shield:{id:'shield',name:'神の盾',type:'equipment',rarity:'superRare',cost:3,target:'none',description:'自分の駒が最初に受けるカード破壊を1回防ぐ。'},
+  grant:{id:'grant',name:'臨時ボーナス',type:'instant',rarity:'common',cost:1,target:'none',description:'3CPを得る。最大10CP。'},
+  insight:{id:'insight',name:'ひらめきの時間',type:'instant',rarity:'common',cost:1,target:'none',description:'デッキから2枚引く。手札は最大7枚。'},
+  amnesia:{id:'amnesia',name:'記憶喪失',type:'instant',rarity:'rare',cost:3,target:'none',description:'相手の手札からランダムに1枚捨てさせる。'},
+  reinforce:{id:'reinforce',name:'歩兵募集',type:'instant',rarity:'common',cost:3,target:'none',description:'持ち駒に歩兵を1枚追加する。盤上に打つ際は二歩を守る。'},
+  promote:{id:'promote',name:'超進化',type:'rule',rarity:'rare',cost:4,target:'own-piece',description:'自分の成れる駒を1体、敵陣以外でも成らせる。'},
+  recycle:{id:'recycle',name:'墓地から復活',type:'instant',rarity:'rare',cost:2,target:'none',description:'自分の墓地からランダムなカードを1枚手札に戻す。'}
 });
 export const COMBOS=Object.freeze([
   {id:'eternal-dobby',name:'永久にドビーは悪い子',requiredEquipment:['dobby','infinity'],priority:10,grantedEffects:['remove-match-limit'],animationId:'dobby-infinite',soundId:'combo'},
@@ -17,9 +23,10 @@ export const COMBOS=Object.freeze([
 const fail=message=>{throw new Error(message);};
 const other=side=>side==='b'?'w':'b';
 const shuffle=items=>{const copy=[...items];for(let i=copy.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[copy[i],copy[j]]=[copy[j],copy[i]];}return copy;};
-const initialDeck=()=>shuffle(Object.keys(CARD_CATALOG).flatMap(id=>[id,id]));
-const player=()=>({deck:initialDeck(),hand:[],grave:[],equipment:[],cp:4,cardPlayed:false,turnSerial:0});
-export function initCards(){const cards={b:player(),w:player()};for(const side of ['b','w'])for(let i=0;i<4;i++)draw(cards[side]);cards.b.turnSerial=1;return cards;}
+export const DEFAULT_DECK=Object.freeze(['avada','meteor','double','tax','warp','dispel','dobby','infinity','greed','shield'].flatMap(id=>[id,id]));
+export function validateDeck(ids){if(!Array.isArray(ids)||ids.length!==20)fail('デッキは20枚にしてください。');const counts={};for(const id of ids){if(typeof id!=='string'||!CARD_CATALOG[id])fail('存在しないカードが入っています。');counts[id]=(counts[id]||0)+1;if(counts[id]>2)fail('同名カードは2枚までです。');}const counterCount=ids.filter(id=>CARD_CATALOG[id].type==='counter').length;if(counterCount>5)fail('カウンターカードは5枚までです。');return [...ids];}
+const player=deck=>({deck:shuffle(deck),hand:[],grave:[],equipment:[],cp:4,cardPlayed:false,turnSerial:0});
+export function initCards(decks={}){const cards={b:player(validateDeck(decks.b??DEFAULT_DECK)),w:player(validateDeck(decks.w??DEFAULT_DECK))};for(const side of ['b','w'])for(let i=0;i<4;i++)draw(cards[side]);cards.b.turnSerial=1;return cards;}
 export function cloneCards(cards){return Object.fromEntries(['b','w'].map(side=>[side,{...cards[side],deck:[...cards[side].deck],hand:[...cards[side].hand],grave:[...cards[side].grave],equipment:cards[side].equipment.map(e=>({...e}))}]));}
 function draw(p){if(!p.deck.length&&p.grave.length){p.deck=shuffle(p.grave);p.grave=[];}if(p.hand.length>=7||!p.deck.length)return false;p.hand.push(p.deck.pop());return true;}
 export function startTurnCards(s){const p=s.cards[s.turn];p.turnSerial++;p.cp=Math.min(10,p.cp+2);p.cardPlayed=false;draw(p);s.log.push(`${s.turn==='b'?'先手':'後手'}は2CP回復し1枚ドロー`);}
@@ -40,16 +47,26 @@ export function playCard(s,action){const side=s.turn,p=s.cards[side],id=action?.
   else if(id==='tax'){const amount=Math.min(2,s.cards[other(side)].cp);s.cards[other(side)].cp-=amount;p.cp=Math.min(10,p.cp+amount);s.log.push(`${side==='b'?'先手':'後手'}が${amount}CPを徴収`);}
   else if(id==='warp'){const from=action.from,to=action.target;if(!Number.isInteger(from)||!Number.isInteger(to)||from<0||from>=81||to<0||to>=81||s.board[from]?.side!==side||s.board[from].type==='K'||s.board[to])fail('自分の王将以外の駒と空きマスを選んでください。');s.board[to]=s.board[from];s.board[from]=null;}
   else if(id==='dispel'){const slot=action.target,p2=s.cards[other(side)];if(!Number.isInteger(slot)||slot<0||slot>=p2.equipment.length)fail('相手の装備を選んでください。');const removed=p2.equipment.splice(slot,1)[0];p2.grave.push(removed.id);s.log.push(`${CARD_CATALOG[removed.id].name}が解除された`);}
+  else if(id==='grant')p.cp=Math.min(10,p.cp+3);
+  else if(id==='insight'){draw(p);draw(p);}
+  else if(id==='amnesia'){const opponent=s.cards[other(side)];if(!opponent.hand.length)fail('相手の手札がありません。');const taken=opponent.hand.splice(Math.floor(Math.random()*opponent.hand.length),1)[0];opponent.grave.push(taken);s.log.push('相手の手札を1枚捨てさせた');}
+  else if(id==='reinforce'){if(s.hands[side].P>=18)fail('歩兵の持ち駒はこれ以上増やせません。');s.hands[side].P++;}
+  else if(id==='promote'){const target=action.target,piece=s.board[target];if(!Number.isInteger(target)||target<0||target>=81||piece?.side!==side||piece.promoted||!['P','L','N','S','B','R'].includes(piece.type))fail('成れる自分の駒を選んでください。');piece.promoted=true;}
+  else if(id==='recycle'){if(!p.grave.length||p.hand.length>=7)fail('墓地にカードがないか、手札が満杯です。');p.hand.push(p.grave.splice(Math.floor(Math.random()*p.grave.length),1)[0]);}
   p.cardPlayed=true;if(card.type!=='equipment')p.grave.push(id);s.log.push(`${side==='b'?'先手':'後手'}が${card.name}を使用`);
 }
 export function activateEquipment(s,action){const side=s.turn,p=s.cards[side],slot=action?.slot;if(!Number.isInteger(slot)||!canActivate(s,side,slot))fail('この装備能力は発動できません。');const item=p.equipment[slot],card=CARD_CATALOG[item.id];if(item.id==='dobby')dobby(s,side,action);else fail('この装備に任意発動能力はありません。');p.cp-=card.activeCost;item.uses++;item.usedTurn=p.turnSerial;s.log.push(`${card.name}の能力を発動`);}
 export function cardView(s){const side=s.turn;return {currentHand:[...s.cards[side].hand],handCount:{b:s.cards.b.hand.length,w:s.cards.w.hand.length},cp:{b:s.cards.b.cp,w:s.cards.w.cp},equipment:{b:s.cards.b.equipment.map(e=>({...e})),w:s.cards.w.equipment.map(e=>({...e}))},activeSlots:s.cards[side].equipment.map((_,i)=>canActivate(s,side,i)),cardPlayed:s.cards[side].cardPlayed,combos:{b:combosFor(s,'b').map(c=>c.name),w:combosFor(s,'w').map(c=>c.name)},deckCount:{b:s.cards.b.deck.length,w:s.cards.w.deck.length}};}
 export function cpuCardAction(s){const side=s.turn,p=s.cards[side];if(p.cardPlayed)return null;const enemy=other(side),target=s.board.findIndex(piece=>piece?.side===enemy&&piece.type!=='K'),own=s.board.findIndex(piece=>piece?.side===side&&piece.type!=='K'),empty=s.board.findIndex(piece=>!piece),enemyEquip=s.cards[enemy].equipment;
-  for(const id of ['dobby','infinity','avada','meteor','dispel','greed','shield','tax','double','warp']){
+  for(const id of ['dobby','infinity','avada','meteor','dispel','promote','greed','shield','amnesia','tax','double','insight','grant','reinforce','recycle','warp']){
     if(!p.hand.includes(id)||p.cp<CARD_CATALOG[id].cost)continue;const action={kind:'card',cardId:id};
     if(id==='dobby'){if(s.cards[enemy].hand.length&&p.hand.length<7)action.choice='steal';else if(target>=0){action.choice='destroy';action.target=target;}else continue;}
     if(id==='avada'||id==='meteor'){if(target<0)continue;action.target=target;}
     if(id==='dispel'){if(!enemyEquip.length)continue;action.target=0;}
+    if(id==='promote'){const candidate=s.board.findIndex(piece=>piece?.side===side&&!piece.promoted&&['P','L','N','S','B','R'].includes(piece.type));if(candidate<0)continue;action.target=candidate;}
+    if(id==='amnesia'&&!s.cards[enemy].hand.length)continue;
+    if(id==='recycle'&&(!p.grave.length||p.hand.length>=7))continue;
+    if(id==='reinforce'&&s.hands[side].P>=18)continue;
     if(id==='warp'){if(own<0||empty<0)continue;action.from=own;action.target=empty;}
     if(CARD_CATALOG[id].type==='equipment'&&p.equipment.length>=3)action.replaceSlot=0;
     if(CARD_CATALOG[id].type==='equipment'&&p.equipment.some(e=>e.id===id))continue;

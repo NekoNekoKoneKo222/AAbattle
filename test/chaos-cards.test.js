@@ -1,14 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { newGame, applyAction, view } from '../src/chaos-shogi.js';
-import { CARD_CATALOG, COMBOS, canActivate, combosFor } from '../src/chaos-cards.js';
+import { CARD_CATALOG, COMBOS, DEFAULT_DECK, validateDeck, canActivate, combosFor } from '../src/chaos-cards.js';
 
 const at=(x,y)=>y*9+x;
 const setup=()=>{const s=newGame();s.board.fill(null);s.board[at(4,8)]={side:'b',type:'K',promoted:false};s.board[at(4,0)]={side:'w',type:'K',promoted:false};s.board[at(0,2)]={side:'w',type:'P',promoted:false};s.cards.b.deck=[];s.cards.w.deck=[];s.cards.b.hand=[];s.cards.w.hand=[];s.cards.b.cp=10;s.cards.w.cp=10;s.history=[];return s;};
 
-test('starter deck defines ten working cards and combo data',()=>{
-  const s=newGame();assert.equal(Object.keys(CARD_CATALOG).length,10);assert.equal(s.cards.b.deck.length+s.cards.b.hand.length,20);assert.ok(COMBOS.some(c=>c.id==='eternal-dobby'));
+test('starter deck defines working cards and combo data',()=>{
+  const s=newGame();assert.equal(Object.keys(CARD_CATALOG).length,16);assert.equal(s.cards.b.deck.length+s.cards.b.hand.length,20);assert.ok(COMBOS.some(c=>c.id==='eternal-dobby'));
   const publicView=view(s);assert.ok(!publicView.cards.deck);assert.ok(!publicView.cards.w?.hand);assert.equal(publicView.cards.currentHand.length,4);
+});
+test('custom decks must contain twenty real cards with at most two copies',()=>{
+  assert.equal(validateDeck(DEFAULT_DECK).length,20);
+  assert.throws(()=>validateDeck(DEFAULT_DECK.slice(1)),/20枚/);
+  assert.throws(()=>validateDeck([...DEFAULT_DECK.slice(0,19),'imaginary']),/存在しない/);
+  assert.throws(()=>validateDeck([...DEFAULT_DECK.slice(0,19),'avada']),/2枚/);
+  const custom=[...DEFAULT_DECK.slice(0,18),'grant','insight'];const s=newGame({decks:{b:custom,w:DEFAULT_DECK}});
+  assert.deepEqual([...s.cards.b.deck,...s.cards.b.hand].sort(),[...custom].sort());
+});
+test('new basic cards resolve CP, draw, discard, hand reinforcement, promotion and recycle',()=>{
+  let s=setup();s.cards.b.hand=['grant'];s.cards.b.cp=4;s=applyAction(s,{kind:'card',cardId:'grant'});assert.equal(s.cards.b.cp,6);
+  s=setup();s.cards.b.hand=['insight'];s.cards.b.deck=['grant','tax'];s=applyAction(s,{kind:'card',cardId:'insight'});assert.deepEqual([...s.cards.b.hand].sort(),['grant','tax']);
+  s=setup();s.cards.b.hand=['amnesia'];s.cards.w.hand=['tax'];s=applyAction(s,{kind:'card',cardId:'amnesia'});assert.equal(s.cards.w.hand.length,0);assert.deepEqual(s.cards.w.grave,['tax']);
+  s=setup();s.cards.b.hand=['reinforce'];s=applyAction(s,{kind:'card',cardId:'reinforce'});assert.equal(s.hands.b.P,1);
+  s=setup();s.board[at(0,6)]={side:'b',type:'P',promoted:false};s.cards.b.hand=['promote'];s=applyAction(s,{kind:'card',cardId:'promote',target:at(0,6)});assert.equal(s.board[at(0,6)].promoted,true);
+  s=setup();s.cards.b.hand=['recycle'];s.cards.b.grave=['avada'];s=applyAction(s,{kind:'card',cardId:'recycle'});assert.deepEqual(s.cards.b.hand,['avada']);
 });
 test('card CP, one hand card per turn, and equipment slots are server validated',()=>{
   let s=setup();s.cards.b.hand=['avada'];s.cards.b.cp=3;assert.throws(()=>applyAction(s,{kind:'card',cardId:'avada',target:at(0,2)}),/CP/);assert.equal(s.board[at(0,2)].type,'P');

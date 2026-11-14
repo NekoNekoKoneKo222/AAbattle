@@ -79,7 +79,7 @@ export function legalActions(s,side=s.turn,{checkPawnDropMate=true}={}){
   return actions;
 }
 function key(s){return JSON.stringify([s.turn,s.board.map(p=>p?`${p.side}${p.type}${p.promoted?'1':'0'}`:'').join(','),TYPES.map(t=>s.hands.b[t]),TYPES.map(t=>s.hands.w[t])]);}
-export function newGame({cpu=false,minutes=10}={}){
+export function newGame({cpu=false,minutes=10,decks={}}={}){
   const board=Array(81).fill(null),hands={b:{},w:{}};
   for(const t of TYPES){hands.b[t]=0;hands.w[t]=0;}
   for(let x=0;x<9;x++){
@@ -88,7 +88,7 @@ export function newGame({cpu=false,minutes=10}={}){
   }
   for(const [x,y,side,type] of [[1,1,'w','R'],[7,1,'w','B'],[1,7,'b','B'],[7,7,'b','R']])board[index(x,y)]={side,type,promoted:false};
   const now=Date.now(),timeMs=Math.max(1,Math.min(60,Number(minutes)||10))*60000;
-  const s={id:randomUUID(),board,hands,cards:initCards(),movesLeft:1,turn:'b',status:'playing',winner:null,reason:null,revision:0,cpu:Boolean(cpu),remaining:{b:timeMs,w:timeMs},turnStartedAt:now,history:[],log:[],createdAt:now};
+  const s={id:randomUUID(),board,hands,cards:initCards(decks),movesLeft:1,turn:'b',status:'playing',winner:null,reason:null,revision:0,cpu:Boolean(cpu),remaining:{b:timeMs,w:timeMs},turnStartedAt:now,history:[],log:[],createdAt:now};
   s.history.push(key(s));return s;
 }
 export function remainingMs(s,now=Date.now()){return {b:Math.max(0,s.remaining.b-(s.status==='playing'&&s.turn==='b'?now-s.turnStartedAt:0)),w:Math.max(0,s.remaining.w-(s.status==='playing'&&s.turn==='w'?now-s.turnStartedAt:0))};}

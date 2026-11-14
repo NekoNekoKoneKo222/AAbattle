@@ -1,0 +1,39 @@
+const $=id=>document.getElementById(id);
+const STORAGE='csh-decks-v2';
+const SELECTION='csh-selected-v2';
+const randomId=()=>crypto.randomUUID();
+
+export function initDeckBuilder({cards,combos,defaultDeck,deckRules}){
+  const valid=items=>Array.isArray(items)&&items.length===deckRules.size&&items.every(id=>cards[id])&&Object.values(items.reduce((counts,id)=>(counts[id]=(counts[id]||0)+1,counts),{})).every(count=>count<=deckRules.maxCopies)&&items.filter(id=>cards[id].type==='counter').length<=deckRules.maxCounters;
+  let decks;try{decks=JSON.parse(localStorage.getItem(STORAGE)||'null');}catch{decks=null;}
+  if(!Array.isArray(decks))decks=[];
+  decks=decks.filter(d=>d&&typeof d.id==='string'&&typeof d.name==='string'&&valid(d.cards)).slice(0,deckRules.maxSaved);
+  if(!decks.length)decks=[{id:'starter',name:'標準デッキ',cards:[...defaultDeck]}];
+  let selected;try{selected=JSON.parse(localStorage.getItem(SELECTION)||'{}');}catch{selected={};}
+  if(!selected||typeof selected!=='object')selected={};
+  if(!decks.some(d=>d.id===selected?.b))selected.b=decks[0].id;
+  if(!decks.some(d=>d.id===selected?.w))selected.w=decks[0].id;
+  let editing=selected.b,working=[...decks.find(d=>d.id===editing).cards],workingName=decks.find(d=>d.id===editing).name;
+  const root=document.createElement('section');root.className='deck-builder';root.id='deckBuilder';
+  root.innerHTML='<div class="deck-head"><div><span class="eyebrow">PHASE 2 · DECK WORKSHOP</span><h2>デッキ工房</h2><p>20枚を組み、同名カードは2枚まで。対局開始時にサーバーが再検証してシャッフルします。</p></div><button id="deckToggle">デッキを編集</button></div><div id="deckBody" hidden><div class="deck-start"><label>先手のデッキ <select id="deckSelectB"></select></label><label id="deckWhiteLabel">後手のデッキ <select id="deckSelectW"></select></label><p>カード収集前のため、現在は全カードを試せます。デッキはこのブラウザーに保存されます。</p></div><div class="deck-controls"><label>編集中 <select id="editDeckSelect"></select></label><label>デッキ名 <input id="deckName" maxlength="30"></label><button id="deckSave" class="primary">保存</button><button id="deckCopy">複製</button><button id="deckDelete" class="danger">削除</button></div><div id="deckStatus" role="status"></div><div class="deck-columns"><div><h3>現在のデッキ <span id="deckCount"></span></h3><div id="deckContents"></div><h3>成立する装備コンボ</h3><div id="deckCombos"></div></div><div><h3>カード一覧</h3><div class="deck-filters"><input id="deckSearch" placeholder="カード名を検索"><select id="deckType"><option value="">すべて</option><option value="instant">インスタント</option><option value="equipment">装備</option><option value="rule">ルール</option></select><select id="deckRarity"><option value="">全レア度</option><option value="common">コモン</option><option value="rare">レア</option><option value="superRare">スーパー</option><option value="ultraRare">ウルトラ</option></select></div><div id="deckCatalog"></div></div></div></div>';
+  const costFilter=document.createElement('select');costFilter.id='deckMaxCost';for(let cost=-1;cost<=10;cost++){const option=document.createElement('option');option.value=String(cost);option.textContent=cost<0?'全CP':`${cost}CP以下`;costFilter.append(option);}root.querySelector('.deck-filters').append(costFilter);
+  document.querySelector('.intro').after(root);
+  const status=message=>{$('deckStatus').textContent=message;};
+  const persist=()=>{try{localStorage.setItem(STORAGE,JSON.stringify(decks));localStorage.setItem(SELECTION,JSON.stringify(selected));return true;}catch{status('端末内に保存できませんでした。空き容量をご確認ください。');return false;}};
+  function choice(select,value){select.replaceChildren();for(const deck of decks){const option=document.createElement('option');option.value=deck.id;option.textContent=deck.name;select.append(option);}select.value=value;}
+  function selectors(){choice($('deckSelectB'),selected.b);choice($('deckSelectW'),selected.w);choice($('editDeckSelect'),editing);$('deckWhiteLabel').hidden=$('mode').value==='cpu';}
+  const count=id=>working.filter(value=>value===id).length;
+  function row(card,id,amount,add){const container=document.createElement('div');container.className='deck-card-row';const text=document.createElement('span');text.textContent=`${card.name} · ${card.cost}CP · ${card.type} · ${card.rarity} ×${amount}`;text.title=card.description;const button=document.createElement('button');button.textContent=add?'＋':'−';button.disabled=add?(amount>=deckRules.maxCopies||working.length>=deckRules.size):amount===0;button.onclick=()=>{if(add)working.push(id);else working.splice(working.indexOf(id),1);render();};container.append(text,button);return container;}
+  function render(){selectors();$('deckName').value=workingName;$('deckCount').textContent=`${working.length}/${deckRules.size}`;$('deckCount').className=working.length===deckRules.size?'complete':'incomplete';$('deckContents').replaceChildren();for(const [id,card] of Object.entries(cards))if(count(id))$('deckContents').append(row(card,id,count(id),false));$('deckCatalog').replaceChildren();const query=$('deckSearch').value.trim().toLowerCase(),type=$('deckType').value,rarity=$('deckRarity').value,maxCost=Number($('deckMaxCost').value);for(const [id,card] of Object.entries(cards)){if(query&&!card.name.toLowerCase().includes(query))continue;if(type&&card.type!==type)continue;if(rarity&&card.rarity!==rarity)continue;if(maxCost>=0&&card.cost>maxCost)continue;$('deckCatalog').append(row(card,id,count(id),true));}if(!$('deckCatalog').children.length)$('deckCatalog').textContent='該当するカードがありません。';$('deckCombos').replaceChildren();for(const combo of combos){const missing=combo.requiredEquipment.filter(id=>!working.includes(id));const line=document.createElement('p');line.className=missing.length?'missing':'ready';line.textContent=missing.length?`${combo.name} · 不足: ${missing.map(id=>cards[id]?.name||id).join('、')}`:`✦ ${combo.name} · 必要カードを収録済み`;$('deckCombos').append(line);}}
+  $('deckToggle').onclick=()=>{const body=$('deckBody');body.hidden=!body.hidden;$('deckToggle').textContent=body.hidden?'デッキを編集':'閉じる';};
+  $('deckSelectB').onchange=e=>{selected.b=e.target.value;persist();};$('deckSelectW').onchange=e=>{selected.w=e.target.value;persist();};
+  $('mode').addEventListener('change',selectors);
+  $('editDeckSelect').onchange=e=>{editing=e.target.value;working=[...decks.find(d=>d.id===editing).cards];workingName=decks.find(d=>d.id===editing).name;render();};
+  $('deckName').oninput=e=>{workingName=e.target.value;};
+  $('deckSave').onclick=()=>{if(!valid(working))return status('20枚・同名2枚までにしてください。');const name=workingName.trim();if(!name||name.length>30)return status('名前を1～30文字で入力してください。');const deck=decks.find(d=>d.id===editing);deck.name=name;deck.cards=[...working];if(persist()){render();status('デッキを保存しました。');}};
+  $('deckCopy').onclick=()=>{if(decks.length>=deckRules.maxSaved)return status('デッキは最大10個です。');if(!valid(working))return status('複製する前に20枚にしてください。');const copied={id:randomId(),name:`${workingName.trim()||'デッキ'}のコピー`.slice(0,30),cards:[...working]};decks.push(copied);editing=copied.id;workingName=copied.name;selected.b=copied.id;persist();render();status('デッキを複製しました。');};
+  $('deckDelete').onclick=()=>{if(decks.length===1)return status('最後のデッキは削除できません。');const deck=decks.find(d=>d.id===editing);if(!confirm(`${deck.name}を削除しますか？`))return;decks=decks.filter(d=>d.id!==editing);editing=decks[0].id;working=[...decks[0].cards];workingName=decks[0].name;for(const side of ['b','w'])if(selected[side]===deck.id)selected[side]=editing;persist();render();status('デッキを削除しました。');};
+  for(const id of ['deckSearch','deckType','deckRarity','deckMaxCost'])$(id).addEventListener(id==='deckSearch'?'input':'change',render);
+  render();persist();
+  return {selected:side=>[...(decks.find(d=>d.id===selected[side])||decks[0]).cards],count:()=>decks.length};
+}
