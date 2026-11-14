@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { initCards, cloneCards, startTurnCards, playCard, activateEquipment, cardView, canActivate, pieceMoved, syncComboEvents, CARD_CATALOG } from './chaos-cards.js';
 import { beginEffectAction, emitEffect } from './chaos-effects.js';
+import { ruleActive, terrainAt, resolveChaosTurnEnd } from './chaos-meme-effects.js';
 
 export const TYPES=['P','L','N','S','G','B','R','K'];
 export const GLYPHS={K:'王',R:'飛',B:'角',G:'金',S:'銀',N:'桂',L:'香',P:'歩'};
@@ -8,19 +9,23 @@ export const PROMOTED={R:'龍',B:'馬',S:'全',N:'圭',L:'杏',P:'と'};
 const BACK=['L','N','S','G','K','G','S','N','L'];
 const EPS=1e-9;
 const opposite=side=>side==='b'?'w':'b';
-const inside=(x,y)=>x>=0&&x<9&&y>=0&&y<9;
-const index=(x,y)=>y*9+x;
-const coords=i=>[i%9,Math.floor(i/9)];
-const clone=s=>({ ...s,board:s.board.map(p=>p&&{...p}),hands:{b:{...s.hands.b},w:{...s.hands.w}},cards:cloneCards(s.cards),remaining:{...s.remaining},history:[...s.history],log:[...s.log],effectEvents:[],undoSnapshot:undefined });
+const sizeOf=s=>s.size||9;
+const inside=(s,x,y)=>x>=0&&x<sizeOf(s)&&y>=0&&y<sizeOf(s);
+const index=(s,x,y)=>y*sizeOf(s)+x;
+const coords=(s,i)=>[i%sizeOf(s),Math.floor(i/sizeOf(s))];
+const clone=s=>({ ...s,board:s.board.map(p=>p&&{...p}),hands:{b:{...s.hands.b},w:{...s.hands.w}},cards:cloneCards(s.cards),chaos:{...s.chaos,rules:{...s.chaos?.rules},terrain:{...s.chaos?.terrain},counters:{...s.chaos?.counters},pendingBonus:{...s.chaos?.pendingBonus},kingGuard:{...s.chaos?.kingGuard}},remaining:{...s.remaining},history:[...s.history],log:[...s.log],effectEvents:[],undoSnapshot:undefined });
 const deny=message=>{throw new Error(message);};
-const zone=(side,y)=>side==='b'?y<=2:y>=6;
-const last=(side,y)=>side==='b'?y===0:y===8;
-const lastTwo=(side,y)=>side==='b'?y<=1:y>=7;
+const zone=(s,side,y)=>side==='b'?y<=2:y>=sizeOf(s)-3;
+const last=(s,side,y)=>side==='b'?y===0:y===sizeOf(s)-1;
+const lastTwo=(s,side,y)=>side==='b'?y<=1:y>=sizeOf(s)-2;
 const movable=(type)=>!['G','K'].includes(type);
-const steps=(p)=>{
-  const f=p.side==='b'?-1:1;
+const steps=(s,p)=>{
+  const f=(p.side==='b'?-1:1)*(ruleActive(s,'gravity',p.side)&&['P','N','L'].includes(p.type)?-1:1);
+  if(p.type!=='K'&&ruleActive(s,'all-rooks',p.side))return [];
+  if(p.type==='P'&&!p.promoted&&ruleActive(s,'pawn-gold',p.side))return [[0,f],[1,f],[-1,f],[1,0],[-1,0],[0,-f]];
+  if(p.type==='N'&&!p.promoted&&ruleActive(s,'chess',p.side))return [[1,2],[-1,2],[1,-2],[-1,-2],[2,1],[-2,1],[2,-1],[-2,-1]];
   if(p.promoted&&['P','L','N','S'].includes(p.type))return [[0,f],[1,f],[-1,f],[1,0],[-1,0],[0,-f]];
-  if(p.type==='K')return [[0,1],[0,-1],[1,0],[-1,0],[1,1],[-1,1],[1,-1],[-1,-1]];
+  if(p.type==='K')return ruleActive(s,'king-dash',p.side)?[[0,1],[0,-1],[1,0],[-1,0],[1,1],[-1,1],[1,-1],[-1,-1],[0,2],[0,-2],[2,0],[-2,0]]:[[0,1],[0,-1],[1,0],[-1,0],[1,1],[-1,1],[1,-1],[-1,-1]];
   if(p.type==='G')return [[0,f],[1,f],[-1,f],[1,0],[-1,0],[0,-f]];
   if(p.type==='S')return [[0,f],[1,f],[-1,f],[1,-f],[-1,-f]];
   if(p.type==='N')return [[1,2*f],[-1,2*f]];
@@ -29,17 +34,18 @@ const steps=(p)=>{
   if(p.type==='B'&&p.promoted)return [[1,0],[-1,0],[0,1],[0,-1]];
   return [];
 };
-const rays=p=>{
-  const f=p.side==='b'?-1:1;
+const rays=(s,p)=>{
+  const f=(p.side==='b'?-1:1)*(ruleActive(s,'gravity',p.side)&&p.type==='L'?-1:1);
+  if(p.type!=='K'&&(ruleActive(s,'all-rooks',p.side)||p.type==='P'&&p.rookUntil>s.cards[p.side].turnSerial))return [[1,0],[-1,0],[0,1],[0,-1]];
   if(p.type==='R')return [[1,0],[-1,0],[0,1],[0,-1]];
   if(p.type==='B')return [[1,1],[-1,1],[1,-1],[-1,-1]];
   if(p.type==='L'&&!p.promoted)return [[0,f]];
   return [];
 };
 function targets(s,from){
-  const p=s.board[from];if(!p)return[];const [x,y]=coords(from),out=[];
-  for(const [dx,dy] of steps(p)){const xx=x+dx,yy=y+dy;if(inside(xx,yy)&&s.board[index(xx,yy)]?.side!==p.side)out.push(index(xx,yy));}
-  for(const [dx,dy] of rays(p)){let xx=x+dx,yy=y+dy;while(inside(xx,yy)){const i=index(xx,yy),q=s.board[i];if(q?.side===p.side)break;out.push(i);if(q)break;xx+=dx;yy+=dy;}}
+  const p=s.board[from];if(!p||p.frozenUntil>s.cards[p.side].turnSerial)return[];const [x,y]=coords(s,from),out=[],diagonalBlocked=ruleActive(s,'no-diagonal',p.side);
+  for(const [dx,dy] of steps(s,p)){if(diagonalBlocked&&dx&&dy)continue;const xx=x+dx,yy=y+dy;if(inside(s,xx,yy)){const i=index(s,xx,yy),terrain=terrainAt(s,i);if(terrain?.kind!=='wall'&&!(p.type==='K'&&terrain?.kind==='hole')&&s.board[i]?.side!==p.side)out.push(i);}}
+  for(const [dx,dy] of rays(s,p)){if(diagonalBlocked&&dx&&dy)continue;let xx=x+dx,yy=y+dy;while(inside(s,xx,yy)){const i=index(s,xx,yy),q=s.board[i],terrain=terrainAt(s,i);if(q?.side===p.side||terrain?.kind==='wall')break;out.push(i);if(q)break;xx+=dx;yy+=dy;}}
   return out;
 }
 export function inCheck(s,side){
@@ -50,18 +56,22 @@ export function inCheck(s,side){
 function moveUnchecked(s,from,to,promote=false){
   const n=clone(s),p=n.board[from],victim=n.board[to];
   if(victim){if(victim.type==='K')deny('王将は取れません。王手で詰ませてください。');n.hands[p.side][victim.type]++;}
-  n.board[to]={...p,promoted:p.promoted||promote};n.board[from]=null;return n;
+  n.board[to]={...p,promoted:p.promoted||promote};n.board[from]=null;
+  const terrain=terrainAt(n,to);
+  if(terrain?.kind==='hole'&&p.type!=='K'){n.board[to]=null;n.log.push('駒が穴に落ちた');}
+  if(terrain?.kind==='banana'&&n.board[to]){const [x,y]=coords(n,to),nextY=y+(p.side==='b'?-1:1);if(inside(n,x,nextY)){const next=index(n,x,nextY);if(!n.board[next]&&!terrainAt(n,next)){n.board[next]=n.board[to];n.board[to]=null;n.log.push('バナナの皮で駒が滑った');}}}
+  return n;
 }
 function dropUnchecked(s,type,to){const n=clone(s);n.hands[s.turn][type]--;n.board[to]={side:s.turn,type,promoted:false};return n;}
 export function legalActions(s,side=s.turn,{checkPawnDropMate=true}={}){
   if(s.status!=='playing')return[];const actions=[];
-  for(let from=0;from<81;from++){
+  for(let from=0;from<s.board.length;from++){
     const p=s.board[from];if(!p||p.side!==side)continue;
     for(const to of targets(s,from)){
       if(s.board[to]?.type==='K')continue;
-      const [,fy]=coords(from),[,ty]=coords(to);
-      const must=!p.promoted&&((['P','L'].includes(p.type)&&last(side,ty))||(p.type==='N'&&lastTwo(side,ty)));
-      const may=!p.promoted&&movable(p.type)&&(zone(side,fy)||zone(side,ty));
+      const [,fy]=coords(s,from),[,ty]=coords(s,to);
+      const ignore=ruleActive(s,'ignore',side),must=!ignore&&!p.promoted&&((['P','L'].includes(p.type)&&last(s,side,ty))||(p.type==='N'&&lastTwo(s,side,ty)));
+      const may=!p.promoted&&movable(p.type)&&(ignore||ruleActive(s,'free-promote',side)||zone(s,side,fy)||zone(s,side,ty));
       for(const promote of must?[true]:may?[false,true]:[false]){
         const n=moveUnchecked(s,from,to,promote);
         if(!inCheck(n,side))actions.push({kind:'move',from,to,promote});
@@ -69,9 +79,9 @@ export function legalActions(s,side=s.turn,{checkPawnDropMate=true}={}){
     }
   }
   for(const type of TYPES){if(type==='K'||!s.hands[side][type])continue;
-    for(let to=0;to<81;to++){if(s.board[to])continue;const [x,y]=coords(to);
-      if((['P','L'].includes(type)&&last(side,y))||(type==='N'&&lastTwo(side,y)))continue;
-      if(type==='P'&&s.board.some((p,i)=>i%9===x&&p?.side===side&&p.type==='P'&&!p.promoted))continue;
+    for(let to=0;to<s.board.length;to++){if(s.board[to]||terrainAt(s,to)?.kind==='wall'||terrainAt(s,to)?.kind==='hole')continue;const [x,y]=coords(s,to);
+      if(!ruleActive(s,'ignore',side)&&((['P','L'].includes(type)&&last(s,side,y))||(type==='N'&&lastTwo(s,side,y))))continue;
+      if(type==='P'&&!ruleActive(s,'ignore',side)&&s.board.some((p,i)=>i%sizeOf(s)===x&&p?.side===side&&p.type==='P'&&!p.promoted))continue;
       const n=dropUnchecked({...s,turn:side},type,to);if(inCheck(n,side))continue;
       if(type==='P'&&checkPawnDropMate&&inCheck(n,opposite(side))&&!legalActions({...n,turn:opposite(side)},opposite(side),{checkPawnDropMate:false}).length)continue;
       actions.push({kind:'drop',type,to});
@@ -79,17 +89,17 @@ export function legalActions(s,side=s.turn,{checkPawnDropMate=true}={}){
   }
   return actions;
 }
-function key(s){return JSON.stringify([s.turn,s.board.map(p=>p?`${p.side}${p.type}${p.promoted?'1':'0'}`:'').join(','),TYPES.map(t=>s.hands.b[t]),TYPES.map(t=>s.hands.w[t])]);}
-export function newGame({cpu=false,minutes=10,decks={}}={}){
+function key(s){return JSON.stringify([s.turn,sizeOf(s),s.board.map(p=>p?`${p.side}${p.type}${p.promoted?'1':'0'}`:'').join(','),TYPES.map(t=>s.hands.b[t]),TYPES.map(t=>s.hands.w[t])]);}
+export function newGame({cpu=false,minutes=10,decks={},collapse=false}={}){
   const board=Array(81).fill(null),hands={b:{},w:{}};
   for(const t of TYPES){hands.b[t]=0;hands.w[t]=0;}
   for(let x=0;x<9;x++){
-    board[index(x,0)]={side:'w',type:BACK[x],promoted:false};board[index(x,8)]={side:'b',type:BACK[x],promoted:false};
-    board[index(x,2)]={side:'w',type:'P',promoted:false};board[index(x,6)]={side:'b',type:'P',promoted:false};
+    board[index({size:9},x,0)]={side:'w',type:BACK[x],promoted:false};board[index({size:9},x,8)]={side:'b',type:BACK[x],promoted:false};
+    board[index({size:9},x,2)]={side:'w',type:'P',promoted:false};board[index({size:9},x,6)]={side:'b',type:'P',promoted:false};
   }
-  for(const [x,y,side,type] of [[1,1,'w','R'],[7,1,'w','B'],[1,7,'b','B'],[7,7,'b','R']])board[index(x,y)]={side,type,promoted:false};
+  for(const [x,y,side,type] of [[1,1,'w','R'],[7,1,'w','B'],[1,7,'b','B'],[7,7,'b','R']])board[index({size:9},x,y)]={side,type,promoted:false};
   const now=Date.now(),timeMs=Math.max(1,Math.min(60,Number(minutes)||10))*60000;
-  const s={id:randomUUID(),board,hands,cards:initCards(decks),movesLeft:1,turn:'b',status:'playing',winner:null,reason:null,revision:0,cpu:Boolean(cpu),remaining:{b:timeMs,w:timeMs},turnStartedAt:now,history:[],log:[],comboEvents:[],createdAt:now};
+  const s={id:randomUUID(),size:9,mode:collapse?'collapse':'normal',chaos:{rules:{},terrain:{},counters:{},pendingBonus:{},kingGuard:{}},board,hands,cards:initCards(decks),movesLeft:1,turn:'b',status:'playing',winner:null,reason:null,revision:0,cpu:Boolean(cpu),remaining:{b:timeMs,w:timeMs},turnStartedAt:now,history:[],log:[],comboEvents:[],createdAt:now};
   s.history.push(key(s));return s;
 }
 export function remainingMs(s,now=Date.now()){return {b:Math.max(0,s.remaining.b-(s.status==='playing'&&s.turn==='b'?now-s.turnStartedAt:0)),w:Math.max(0,s.remaining.w-(s.status==='playing'&&s.turn==='w'?now-s.turnStartedAt:0))};}
@@ -110,6 +120,7 @@ export function applyAction(s,action,now=Date.now()){
     const n=clone(s);n.remaining=remainingMs(s,now);n.turnStartedAt=now;beginEffectAction(n);
     if(action.kind==='card')playCard(n,action);else activateEquipment(n,action);
     if(!inCheck(s,s.turn)&&inCheck(n,s.turn))deny('自分の王将を王手にさらすカード使用はできません。');
+    if(n.status==='playing'&&!n.board.some(p=>p?.side===opposite(s.turn)&&p.type==='K')){n.status='finished';n.winner=s.turn;n.reason='王将破壊';n.log.push(`${s.turn==='b'?'先手':'後手'}の勝ち`);}
     n.undoSnapshot=clone(s);n.revision++;syncComboEvents(s,n);return n;
   }
   const legal=legalActions(s).find(a=>a.kind===action?.kind&&a.to===action?.to&&(a.kind==='drop'?a.type===action.type:a.from===action.from&&a.promote===Boolean(action.promote)));
@@ -120,10 +131,10 @@ export function applyAction(s,action,now=Date.now()){
   if(legal.kind==='move')pieceMoved(n,side,p.type,legal.from,legal.to);
   if(victim)emitEffect(n,'ON_PIECE_CAPTURED',{side,defender:victim.side,pieceType:victim.type,to:legal.to});
   n.remaining=remainingMs(s,now);n.movesLeft=(s.movesLeft||1)-1;n.turn=n.movesLeft>0?side:opposite(side);n.turnStartedAt=now;n.revision=s.revision+1;
-  n.log.push(`${side==='b'?'先手':'後手'} ${legal.kind==='drop'?GLYPHS[legal.type]+'打':(p.promoted?PROMOTED[p.type]:GLYPHS[p.type])+(legal.promote?'成':'')} ${Math.floor(legal.to/9)+1}段${legal.to%9+1}筋`);
+  n.log.push(`${side==='b'?'先手':'後手'} ${legal.kind==='drop'?GLYPHS[legal.type]+'打':(p.promoted?PROMOTED[p.type]:GLYPHS[p.type])+(legal.promote?'成':'')} ${Math.floor(legal.to/sizeOf(n))+1}段${legal.to%sizeOf(n)+1}筋`);
   const defending=opposite(side),defenderState={...n,turn:defending};
   if(!legalActions(defenderState).length){n.status='finished';n.reason=inCheck(n,defending)?'詰み':'合法手なし';n.winner=side;n.log.push(`${side==='b'?'先手':'後手'}の勝ち`);}
-  else if(n.turn!==side){emitEffect(n,'ON_TURN_END',{side});n.movesLeft=1;startTurnCards(n);n.history.push(key(n));if(n.history.filter(v=>v===n.history.at(-1)).length>=4){n.status='finished';n.reason='千日手';n.winner=null;n.log.push('千日手で引き分け');}}
+  else if(n.turn!==side){emitEffect(n,'ON_TURN_END',{side});resolveChaosTurnEnd(n,side);n.movesLeft=1;startTurnCards(n);n.history.push(key(n));if(n.history.filter(v=>v===n.history.at(-1)).length>=4){n.status='finished';n.reason='千日手';n.winner=null;n.log.push('千日手で引き分け');}}
   n.undoSnapshot=n.turn===side&&n.status==='playing'?clone(s):undefined;
   n.comboEvents=[];
   return n;
