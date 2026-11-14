@@ -7,7 +7,7 @@ const at=(x,y)=>y*9+x;
 const setup=()=>{const s=newGame();s.board.fill(null);s.board[at(4,8)]={side:'b',type:'K',promoted:false};s.board[at(4,0)]={side:'w',type:'K',promoted:false};s.board[at(0,2)]={side:'w',type:'P',promoted:false};s.cards.b.deck=[];s.cards.w.deck=[];s.cards.b.hand=[];s.cards.w.hand=[];s.cards.b.cp=10;s.cards.w.cp=10;s.history=[];return s;};
 
 test('starter deck defines working cards and combo data',()=>{
-  const s=newGame();assert.equal(Object.keys(CARD_CATALOG).length,24);assert.equal(s.cards.b.deck.length+s.cards.b.hand.length,20);assert.ok(COMBOS.some(c=>c.id==='eternal-dobby'));
+  const s=newGame();assert.equal(Object.keys(CARD_CATALOG).length,25);assert.equal(s.cards.b.deck.length+s.cards.b.hand.length,20);assert.ok(COMBOS.some(c=>c.id==='eternal-dobby'));
   const publicView=view(s);assert.ok(!publicView.cards.deck);assert.ok(!publicView.cards.w?.hand);assert.equal(publicView.cards.currentHand.length,4);
 });
 test('new equipment passives resolve only while equipped',()=>{
