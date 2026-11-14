@@ -1,7 +1,8 @@
 import express from 'express';
 import { newGame, applyAction, cpuAction, view } from './chaos-shogi.js';
-import { CARD_CATALOG, COMBOS, DEFAULT_DECK, cpuCardAction } from './chaos-cards.js';
+import { CARD_CATALOG, COMBOS, cpuCardAction } from './chaos-cards.js';
 import { createChaosOnline } from './chaos-online.js';
+import { STARTER_DECK, packTargets } from './chaos-collection.js';
 import { visualEvent } from './chaos-visual.js';
 
 export function resolveCpuTurn(state){
@@ -32,7 +33,7 @@ export function mountChaosShogi(app,{currentUser,collection}={}){
     try{const cpu=req.body?.cpu===true,decks={b:req.body?.decks?.b,w:cpu?undefined:req.body?.decks?.w};const game=newGame({cpu,minutes:req.body?.minutes,decks,collapse:req.body?.collapse===true});games.set(game.id,game);res.status(201).json(view(game));}
     catch(error){fail(res,400,error.message);}
   });
-  router.get('/cards',(_req,res)=>res.json({cards:CARD_CATALOG,combos:COMBOS,defaultDeck:DEFAULT_DECK,deckRules:{size:20,maxCopies:2,maxCounters:5,maxMythic:1,maxSaved:10}}));
+  router.get('/cards',(_req,res)=>res.json({cards:CARD_CATALOG,combos:COMBOS,defaultDeck:STARTER_DECK,packTargets:packTargets(),deckRules:{size:20,maxCopies:2,maxCounters:5,maxMythic:1,maxSaved:10}}));
   router.get('/games/:id',(req,res)=>{
     const game=games.get(req.params.id);if(!game)return fail(res,404,'対局が見つかりません。サーバー更新後は新しい対局を始めてください。');
     res.set('Cache-Control','no-store').json(view(game));

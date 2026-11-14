@@ -2,10 +2,13 @@ import { randomInt, randomUUID } from 'node:crypto';
 import { CARD_CATALOG, DEFAULT_DECK, validateDeck } from './chaos-cards.js';
 
 const fail=(status,message)=>Object.assign(new Error(message),{status});
-const starter=()=>Object.fromEntries([...new Set(DEFAULT_DECK)].map(id=>[id,2]));
-const initial=id=>({user_id:id,coins:500,shards:0,cards:starter(),decks:[{id:'starter',name:'標準デッキ',cards:[...DEFAULT_DECK]}],pulls:[],matches:[],rating:1000,wins:0,losses:0,daily_day:null,battle_reward_day:null,battle_reward_count:0});
+export const STARTER_DECK=Object.freeze(DEFAULT_DECK.map(id=>id==='dobby'?'grant':id==='infinity'?'insight':id));
+const starter=()=>Object.fromEntries([...new Set(STARTER_DECK)].map(id=>[id,2]));
+const initial=id=>({user_id:id,coins:500,shards:0,cards:starter(),decks:[{id:'starter',name:'標準デッキ',cards:[...STARTER_DECK]}],pulls:[],matches:[],rating:1000,wins:0,losses:0,daily_day:null,battle_reward_day:null,battle_reward_count:0});
 const day=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const pools=Object.fromEntries(['common','rare','superRare','ultraRare'].map(rarity=>[rarity,Object.values(CARD_CATALOG).filter(card=>card.rarity===rarity).map(card=>card.id)]));
+export const PACK_ODDS=Object.freeze({normal:{common:65,rare:25,superRare:8,ultraRare:2},guaranteed:{common:0,rare:72,superRare:22,ultraRare:6}});
+export const packTargets=()=>({cards:['dobby','infinity'],normalSlotPercent:PACK_ODDS.normal.ultraRare/pools.ultraRare.length,guaranteedSlotPercent:PACK_ODDS.guaranteed.ultraRare/pools.ultraRare.length});
 function rarity(guaranteed){const roll=randomInt(100);if(guaranteed)return roll<72?'rare':roll<94?'superRare':'ultraRare';return roll<65?'common':roll<90?'rare':roll<98?'superRare':'ultraRare';}
 export function drawPack(){return Array.from({length:5},(_,i)=>{const pool=pools[rarity(i===4)];return pool[randomInt(pool.length)];});}
 function owned(cards,deck){const count={};for(const id of validateDeck(deck)){count[id]=(count[id]||0)+1;if(count[id]>(cards[id]||0))throw fail(409,`${CARD_CATALOG[id].name}の所持枚数が足りません。`);}return [...deck];}

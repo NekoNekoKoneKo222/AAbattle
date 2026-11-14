@@ -8,6 +8,8 @@ export function initDeckBuilder({cards,combos,defaultDeck,deckRules}){
   let decks;try{decks=JSON.parse(localStorage.getItem(STORAGE)||'null');}catch{decks=null;}
   if(!Array.isArray(decks))decks=[];
   decks=decks.filter(d=>d&&typeof d.id==='string'&&typeof d.name==='string'&&valid(d.cards)).slice(0,deckRules.maxSaved);
+  const oldStarter=defaultDeck.map(id=>id==='grant'?'dobby':id==='insight'?'infinity':id);
+  if(decks.length===1&&decks[0].id==='starter'&&JSON.stringify(decks[0].cards)===JSON.stringify(oldStarter))decks[0].cards=[...defaultDeck];
   if(!decks.length)decks=[{id:'starter',name:'標準デッキ',cards:[...defaultDeck]}];
   let selected;try{selected=JSON.parse(localStorage.getItem(SELECTION)||'{}');}catch{selected={};}
   if(!selected||typeof selected!=='object')selected={};

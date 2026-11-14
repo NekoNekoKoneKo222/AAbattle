@@ -11,6 +11,7 @@ test('collection endpoints require an account and reject forged cards and spendi
   const server=createServer(app);await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(async()=>{online.close();await new Promise(resolve=>server.close(resolve));});const root=`http://127.0.0.1:${server.address().port}/api/CSH/online/collection`;
   const call=async(path='',body,headers={})=>{const response=await fetch(root+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body)});return {status:response.status,data:await response.json()};};
   assert.equal((await call()).status,401);assert.equal((await call('',undefined,{'x-test-user':'alice'})).data.coins,500);
+  const cards=await fetch(root.replace('/online/collection','/cards')).then(response=>response.json());assert.equal(cards.defaultDeck.includes('dobby'),false);assert.equal(cards.defaultDeck.includes('infinity'),false);assert.deepEqual(cards.packTargets.cards,['dobby','infinity']);
   assert.equal((await call('/packs',{count:100},{'x-test-user':'alice'})).status,400);
   assert.equal((await call('/packs',{count:10},{'x-test-user':'alice'})).status,409);
   assert.equal((await call('/decks',{name:'starter',cards:[...DEFAULT_DECK.slice(0,19),'world-end']},{'x-test-user':'alice'})).status,409);

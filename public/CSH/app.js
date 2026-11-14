@@ -35,7 +35,7 @@ const dobbyDialog=document.createElement('dialog');dobbyDialog.className='dobby-
 const comboCutin=document.createElement('div');comboCutin.id='comboCutin';comboCutin.setAttribute('role','status');comboCutin.setAttribute('aria-live','polite');comboCutin.hidden=true;document.body.append(comboCutin);
 let seenComboRevision='',cutinTimer;
 function showComboEvents(next){const key=`${next.id}:${next.revision}`;if(seenComboRevision===key)return;seenComboRevision=key;for(const event of next.comboEvents||[]){if(!event.active){notify(`${event.name}が終了`);continue;}comboCutin.replaceChildren();const heading=document.createElement('strong'),name=document.createElement('span'),side=document.createElement('small');heading.textContent='特殊コンボ発動！';name.textContent=event.name;side.textContent=event.side==='b'?'▲ 先手':'△ 後手';comboCutin.append(heading,name,side);comboCutin.hidden=false;comboCutin.classList.remove('show');void comboCutin.offsetWidth;comboCutin.classList.add('show');beep(740,.22);setTimeout(()=>beep(930,.28),130);clearTimeout(cutinTimer);cutinTimer=setTimeout(()=>{comboCutin.classList.remove('show');comboCutin.hidden=true;},2400);}}
-let catalog={},comboCatalog=[],deckBuilder=null;api('/cards').then(data=>{catalog=data.cards;comboCatalog=data.combos;deckBuilder=initDeckBuilder(data);if(game)render();collectionUI?.refresh();}).catch(error=>notify(error.message));
+let catalog={},comboCatalog=[],deckBuilder=null,packTargets=null;api('/cards').then(data=>{catalog=data.cards;comboCatalog=data.combos;packTargets=data.packTargets;deckBuilder=initDeckBuilder(data);if(game)render();collectionUI?.refresh();}).catch(error=>notify(error.message));
 const cardName=id=>catalog[id]?.name||id;
 const ownSide=()=>game?.online?.side==='b'||game?.online?.side==='w'?game.online.side:game?.turn;
 const enemySide=()=>ownSide()==='b'?'w':'b';
@@ -77,7 +77,7 @@ const onlinePanel=document.createElement('section');onlinePanel.id='onlinePanel'
 document.querySelector('.intro').after(onlinePanel);
 const cardPoolLabel=document.createElement('label');cardPoolLabel.innerHTML='使用カード <select id="roomCardPool"><option value="all">全カード</option><option value="no-mythic">神話級なし</option><option value="ranked">ランク用制限</option></select>';document.querySelector('.online-settings').prepend(cardPoolLabel);
 const onlineApi=(path,method='GET',body)=>api('/online'+path,method,body);
-const collectionUI=initCollection({api,catalog:()=>catalog,getDeckBuilder:()=>deckBuilder});
+const collectionUI=initCollection({api,catalog:()=>catalog,packTargets:()=>packTargets,getDeckBuilder:()=>deckBuilder});
 const onlineMessage=message=>{$('onlineMessage').textContent=message;};
 const onlineActive=()=>!game?.online||game.online.activePlayerId===onlineUser?.id;
 const onlineTeamNames=team=>team.map(player=>`${player.username}${player.ready?' ✓':''}`).join('・')||'募集中';
