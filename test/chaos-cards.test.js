@@ -1,14 +1,34 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { newGame, applyAction, view } from '../src/chaos-shogi.js';
-import { CARD_CATALOG, COMBOS, DEFAULT_DECK, validateDeck, canActivate, combosFor } from '../src/chaos-cards.js';
+import { CARD_CATALOG, COMBOS, DEFAULT_DECK, validateDeck, canActivate, combosFor, startTurnCards } from '../src/chaos-cards.js';
 
 const at=(x,y)=>y*9+x;
 const setup=()=>{const s=newGame();s.board.fill(null);s.board[at(4,8)]={side:'b',type:'K',promoted:false};s.board[at(4,0)]={side:'w',type:'K',promoted:false};s.board[at(0,2)]={side:'w',type:'P',promoted:false};s.cards.b.deck=[];s.cards.w.deck=[];s.cards.b.hand=[];s.cards.w.hand=[];s.cards.b.cp=10;s.cards.w.cp=10;s.history=[];return s;};
 
 test('starter deck defines working cards and combo data',()=>{
-  const s=newGame();assert.equal(Object.keys(CARD_CATALOG).length,16);assert.equal(s.cards.b.deck.length+s.cards.b.hand.length,20);assert.ok(COMBOS.some(c=>c.id==='eternal-dobby'));
+  const s=newGame();assert.equal(Object.keys(CARD_CATALOG).length,24);assert.equal(s.cards.b.deck.length+s.cards.b.hand.length,20);assert.ok(COMBOS.some(c=>c.id==='eternal-dobby'));
   const publicView=view(s);assert.ok(!publicView.cards.deck);assert.ok(!publicView.cards.w?.hand);assert.equal(publicView.cards.currentHand.length,4);
+});
+test('new equipment passives resolve only while equipped',()=>{
+  const s=setup();s.cards.b.equipment=[{id:'taxOffice',uses:0,usedTurn:-1}];s.cards.b.cp=4;s.cards.w.cp=2;
+  startTurnCards(s);assert.equal(s.cards.b.cp,7);assert.equal(s.cards.w.cp,1);
+  s.cards.b.equipment=[];startTurnCards(s);assert.equal(s.cards.b.cp,9);assert.equal(s.cards.w.cp,1);
+  s.cards.w.equipment=[{id:'reflect',uses:0,usedTurn:-1}];s.cards.b.hand=['avada'];
+  let next=applyAction(s,{kind:'card',cardId:'avada',target:at(0,2)});assert.ok(next.board[at(0,2)]);assert.equal(next.cards.w.equipment[0].uses,1);
+  next=setup();next.cards.b.hand=['avada'];next.cards.w.equipment=[{id:'immortal',uses:0,usedTurn:-1,revived:false}];next=applyAction(next,{kind:'card',cardId:'avada',target:at(0,2)});assert.ok(next.board[at(0,2)]);assert.equal(next.cards.w.equipment[0].revived,true);
+});
+test('copier, multiplication and stolen equipment obey server limits',()=>{
+  let s=setup();s.cards.b.hand=['tax'];s.cards.b.equipment=[{id:'copier',uses:0,usedTurn:-1}];
+  s=applyAction(s,{kind:'activate',slot:0,cardId:'tax'});assert.deepEqual(s.cards.b.hand,['tax','tax']);assert.throws(()=>applyAction(s,{kind:'activate',slot:0,cardId:'tax'}),/発動できません/);
+  s=setup();s.board[at(0,6)]={side:'b',type:'P',promoted:false};s.cards.b.equipment=[{id:'multiply',uses:0,usedTurn:-1}];s=applyAction(s,{kind:'activate',slot:0,target:at(1,6)});assert.equal(s.board[at(1,6)].type,'P');
+  s=setup();s.cards.b.equipment=[{id:'gianism',uses:0,usedTurn:-1}];s.cards.w.equipment=[{id:'infinity',uses:0,usedTurn:-1}];s=applyAction(s,{kind:'activate',slot:0,target:0});assert.equal(s.cards.w.equipment.length,0);assert.equal(s.cards.b.equipment[1].id,'infinity');
+});
+test('hourglass restores the prior action without restoring spent time or usage',()=>{
+  let s=setup();s.cards.b.equipment=[{id:'hourglass',uses:0,usedTurn:-1}];s.cards.b.hand=['tax'];s.cards.w.cp=5;
+  s=applyAction(s,{kind:'card',cardId:'tax'},s.turnStartedAt+100);assert.equal(s.cards.w.cp,3);
+  s=applyAction(s,{kind:'activate',slot:0},s.turnStartedAt+100);assert.equal(s.cards.w.cp,5);assert.deepEqual(s.cards.b.hand,['tax']);assert.equal(s.cards.b.equipment[0].uses,1);assert.equal(s.cards.b.cp,7);assert.equal(s.undoSnapshot,undefined);
+  assert.throws(()=>applyAction(s,{kind:'activate',slot:0}),/取り消せる|発動できません/);
 });
 test('custom decks must contain twenty real cards with at most two copies',()=>{
   assert.equal(validateDeck(DEFAULT_DECK).length,20);
