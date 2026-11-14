@@ -28,10 +28,12 @@ export function mountChaosShogi(app){
     if(game.cpu&&game.turn==='w')return fail(res,409,'CPUの手番です。');
     try{
       let next=applyAction(game,req.body.action);
+      const comboEvents=[...next.comboEvents];
       if(next.cpu&&next.status==='playing'&&next.turn==='w'){
-        const card=cpuCardAction(next);if(card)try{next=applyAction(next,card);}catch{/* CPU skips an invalid optional card. */}
-        const move=cpuAction(next);if(move)next=applyAction(next,move);
+        const card=cpuCardAction(next);if(card)try{next=applyAction(next,card);comboEvents.push(...next.comboEvents);}catch{/* CPU skips an invalid optional card. */}
+        const move=cpuAction(next);if(move){next=applyAction(next,move);comboEvents.push(...next.comboEvents);}
       }
+      next.comboEvents=comboEvents;
       games.set(game.id,next);res.json(view(next));
     }catch(error){return fail(res,400,error.message);}
   });

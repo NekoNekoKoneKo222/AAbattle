@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { initCards, cloneCards, startTurnCards, playCard, activateEquipment, cardView, canActivate, kingMoved, CARD_CATALOG } from './chaos-cards.js';
+import { initCards, cloneCards, startTurnCards, playCard, activateEquipment, cardView, canActivate, kingMoved, syncComboEvents, CARD_CATALOG } from './chaos-cards.js';
 
 export const TYPES=['P','L','N','S','G','B','R','K'];
 export const GLYPHS={K:'王',R:'飛',B:'角',G:'金',S:'銀',N:'桂',L:'香',P:'歩'};
@@ -88,7 +88,7 @@ export function newGame({cpu=false,minutes=10,decks={}}={}){
   }
   for(const [x,y,side,type] of [[1,1,'w','R'],[7,1,'w','B'],[1,7,'b','B'],[7,7,'b','R']])board[index(x,y)]={side,type,promoted:false};
   const now=Date.now(),timeMs=Math.max(1,Math.min(60,Number(minutes)||10))*60000;
-  const s={id:randomUUID(),board,hands,cards:initCards(decks),movesLeft:1,turn:'b',status:'playing',winner:null,reason:null,revision:0,cpu:Boolean(cpu),remaining:{b:timeMs,w:timeMs},turnStartedAt:now,history:[],log:[],createdAt:now};
+  const s={id:randomUUID(),board,hands,cards:initCards(decks),movesLeft:1,turn:'b',status:'playing',winner:null,reason:null,revision:0,cpu:Boolean(cpu),remaining:{b:timeMs,w:timeMs},turnStartedAt:now,history:[],log:[],comboEvents:[],createdAt:now};
   s.history.push(key(s));return s;
 }
 export function remainingMs(s,now=Date.now()){return {b:Math.max(0,s.remaining.b-(s.status==='playing'&&s.turn==='b'?now-s.turnStartedAt:0)),w:Math.max(0,s.remaining.w-(s.status==='playing'&&s.turn==='w'?now-s.turnStartedAt:0))};}
@@ -96,7 +96,7 @@ export function expire(s,now=Date.now()){if(s.status==='playing'&&remainingMs(s,
 export function applyAction(s,action,now=Date.now()){
   expire(s,now);if(s.status!=='playing')deny('対局は終了しています。');
   if(action?.kind==='resign'){
-    const n=clone(s);n.remaining=remainingMs(s,now);n.status='finished';n.winner=opposite(s.turn);n.reason='投了';n.log.push(`${s.turn==='b'?'先手':'後手'}が投了`);n.revision++;return n;
+    const n=clone(s);n.remaining=remainingMs(s,now);n.status='finished';n.winner=opposite(s.turn);n.reason='投了';n.comboEvents=[];n.log.push(`${s.turn==='b'?'先手':'後手'}が投了`);n.revision++;return n;
   }
   if(action?.kind==='card'||action?.kind==='activate'){
     if(action.kind==='activate'&&s.cards[s.turn].equipment[action.slot]?.id==='hourglass'){
@@ -104,12 +104,12 @@ export function applyAction(s,action,now=Date.now()){
       const n=clone(s.undoSnapshot),item=n.cards[n.turn].equipment.find(e=>e.id==='hourglass');if(!item)deny('砂時計の装備前の行動は取り消せません。');
       const cost=CARD_CATALOG.hourglass.activeCost;if(n.cards[n.turn].cp<cost)deny('行動を戻した後のCPが足りません。');
       n.cards[n.turn].cp-=cost;item.uses=Math.max(item.uses,s.cards[s.turn].equipment[action.slot].uses)+1;item.usedTurn=n.cards[n.turn].turnSerial;item.turnUses=1;
-      n.remaining=remainingMs(s,now);n.turnStartedAt=now;n.revision=s.revision+1;n.log.push('時の砂時計で直前の行動を取り消した');return n;
+      n.remaining=remainingMs(s,now);n.turnStartedAt=now;n.revision=s.revision+1;n.log.push('時の砂時計で直前の行動を取り消した');syncComboEvents(s,n);return n;
     }
     const n=clone(s);n.remaining=remainingMs(s,now);n.turnStartedAt=now;
     if(action.kind==='card')playCard(n,action);else activateEquipment(n,action);
     if(!inCheck(s,s.turn)&&inCheck(n,s.turn))deny('自分の王将を王手にさらすカード使用はできません。');
-    n.undoSnapshot=clone(s);n.revision++;return n;
+    n.undoSnapshot=clone(s);n.revision++;syncComboEvents(s,n);return n;
   }
   const legal=legalActions(s).find(a=>a.kind===action?.kind&&a.to===action?.to&&(a.kind==='drop'?a.type===action.type:a.from===action.from&&a.promote===Boolean(action.promote)));
   if(!legal)deny('その手は指せません。王手や駒の移動規則を確認してください。');
@@ -122,6 +122,7 @@ export function applyAction(s,action,now=Date.now()){
   if(!legalActions(defenderState).length){n.status='finished';n.reason=inCheck(n,defending)?'詰み':'合法手なし';n.winner=side;n.log.push(`${side==='b'?'先手':'後手'}の勝ち`);}
   else if(n.turn!==side){n.movesLeft=1;startTurnCards(n);n.history.push(key(n));if(n.history.filter(v=>v===n.history.at(-1)).length>=4){n.status='finished';n.reason='千日手';n.winner=null;n.log.push('千日手で引き分け');}}
   n.undoSnapshot=n.turn===side&&n.status==='playing'?clone(s):undefined;
+  n.comboEvents=[];
   return n;
 }
 export function cpuAction(s){const options=legalActions(s);if(!options.length)return null;const valued=options.map(a=>({a,score:(a.kind==='move'&&s.board[a.to]?{P:1,L:3,N:3,S:4,G:5,B:8,R:10}[s.board[a.to].type]*10:0)+(a.promote?4:0)+Math.random()*5}));valued.sort((a,b)=>b.score-a.score);return valued[0].a;}

@@ -62,6 +62,37 @@ test('Dobby is spent, Infinity re-enables it, removal disables it, re-equipping 
   s.cards.b.equipment.splice(1,1);assert.equal(canActivate(s,'b',0),false);s.cards.b.equipment.push({id:'infinity',uses:0,usedTurn:-1});assert.equal(canActivate(s,'b',0),false);
   s.cards.b.turnSerial++;s.cards.b.cp=3;assert.equal(canActivate(s,'b',0),true);
 });
+test('Dobby and Infinity lifecycle spends CP, limits each turn, and records combo transitions',()=>{
+  let s=setup();s.cards.b.hand=['dobby','infinity'];s.cards.w.hand=['tax','grant'];
+  s=applyAction(s,{kind:'card',cardId:'dobby',choice:'steal'});
+  assert.equal(s.cards.b.equipment[0].uses,1);assert.equal(s.cards.w.hand.length,1);assert.equal(canActivate(s,'b',0),false);
+  s=applyAction(s,{kind:'move',from:at(4,8),to:at(3,8)});
+  s=applyAction(s,{kind:'move',from:at(4,0),to:at(3,0)});
+  s.cards.b.cp=10;s=applyAction(s,{kind:'card',cardId:'infinity'});
+  assert.ok(s.comboEvents.some(event=>event.id==='eternal-dobby'&&event.active));
+  assert.ok(s.log.some(line=>line.includes('永久にドビーは悪い子が成立')));
+  assert.equal(canActivate(s,'b',0),false);
+  s.cards.b.cp=3;assert.equal(canActivate(s,'b',0),true);
+  s=applyAction(s,{kind:'activate',slot:0,choice:'destroy',target:at(0,2)});
+  assert.equal(s.board[at(0,2)],null);assert.equal(s.cards.b.cp,0);assert.equal(s.cards.b.equipment[0].uses,2);
+  s.cards.b.cp=3;assert.throws(()=>applyAction(s,{kind:'activate',slot:0,choice:'steal'}),/発動できません/);
+  s=applyAction(s,{kind:'move',from:at(3,8),to:at(2,8)});
+  s.cards.w.hand=['dispel'];s.cards.w.cp=10;s=applyAction(s,{kind:'card',cardId:'dispel',target:1});
+  assert.ok(s.comboEvents.some(event=>event.id==='eternal-dobby'&&!event.active));
+  assert.equal(canActivate(s,'b',0),false);
+  s=applyAction(s,{kind:'move',from:at(3,0),to:at(2,0)});
+  s.cards.b.cp=10;s.cards.b.hand=['infinity'];s=applyAction(s,{kind:'card',cardId:'infinity'});
+  assert.ok(s.comboEvents.some(event=>event.id==='eternal-dobby'&&event.active));
+  s.cards.b.cp=3;s.cards.w.hand=['tax'];s=applyAction(s,{kind:'activate',slot:0,choice:'steal'});
+  assert.equal(s.cards.w.hand.length,0);assert.equal(s.cards.b.equipment[0].uses,3);
+  assert.equal(view(s).undoSnapshot,undefined);
+});
+test('Dobby rejects empty steals and king targeting without consuming its use',()=>{
+  let s=setup();s.cards.b.hand=['dobby'];
+  assert.throws(()=>applyAction(s,{kind:'card',cardId:'dobby',choice:'steal'}),/手札がない/);
+  assert.throws(()=>applyAction(s,{kind:'card',cardId:'dobby',choice:'destroy',target:at(4,0)}),/王将以外/);
+  assert.equal(s.cards.b.equipment.length,0);assert.deepEqual(s.cards.b.hand,['dobby']);
+});
 test('Greed draws on steal, shield prevents first card destruction, and king cannot be targeted',()=>{
   let s=setup();s.cards.b.hand=['dobby'];s.cards.b.deck=['tax'];s.cards.b.equipment.push({id:'greed',uses:0,usedTurn:-1});s.cards.w.hand=['shield'];
   s=applyAction(s,{kind:'card',cardId:'dobby',choice:'steal'});assert.equal(s.cards.b.hand.length,2);
