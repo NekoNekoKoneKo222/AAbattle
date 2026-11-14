@@ -93,6 +93,12 @@ test('Dobby rejects empty steals and king targeting without consuming its use',(
   assert.throws(()=>applyAction(s,{kind:'card',cardId:'dobby',choice:'destroy',target:at(4,0)}),/王将以外/);
   assert.equal(s.cards.b.equipment.length,0);assert.deepEqual(s.cards.b.hand,['dobby']);
 });
+test('Dobby can steal from a full seven-card hand when played as equipment',()=>{
+  let s=setup();s.cards.b.hand=['dobby','tax','grant','insight','snatch','warp','double'];s.cards.w.hand=['meteor'];
+  s=applyAction(s,{kind:'card',cardId:'dobby',choice:'steal'});
+  assert.equal(s.cards.b.hand.length,7);assert.ok(s.cards.b.hand.includes('meteor'));
+  assert.equal(s.cards.w.hand.length,0);assert.equal(s.cards.b.equipment[0].id,'dobby');
+});
 test('Greed draws on steal, shield prevents first card destruction, and king cannot be targeted',()=>{
   let s=setup();s.cards.b.hand=['dobby'];s.cards.b.deck=['tax'];s.cards.b.equipment.push({id:'greed',uses:0,usedTurn:-1});s.cards.w.hand=['shield'];
   s=applyAction(s,{kind:'card',cardId:'dobby',choice:'steal'});assert.equal(s.cards.b.hand.length,2);
