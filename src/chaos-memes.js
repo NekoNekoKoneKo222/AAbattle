@@ -61,7 +61,7 @@ export const MEME_CATEGORIES=Object.freeze({
   ],
   rules:[
     card('ignore-rules','ルール？知らんな','rule-ignore',4,'none','2手番、二歩と成り位置の制限を無視する。',{type:'rule'}),
-    card('shogi-over','将棋終了のお知らせ','shogi-over',7,'none','相手の盤上駒が王将を含め3体以下なら王将を破壊する。防御効果は発動する。',{type:'rule',rarity:'superRare'}),
+    card('shogi-over','将棋終了のお知らせ','shogi-over',7,'none','相手の盤上駒が王将を含め3体以下なら勝利する。',{type:'rule',rarity:'superRare'}),
     card('pawn-rebellion','歩の反乱','rule-pawn-gold',4,'none','2手番、すべての歩が金将の動きをする。',{type:'rule'}),
     card('king-at-work','王様出勤','rule-king-dash',4,'none','2手番、自分の王将は縦横2マスにも動ける。',{type:'rule'}),
     card('all-rooks','全員飛車','rule-all-rooks',6,'none','次の自分の手番終了まで自分の駒が飛車の動きをする。',{type:'rule',rarity:'superRare'}),
@@ -89,7 +89,7 @@ export const MEME_CATEGORIES=Object.freeze({
     card('all-assemble','全員集合','assemble',7,'none','自分の持ち駒を最大3体、空きマスに自動で打つ。',{rarity:'mythic'}),
     card('game-broken','このゲーム壊れてます','game-broken',8,'none','歩の反乱・成り放題・重力反転を同時に2手番発動。',{rarity:'mythic',type:'rule'}),
     card('avada-ex','アバダ・ケダブラ EX','avada-ex',9,'enemy-piece','完全崩壊モードで敵の王将を直接破壊する。',{rarity:'mythic',modes:['collapse']}),
-    card('forced-ending','強制エンディング','forced-ending',9,'none','完全崩壊モードで盤上駒数が少ない側の王将を破壊する。同数なら引き分け。防御効果は発動する。',{rarity:'mythic',modes:['collapse']}),
+    card('forced-ending','強制エンディング','forced-ending',9,'none','完全崩壊モードで盤上駒数が多い側を勝者として対局を終える。',{rarity:'mythic',modes:['collapse']}),
     card('admin-power','管理者権限','admin-power',8,'choice','破壊・CP獲得・ドローから1つ選ぶ。',{rarity:'mythic'})
   ]
 });

@@ -17,7 +17,6 @@ export function setRule(s,name,side,turns=2){s.chaos.rules[ruleKey(name,side)]={
 export function terrainAt(s,i){const terrain=s.chaos?.terrain?.[i];const serial=s.cards.b.turnSerial+s.cards.w.turnSerial;return terrain&&terrain.expiresOn>serial?terrain:null;}
 function placeTerrain(s,i,kind){empty(s,i);s.chaos.terrain[i]={kind,expiresOn:s.cards.b.turnSerial+s.cards.w.turnSerial+3};s.log.push(`${kind==='wall'?'壁':kind==='hole'?'穴':'バナナの皮'}を配置`);}
 function destroyUnprotected(s,i,source){const piece=s.board[i];if(!piece||piece.type==='K')return false;s.board[i]=null;emitEffect(s,'ON_PIECE_DESTROYED',{side:piece.side,attacker:source,target:i,pieceType:piece.type});return true;}
-function destroyKing(s,attacker,defender){const target=s.board.findIndex(piece=>piece?.side===defender&&piece.type==='K');if(target<0)return false;const piece=s.board[target],event={attacker,defender,target,piece,prevented:false};emitEffect(s,'ON_PIECE_TARGETED',event);if(event.prevented||s.board[target]!==piece)return false;s.board[target]=null;s.log.push(`${defender==='b'?'先手':'後手'}の王将を破壊`);return true;}
 function area(s,target,radius,predicate,remove){if(!valid(s,target))fail('対象マスが不正です。');const [cx,cy]=xy(s,target);let count=0;for(let i=0;i<s.board.length;i++){const [x,y]=xy(s,i);if(Math.max(Math.abs(x-cx),Math.abs(y-cy))<=radius&&predicate(s.board[i],i)){remove(i);count++;}}if(!count)fail('範囲に対象がありません。');}
 function rearrange(s,transform){const old=s.board,newBoard=Array(old.length).fill(null);for(let i=0;i<old.length;i++)if(old[i]?.type==='K')newBoard[i]=old[i];for(let i=0;i<old.length;i++){const piece=old[i];if(!piece||piece.type==='K')continue;const to=transform(i);const slot=!newBoard[to]?to:!newBoard[i]?i:newBoard.findIndex(p=>!p);if(slot>=0)newBoard[slot]=piece;}s.board=newBoard;}
 function expand(s){if(size(s)>=11)fail('盤面はすでに11×11です。');const oldSize=size(s),nextSize=11,board=Array(121).fill(null),terrain={};for(let i=0;i<s.board.length;i++){const [x,y]=xy(s,i),next=(y+1)*nextSize+x+1;board[next]=s.board[i];if(s.chaos.terrain[i])terrain[next]=s.chaos.terrain[i];}s.board=board;s.size=nextSize;s.chaos.terrain=terrain;s.lastAction=null;}
@@ -59,7 +58,7 @@ export function resolveMemeCard(s,card,action,ops){
     case 'terrain-random':placeTerrain(s,to,random(['wall','hole','banana']));break;
     case 'rule-gravity':setRule(s,'gravity',side,2);setRule(s,'gravity',opponent,2);break;
     case 'rule-ignore':setRule(s,'ignore',side,2);break;
-    case 'shogi-over':{if(board.filter(p=>p?.side===opponent).length>3)fail('相手の盤上駒が3体以下の場合に使えます。');destroyKing(s,side,opponent);break;}
+    case 'shogi-over':{if(board.filter(p=>p?.side===opponent).length>3)fail('相手の盤上駒が3体以下の場合に使えます。');s.status='finished';s.winner=side;s.reason='将棋終了のお知らせ';break;}
     case 'rule-pawn-gold':setRule(s,'pawn-gold',side,2);setRule(s,'pawn-gold',opponent,2);break;
     case 'rule-king-dash':setRule(s,'king-dash',side,2);break;
     case 'rule-all-rooks':setRule(s,'all-rooks',side,2);break;
@@ -82,8 +81,8 @@ export function resolveMemeCard(s,card,action,ops){
     case 'rule-chess':setRule(s,'chess',side,2);break;
     case 'assemble':{let count=0;for(const type of ['R','B','G','S','N','L','P'])while(s.hands[side][type]&&count<3){const options=board.map((p,i)=>!p&&!terrainAt(s,i)&&(side==='b'?Math.floor(i/size(s))>=size(s)-3:Math.floor(i/size(s))<=2)?i:-1).filter(i=>i>=0);if(!options.length)break;const i=options[0];board[i]={side,type,promoted:false};s.hands[side][type]--;count++;}if(!count)fail('打てる持ち駒がありません。');break;}
     case 'game-broken':for(const rule of ['pawn-gold','free-promote','gravity']){setRule(s,rule,side,2);if(rule!=='free-promote')setRule(s,rule,opponent,2);}break;
-    case 'avada-ex':{const p=enemy(s,side,to,true);if(p.type==='K')destroyKing(s,side,opponent);else ops.destroy(s,side,to);break;}
-    case 'forced-ending':{const ownCount=board.filter(p=>p?.side===side).length,enemyCount=board.filter(p=>p?.side===opponent).length;if(ownCount===enemyCount){s.status='finished';s.winner=null;s.reason='強制エンディング・引き分け';}else{const winner=ownCount>enemyCount?side:opponent;destroyKing(s,winner,other(winner));}break;}
+    case 'avada-ex':{const p=enemy(s,side,to,true);if(p.type==='K'){board[to]=null;s.log.push('王将を直接破壊した');}else ops.destroy(s,side,to);break;}
+    case 'forced-ending':{const ownCount=board.filter(p=>p?.side===side).length,enemyCount=board.filter(p=>p?.side===opponent).length;s.status='finished';s.winner=ownCount===enemyCount?null:ownCount>enemyCount?side:opponent;s.reason='強制エンディング';break;}
     case 'admin-power':{if(action.choice==='blast'){const target=board.findIndex(p=>p?.side===opponent&&p.type!=='K');if(target<0)fail('破壊できる敵駒がありません。');ops.destroy(s,side,target);}else if(action.choice==='cp')ownCards.cp=Math.min(10,ownCards.cp+5);else if(action.choice==='draw'){for(let i=0;i<3;i++)ops.draw(ownCards);}else fail('破壊・CP・ドローから選んでください。');break;}
     default:fail('未対応のカード効果です。');
   }
