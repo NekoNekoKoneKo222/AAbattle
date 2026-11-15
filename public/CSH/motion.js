@@ -33,7 +33,7 @@ export function createMotionPlayer({board,cardDetails,sound,reducedMotion}){
         ghost.remove();finalToken?.classList.remove('motion-hidden');
       }
     }
-    impact(event.target??event.to??Math.floor(board.children.length/2),tone);
+    impact(event.kingTarget??event.target??event.to??Math.floor(board.children.length/2),event.kingCaptured?'king':tone);
     if(event.kind==='card'||event.kind==='activate')for(const index of event.removed||[])impact(index,'capture');
     sound?.(tone);
     await wait(reduced()?60:170);

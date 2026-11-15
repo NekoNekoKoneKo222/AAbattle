@@ -16,7 +16,7 @@ export function resolveCpuStep(state){
   if(!state.cards.w.cardPlayed&&(state.cpuDifficulty!=='easy'||Math.random()<.35))action=cpuCardAction(state);
   if(action)try{const next=applyAction(state,action),event=visualEvent(state,next,action);return {game:next,events:event?[event]:[],comboEvents:[...next.comboEvents]};}catch{/* Invalid optional card: continue to a legal move. */}
   action=cpuAction(state,state.cpuDifficulty);
-  if(!action)return {game:{...state,status:'finished',winner:'b',reason:'CPUに合法手なし',revision:state.revision+1,log:[...state.log,'CPUに合法手がなく先手の勝ち']},events:[],comboEvents:[]};
+  if(!action)return {game:{...state,status:'finished',winner:null,reason:'双方合法手なし',revision:state.revision+1,log:[...state.log,'合法手がなく引き分け']},events:[],comboEvents:[]};
   const next=applyAction(state,action),event=visualEvent(state,next,action);
   return {game:next,events:event?[event]:[],comboEvents:[...next.comboEvents]};
 }

@@ -7,7 +7,7 @@ export const CARD_CATALOG=Object.freeze({
   meteor:{id:'meteor',name:'隕石落下',type:'instant',rarity:'superRare',cost:6,target:'square',description:'指定マスを中心に3×3の敵駒を破壊する。王将には効かない。'},
   double:{id:'double',name:'2回行動',type:'rule',rarity:'rare',cost:3,target:'none',description:'このターンの駒移動回数を1回増やす。'},
   tax:{id:'tax',name:'税金徴収',type:'instant',rarity:'common',cost:2,target:'none',description:'相手から2CPを徴収し、相手に持ち駒があればランダムに1枚奪う。'},
-  warp:{id:'warp',name:'瞬間移動',type:'instant',rarity:'rare',cost:3,target:'own-piece-and-square',description:'自分の王将以外の駒を空きマスへ移す。自玉を王手にさらせない。'},
+  warp:{id:'warp',name:'瞬間移動',type:'instant',rarity:'rare',cost:3,target:'own-piece-and-square',description:'自分の王将以外の駒を空きマスへ移す。王将が狙われる位置への移動も可能。'},
   dispel:{id:'dispel',name:'装備解除命令',type:'instant',rarity:'rare',cost:3,target:'enemy-equipment',description:'相手の装備を1枚破壊し、パッシブ効果を解除する。'},
   dobby:{id:'dobby',name:'ドビーは悪い子',type:'equipment',rarity:'ultraRare',cost:5,target:'choice',description:'装備時に強奪か駒破壊。通常は対局中1回。無下限呪術と装備すると毎ターン3CPで再発動。',activeCost:3,matchLimit:1,turnLimit:1},
   infinity:{id:'infinity',name:'無下限呪術',type:'equipment',rarity:'ultraRare',cost:8,target:'none',description:'装備中、自分の装備能力の対局中使用回数制限を解除する。',passiveEffects:['remove-match-limit']},

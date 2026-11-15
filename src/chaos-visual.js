@@ -5,6 +5,9 @@ export function visualEvent(before,after,action){
   const side=before.turn,removed=[];
   for(let i=0;i<before.board.length;i++)if(before.board[i]&&!after.board[i])removed.push(i);
   const event={kind:action.kind,side,revision:after.revision,size:after.size||9,removed:removed.slice(0,40)};
+  const removedKing=before.board.findIndex(piece=>piece?.type==='K'&&!after.board.some(afterPiece=>afterPiece?.side===piece.side&&afterPiece.type==='K'));
+  event.kingCaptured=after.status==='finished'&&removedKing>=0;
+  event.kingTarget=removedKing>=0?removedKing:null;
   if(action.kind==='move'){
     event.from=action.from;event.to=action.to;event.pieceType=before.board[action.from]?.type;
     event.promoted=Boolean(action.promote);event.capture=Boolean(before.board[action.to]);

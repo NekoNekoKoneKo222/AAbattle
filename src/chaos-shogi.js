@@ -55,7 +55,7 @@ export function inCheck(s,side){
 }
 function moveUnchecked(s,from,to,promote=false){
   const n=clone(s),p=n.board[from],victim=n.board[to];
-  if(victim){if(victim.type==='K')deny('王将は取れません。王手で詰ませてください。');n.hands[p.side][victim.type]++;}
+  if(victim&&victim.type!=='K')n.hands[p.side][victim.type]++;
   n.board[to]={...p,promoted:p.promoted||promote};n.board[from]=null;
   const terrain=terrainAt(n,to);
   if(terrain?.kind==='hole'&&p.type!=='K'){n.board[to]=null;n.log.push('駒が穴に落ちた');}
@@ -63,18 +63,16 @@ function moveUnchecked(s,from,to,promote=false){
   return n;
 }
 function dropUnchecked(s,type,to){const n=clone(s);n.hands[s.turn][type]--;n.board[to]={side:s.turn,type,promoted:false};return n;}
-export function legalActions(s,side=s.turn,{checkPawnDropMate=true}={}){
-  if(s.status!=='playing')return[];const actions=[];
+export function legalActions(s,side=s.turn){
+  if(s.status!=='playing'||!s.board.some(p=>p?.side===side&&p.type==='K'))return[];const actions=[];
   for(let from=0;from<s.board.length;from++){
     const p=s.board[from];if(!p||p.side!==side)continue;
     for(const to of targets(s,from)){
-      if(s.board[to]?.type==='K')continue;
       const [,fy]=coords(s,from),[,ty]=coords(s,to);
       const ignore=ruleActive(s,'ignore',side),must=!ignore&&!p.promoted&&((['P','L'].includes(p.type)&&last(s,side,ty))||(p.type==='N'&&lastTwo(s,side,ty)));
       const may=!p.promoted&&movable(p.type)&&(ignore||ruleActive(s,'free-promote',side)||zone(s,side,fy)||zone(s,side,ty));
       for(const promote of must?[true]:may?[false,true]:[false]){
-        const n=moveUnchecked(s,from,to,promote);
-        if(!inCheck(n,side))actions.push({kind:'move',from,to,promote});
+        actions.push({kind:'move',from,to,promote});
       }
     }
   }
@@ -82,8 +80,6 @@ export function legalActions(s,side=s.turn,{checkPawnDropMate=true}={}){
     for(let to=0;to<s.board.length;to++){if(s.board[to]||terrainAt(s,to)?.kind==='wall'||terrainAt(s,to)?.kind==='hole')continue;const [x,y]=coords(s,to);
       if(!ruleActive(s,'ignore',side)&&((['P','L'].includes(type)&&last(s,side,y))||(type==='N'&&lastTwo(s,side,y))))continue;
       if(type==='P'&&!ruleActive(s,'ignore',side)&&s.board.some((p,i)=>i%sizeOf(s)===x&&p?.side===side&&p.type==='P'&&!p.promoted))continue;
-      const n=dropUnchecked({...s,turn:side},type,to);if(inCheck(n,side))continue;
-      if(type==='P'&&checkPawnDropMate&&inCheck(n,opposite(side))&&!legalActions({...n,turn:opposite(side)},opposite(side),{checkPawnDropMate:false}).length)continue;
       actions.push({kind:'drop',type,to});
     }
   }
@@ -119,24 +115,41 @@ export function applyAction(s,action,now=Date.now()){
     }
     const n=clone(s);n.remaining=remainingMs(s,now);n.turnStartedAt=now;beginEffectAction(n);
     if(action.kind==='card')playCard(n,action);else activateEquipment(n,action);
-    if(!inCheck(s,s.turn)&&inCheck(n,s.turn))deny('自分の王将を王手にさらすカード使用はできません。');
-    if(n.status==='playing'&&!n.board.some(p=>p?.side===opposite(s.turn)&&p.type==='K')){n.status='finished';n.winner=s.turn;n.reason='王将破壊';n.log.push(`${s.turn==='b'?'先手':'後手'}の勝ち`);}
+    n.lastAction={kind:action.kind,cardId:action.kind==='card'?action.cardId:s.cards[s.turn].equipment[action.slot]?.id||null,side:s.turn,target:action.target};
+    if(n.status==='playing')for(const owner of [s.turn,opposite(s.turn)])if(!n.board.some(p=>p?.side===owner&&p.type==='K')){n.status='finished';n.winner=opposite(owner);n.reason='王将破壊';n.log.push(`${n.winner==='b'?'先手':'後手'}の勝ち`);break;}
     n.undoSnapshot=clone(s);n.revision++;syncComboEvents(s,n);return n;
   }
   const legal=legalActions(s).find(a=>a.kind===action?.kind&&a.to===action?.to&&(a.kind==='drop'?a.type===action.type:a.from===action.from&&a.promote===Boolean(action.promote)));
-  if(!legal)deny('その手は指せません。王手や駒の移動規則を確認してください。');
-  const side=s.turn,p=s.board[action.from],victim=legal.kind==='move'?s.board[legal.to]:null,n=legal.kind==='drop'?dropUnchecked(s,legal.type,legal.to):moveUnchecked(s,legal.from,legal.to,legal.promote);
+  if(!legal)deny('その手は指せません。駒の移動規則を確認してください。');
+  const side=s.turn,p=s.board[action.from],victim=legal.kind==='move'?s.board[legal.to]:null;
+  let source=s,blocked=false;
+  if(victim?.type==='K'){
+    source=clone(s);beginEffectAction(source);
+    const target={attacker:side,defender:victim.side,target:legal.to,piece:source.board[legal.to],prevented:false};
+    emitEffect(source,'ON_PIECE_TARGETED',target);
+    blocked=target.prevented&&Boolean(source.board[legal.to]);
+  }
+  const n=blocked?source:legal.kind==='drop'?dropUnchecked(source,legal.type,legal.to):moveUnchecked(source,legal.from,legal.to,legal.promote);
   beginEffectAction(n);
-  n.lastAction=legal;
-  if(legal.kind==='move')pieceMoved(n,side,p.type,legal.from,legal.to);
-  if(victim)emitEffect(n,'ON_PIECE_CAPTURED',{side,defender:victim.side,pieceType:victim.type,to:legal.to});
+  n.lastAction={...legal,side,pieceType:p?.type||legal.type};
+  if(legal.kind==='move'&&!blocked)pieceMoved(n,side,p.type,legal.from,legal.to);
+  if(victim&&!blocked&&(victim.type!=='K'||!n.board.some(piece=>piece?.side===victim.side&&piece.type==='K')))emitEffect(n,'ON_PIECE_CAPTURED',{side,defender:victim.side,pieceType:victim.type,to:legal.to});
   n.remaining=remainingMs(s,now);n.movesLeft=(s.movesLeft||1)-1;n.turn=n.movesLeft>0?side:opposite(side);n.turnStartedAt=now;n.revision=s.revision+1;
   n.log.push(`${side==='b'?'先手':'後手'} ${legal.kind==='drop'?GLYPHS[legal.type]+'打':(p.promoted?PROMOTED[p.type]:GLYPHS[p.type])+(legal.promote?'成':'')} ${Math.floor(legal.to/sizeOf(n))+1}段${legal.to%sizeOf(n)+1}筋`);
+  if(victim?.type==='K'&&!n.board.some(piece=>piece?.side===victim.side&&piece.type==='K')){
+    n.status='finished';n.winner=side;n.reason='王将を取った';n.movesLeft=0;n.log.push(`${side==='b'?'先手':'後手'}が王将を取り勝利`);n.undoSnapshot=undefined;n.comboEvents=[];return n;
+  }
   if(n.turn===side&&!legalActions(n).length){n.turn=opposite(side);n.movesLeft=0;n.log.push('追加行動できる手がないため手番を終了');}
-  const defending=opposite(side),defenderState={...n,turn:defending};
-  if(!legalActions(defenderState).length){n.status='finished';n.reason=inCheck(n,defending)?'詰み':'合法手なし';n.winner=side;n.log.push(`${side==='b'?'先手':'後手'}の勝ち`);}
-  else if(n.turn!==side){emitEffect(n,'ON_TURN_END',{side});resolveChaosTurnEnd(n,side);n.movesLeft=1;startTurnCards(n);n.history.push(key(n));if(n.history.filter(v=>v===n.history.at(-1)).length>=4){n.status='finished';n.reason='千日手';n.winner=null;n.log.push('千日手で引き分け');}}
-  n.undoSnapshot=n.turn===side&&n.status==='playing'?clone(s):undefined;
+  const continued=n.turn===side,defending=opposite(side);
+  if(!continued){
+    emitEffect(n,'ON_TURN_END',{side});resolveChaosTurnEnd(n,side);n.movesLeft=1;startTurnCards(n);
+    if(!legalActions({...n,turn:defending},defending).length){
+      if(!legalActions({...n,turn:side},side).length){n.status='finished';n.reason='双方合法手なし';n.winner=null;n.log.push('双方合法手なしで引き分け');}
+      else{n.turn=side;n.log.push(`${defending==='b'?'先手':'後手'}に合法手がないため手番をスキップ`);startTurnCards(n);}
+    }
+    if(n.status==='playing'){n.history.push(key(n));if(n.history.filter(v=>v===n.history.at(-1)).length>=4){n.status='finished';n.reason='千日手';n.winner=null;n.log.push('千日手で引き分け');}}
+  }
+  n.undoSnapshot=continued&&n.status==='playing'?clone(s):undefined;
   n.comboEvents=[];
   return n;
 }
@@ -152,9 +165,11 @@ export function cpuAction(s,difficulty='normal'){
     if(a.kind==='move'){board[a.to]={...board[a.from],promoted:board[a.from].promoted||a.promote};board[a.from]=null;}
     else board[a.to]={side:'w',type:a.type,promoted:false};
     const next={...s,board,turn:'b'};
+    if(!board.some(piece=>piece?.side==='b'&&piece.type==='K')){entry.score+=10000;continue;}
     const check=inCheck(next,'b');if(check)entry.score+=18;
-    const replies=legalActions(next,'b',{checkPawnDropMate:false});
-    if(check&&!replies.length)entry.score+=1000;
+    const replies=legalActions(next,'b');
+    const ownKing=board.findIndex(piece=>piece?.side==='w'&&piece.type==='K');
+    if(replies.some(reply=>reply.kind==='move'&&reply.to===ownKing))entry.score-=1200;
     if(replies.some(reply=>reply.kind==='move'&&reply.to===a.to))entry.score-=(value[board[a.to]?.type]||1)*11;
   }
   candidates.sort((a,b)=>b.score-a.score);return candidates[0].a;
