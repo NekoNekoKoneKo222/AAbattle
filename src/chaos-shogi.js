@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { initCards, cloneCards, startTurnCards, playCard, activateEquipment, cardView, canActivate, pieceMoved, syncComboEvents, CARD_CATALOG } from './chaos-cards.js';
 import { beginEffectAction, emitEffect } from './chaos-effects.js';
 import { ruleActive, terrainAt, resolveChaosTurnEnd } from './chaos-meme-effects.js';
+import { ROUND_LIMIT, awardPiecePoints, finishByPoints } from './chaos-rounds.js';
 
 export const TYPES=['P','L','N','S','G','B','R','K'];
 export const GLYPHS={K:'王',R:'飛',B:'角',G:'金',S:'銀',N:'桂',L:'香',P:'歩'};
@@ -13,7 +14,7 @@ const sizeOf=s=>s.size||9;
 const inside=(s,x,y)=>x>=0&&x<sizeOf(s)&&y>=0&&y<sizeOf(s);
 const index=(s,x,y)=>y*sizeOf(s)+x;
 const coords=(s,i)=>[i%sizeOf(s),Math.floor(i/sizeOf(s))];
-const clone=s=>({ ...s,board:s.board.map(p=>p&&{...p}),hands:{b:{...s.hands.b},w:{...s.hands.w}},cards:cloneCards(s.cards),chaos:{...s.chaos,rules:{...s.chaos?.rules},terrain:{...s.chaos?.terrain},counters:{...s.chaos?.counters},pendingBonus:{...s.chaos?.pendingBonus},kingGuard:{...s.chaos?.kingGuard}},remaining:{...s.remaining},history:[...s.history],log:[...s.log],effectEvents:[],undoSnapshot:undefined });
+const clone=s=>({ ...s,board:s.board.map(p=>p&&{...p}),hands:{b:{...s.hands.b},w:{...s.hands.w}},scores:{...s.scores},cards:cloneCards(s.cards),chaos:{...s.chaos,rules:{...s.chaos?.rules},terrain:{...s.chaos?.terrain},counters:{...s.chaos?.counters},pendingBonus:{...s.chaos?.pendingBonus},kingGuard:{...s.chaos?.kingGuard}},remaining:{...s.remaining},history:[...s.history],log:[...s.log],effectEvents:[],undoSnapshot:undefined });
 const deny=message=>{throw new Error(message);};
 const zone=(s,side,y)=>side==='b'?y<=2:y>=sizeOf(s)-3;
 const last=(s,side,y)=>side==='b'?y===0:y===sizeOf(s)-1;
@@ -99,7 +100,7 @@ export function newGame({cpu=false,minutes=10,decks={},collapse=false,cpuDifficu
   }
   for(const [x,y,side,type] of [[1,1,'w','R'],[7,1,'w','B'],[1,7,'b','B'],[7,7,'b','R']])board[index({size:9},x,y)]={side,type,promoted:false};
   const now=Date.now(),timeMs=Math.max(1,Math.min(60,Number(minutes)||10))*60000;
-  const s={id:randomUUID(),size:9,mode:collapse?'collapse':'normal',chaos:{rules:{},terrain:{},counters:{},pendingBonus:{},kingGuard:{}},board,hands,cards:initCards(decks),movesLeft:1,turn:'b',status:'playing',winner:null,reason:null,revision:0,cpu:Boolean(cpu),cpuDifficulty:['easy','normal','hard'].includes(cpuDifficulty)?cpuDifficulty:'normal',cpuThinkMs:Math.max(800,Math.min(5000,Number(cpuThinkMs)||2400)),cpuReadyAt:null,cpuStepCount:0,remaining:{b:timeMs,w:timeMs},turnStartedAt:now,history:[],log:[],comboEvents:[],createdAt:now};
+  const s={id:randomUUID(),size:9,mode:collapse?'collapse':'normal',chaos:{rules:{},terrain:{},counters:{},pendingBonus:{},kingGuard:{}},board,hands,scores:{b:0,w:0},round:1,cards:initCards(decks),movesLeft:1,turn:'b',status:'playing',winner:null,reason:null,revision:0,cpu:Boolean(cpu),cpuDifficulty:['easy','normal','hard'].includes(cpuDifficulty)?cpuDifficulty:'normal',cpuThinkMs:Math.max(800,Math.min(5000,Number(cpuThinkMs)||2400)),cpuReadyAt:null,cpuStepCount:0,remaining:{b:timeMs,w:timeMs},turnStartedAt:now,history:[],log:[],comboEvents:[],createdAt:now};
   s.history.push(key(s));return s;
 }
 export function remainingMs(s,now=Date.now()){return {b:Math.max(0,s.remaining.b-(s.status==='playing'&&s.turn==='b'?now-s.turnStartedAt:0)),w:Math.max(0,s.remaining.w-(s.status==='playing'&&s.turn==='w'?now-s.turnStartedAt:0))};}
@@ -129,13 +130,13 @@ export function applyAction(s,action,now=Date.now()){
   beginEffectAction(n);
   n.lastAction=legal;
   if(legal.kind==='move')pieceMoved(n,side,p.type,legal.from,legal.to);
-  if(victim)emitEffect(n,'ON_PIECE_CAPTURED',{side,defender:victim.side,pieceType:victim.type,to:legal.to});
+  if(victim){awardPiecePoints(n,side,victim.side,victim.type);emitEffect(n,'ON_PIECE_CAPTURED',{side,defender:victim.side,pieceType:victim.type,to:legal.to});}
   n.remaining=remainingMs(s,now);n.movesLeft=(s.movesLeft||1)-1;n.turn=n.movesLeft>0?side:opposite(side);n.turnStartedAt=now;n.revision=s.revision+1;
   n.log.push(`${side==='b'?'先手':'後手'} ${legal.kind==='drop'?GLYPHS[legal.type]+'打':(p.promoted?PROMOTED[p.type]:GLYPHS[p.type])+(legal.promote?'成':'')} ${Math.floor(legal.to/sizeOf(n))+1}段${legal.to%sizeOf(n)+1}筋`);
   if(n.turn===side&&!legalActions(n).length){n.turn=opposite(side);n.movesLeft=0;n.log.push('追加行動できる手がないため手番を終了');}
   const defending=opposite(side),defenderState={...n,turn:defending};
   if(!legalActions(defenderState).length){n.status='finished';n.reason=inCheck(n,defending)?'詰み':'合法手なし';n.winner=side;n.log.push(`${side==='b'?'先手':'後手'}の勝ち`);}
-  else if(n.turn!==side){emitEffect(n,'ON_TURN_END',{side});resolveChaosTurnEnd(n,side);n.movesLeft=1;startTurnCards(n);n.history.push(key(n));if(n.history.filter(v=>v===n.history.at(-1)).length>=4){n.status='finished';n.reason='千日手';n.winner=null;n.log.push('千日手で引き分け');}}
+  else if(n.turn!==side){emitEffect(n,'ON_TURN_END',{side});resolveChaosTurnEnd(n,side);n.movesLeft=1;if(side==='w'){if(n.round>=ROUND_LIMIT)finishByPoints(n);else n.round++;}if(n.status==='playing'){startTurnCards(n);n.history.push(key(n));if(n.history.filter(v=>v===n.history.at(-1)).length>=4){n.status='finished';n.reason='千日手';n.winner=null;n.log.push('千日手で引き分け');}}}
   n.undoSnapshot=n.turn===side&&n.status==='playing'?clone(s):undefined;
   n.comboEvents=[];
   return n;

@@ -2,3 +2,22 @@
 .cards-panel .hand-card{touch-action:none}
 .new-game .cpu-option{display:flex;flex-direction:column;align-items:stretch;gap:6px}.new-game .cpu-option[hidden]{display:none}.new-game .cpu-option select{width:100%;min-width:0;max-width:100%;text-overflow:ellipsis}
 .chaos-admin{margin:24px auto;padding:24px;max-width:1180px;border:1px solid #a86bdb;border-radius:18px;background:#1b1630;color:#f7efff}.chaos-admin[hidden]{display:none}.chaos-admin-row{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin:14px 0}.chaos-admin-row label{display:flex;flex-direction:column;gap:5px;min-width:150px;flex:1}.chaos-admin-row input,.chaos-admin-row select{width:100%;min-width:0;padding:10px;border-radius:8px;background:#110f20;color:#fff;border:1px solid #8a70a9}.chaos-admin-row button{padding:10px 18px}.chaos-admin p{line-height:1.5}
+#roundInfo{display:inline-flex;align-items:center;padding:7px 11px;border:1px solid #8660b3;border-radius:999px;background:#211735;color:#f8e8ff;font-size:.84rem;font-weight:800;white-space:nowrap}#roundInfo[hidden]{display:none}@media(max-width:720px){#roundInfo{white-space:normal;font-size:.75rem}}
+
+/* Cosmetic card frames. These classes do not participate in card rules. */
+.collection-card{flex-wrap:wrap}
+.collection-skins{display:flex;flex-wrap:wrap;gap:5px;width:100%;padding-top:5px}
+.collection-skins .skin-choice{font-size:12px;padding:5px 8px;min-height:30px}
+.hand-card.skin-hologram,.skin-choice.skin-hologram{border-color:#8ef7ff;box-shadow:0 0 16px #7df5ff99,inset 0 0 13px #8ef7ff44}
+.hand-card.skin-gold,.skin-choice.skin-gold{border-color:#ffd968;box-shadow:0 0 17px #ffcd5e99,inset 0 0 12px #ffe28a55}
+.hand-card.skin-rainbow,.skin-choice.skin-rainbow{border-color:#ec7fff;box-shadow:0 0 8px #f96ca8,0 0 16px #77ddff,inset 0 0 10px #99ffaa77}
+.hand-card.skin-glitch,.skin-choice.skin-glitch{border-color:#ff4aac;box-shadow:3px 0 #36f6ff,-3px 0 #ff4aac}
+.motion-card-summon{position:fixed;z-index:150;left:50%;top:50%;width:min(30vw,190px);min-width:130px;aspect-ratio:3/4;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:12px;border:5px solid #ae8fd4;border-radius:14px;background:linear-gradient(145deg,#2e2454,#090d20);color:#fff5dc;text-align:center;pointer-events:none;box-shadow:0 0 35px #cc8bff,0 22px 65px #000b;transform-style:preserve-3d;animation:cardSummon 1.25s ease-in-out forwards}
+.motion-card-summon img{width:100%;height:72%;object-fit:cover;border-radius:6px;backface-visibility:visible}
+.motion-card-summon strong{font-size:clamp(13px,2vw,20px);line-height:1.15;text-shadow:0 2px 4px #000}
+.motion-card-summon.skin-hologram{border-color:#9df8ff;background:linear-gradient(130deg,#315f80,#332d80,#6bc8c4);box-shadow:0 0 40px #71eaff,0 0 70px #b489ff}
+.motion-card-summon.skin-gold{border-color:#ffe47d;background:linear-gradient(130deg,#4b3410,#9d6b1d,#34200c);box-shadow:0 0 40px #ffc949,0 0 70px #ffab3f}
+.motion-card-summon.skin-rainbow{border-color:#ffa5f5;background:linear-gradient(130deg,#6436a0,#1d7898,#397843,#ad593d);box-shadow:0 0 25px #ff76ca,0 0 45px #87e8ff,0 0 70px #c3ff81}
+.motion-card-summon.skin-glitch{border-color:#f852b3;background:repeating-linear-gradient(150deg,#201333 0 12px,#173b59 12px 17px,#4d1941 17px 20px);box-shadow:6px 0 #50efff,-6px 0 #f852b3,0 0 35px #ec3fc0}
+@keyframes cardSummon{0%{opacity:0;transform:translate(-50%,-50%) scale(.1) rotateY(-540deg) rotateZ(-35deg)}27%{opacity:1;transform:translate(-50%,-50%) scale(1.25) rotateY(-180deg) rotateZ(12deg)}64%{opacity:1;transform:translate(-50%,-50%) scale(1) rotateY(0) rotateZ(-4deg)}85%{opacity:1;transform:translate(-50%,-50%) scale(1.1) rotateY(12deg) rotateZ(0)}100%{opacity:0;transform:translate(-50%,-60%) scale(1.5) rotateY(25deg)}}
+@media(prefers-reduced-motion:reduce){.motion-card-summon{animation:none;transform:translate(-50%,-50%)}}

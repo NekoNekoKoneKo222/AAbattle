@@ -6,6 +6,14 @@ import { CARD_CATALOG, COMBOS, DEFAULT_DECK, validateDeck, canActivate, combosFo
 const at=(x,y)=>y*9+x;
 const setup=()=>{const s=newGame();s.board.fill(null);s.board[at(4,8)]={side:'b',type:'K',promoted:false};s.board[at(4,0)]={side:'w',type:'K',promoted:false};s.board[at(0,2)]={side:'w',type:'P',promoted:false};s.cards.b.deck=[];s.cards.w.deck=[];s.cards.b.hand=[];s.cards.w.hand=[];s.cards.b.cp=10;s.cards.w.cp=10;s.history=[];return s;};
 
+test('final four rounds block revival and award points only for destroyed enemy pieces',()=>{
+  let s=setup();s.round=16;s.cards.b.hand=['avada'];s.cards.w.equipment=[{id:'immortal',uses:0,usedTurn:-1,revived:false}];
+  const saved=applyAction(s,{kind:'card',cardId:'avada',target:at(0,2)});assert.equal(saved.board[at(0,2)].type,'P');assert.equal(saved.scores.b,0);
+  s=setup();s.round=17;s.cards.b.hand=['avada'];s.cards.w.equipment=[{id:'immortal',uses:0,usedTurn:-1,revived:false}];
+  const destroyed=applyAction(s,{kind:'card',cardId:'avada',target:at(0,2)});assert.equal(destroyed.board[at(0,2)],null);assert.equal(destroyed.scores.b,1);assert.equal(destroyed.cards.w.equipment[0].revived,false);
+  s=setup();s.round=17;s.cards.b.hand=['recycle'];s.cards.b.grave=['grant'];assert.throws(()=>applyAction(s,{kind:'card',cardId:'recycle'}),/復活禁止/);
+});
+
 test('starter deck defines working cards and combo data',()=>{
   const s=newGame();assert.equal(Object.keys(CARD_CATALOG).length,90);assert.equal(s.cards.b.deck.length+s.cards.b.hand.length,20);assert.ok(COMBOS.some(c=>c.id==='eternal-dobby'));
   const publicView=view(s);assert.ok(!publicView.cards.deck);assert.ok(!publicView.cards.w?.hand);assert.equal(publicView.cards.currentHand.length,4);

@@ -36,3 +36,22 @@ test('mandatory promotion and pawn-drop mate are enforced',()=>{
   const mate=blank();mate.board[at(3,1)]={side:'b',type:'R',promoted:false};mate.board[at(5,1)]={side:'b',type:'R',promoted:false};mate.board[at(2,2)]={side:'b',type:'G',promoted:false};mate.board[at(6,2)]={side:'b',type:'G',promoted:false};mate.hands.b.P=1;
   assert.ok(!legalActions(mate).some(a=>a.kind==='drop'&&a.type==='P'&&a.to===at(4,1)));
 });
+
+test('capture points use the requested values without changing promotion or hands',()=>{
+  const s=blank();s.board[at(0,3)]={side:'b',type:'P',promoted:false};s.board[at(0,2)]={side:'w',type:'S',promoted:true};
+  const next=applyAction(s,{kind:'move',from:at(0,3),to:at(0,2),promote:false});
+  assert.deepEqual(next.scores,{b:3,w:0});assert.equal(next.hands.b.S,1);assert.deepEqual(s.scores,{b:0,w:0});
+});
+
+test('a round advances after both sides finish, including extra moves',()=>{
+  let s=blank();s.round=16;s.turn='w';s.movesLeft=2;
+  s=applyAction(s,{kind:'move',from:at(4,0),to:at(3,0),promote:false});assert.equal(s.round,16);assert.equal(s.turn,'w');
+  s=applyAction(s,{kind:'move',from:at(3,0),to:at(2,0),promote:false});assert.equal(s.round,17);assert.equal(s.turn,'b');
+});
+
+test('round 20 ends after the second player and compares points; a tie draws',()=>{
+  const s=blank();s.round=20;s.turn='w';s.scores={b:7,w:3};
+  const won=applyAction(s,{kind:'move',from:at(4,0),to:at(3,0),promote:false});assert.equal(won.status,'finished');assert.equal(won.winner,'b');assert.equal(won.round,20);assert.equal(won.reason,'20ラウンド終了・ポイント判定');
+  assert.throws(()=>applyAction(won,{kind:'move',from:at(4,8),to:at(3,8),promote:false}),/終了/);
+  s.scores={b:7,w:7};const draw=applyAction(s,{kind:'move',from:at(4,0),to:at(3,0),promote:false});assert.equal(draw.winner,null);
+});

@@ -1,4 +1,5 @@
 import { emitEffect } from './chaos-effects.js';
+import { awardPiecePoints } from './chaos-rounds.js';
 
 const fail=message=>{throw new Error(message);};
 const other=side=>side==='b'?'w':'b';
@@ -16,7 +17,7 @@ export function ruleActive(s,name,side){const rule=s.chaos?.rules?.[ruleKey(name
 export function setRule(s,name,side,turns=2){s.chaos.rules[ruleKey(name,side)]={expiresOn:s.cards[side].turnSerial+turns+(side!==s.turn?1:0)};emitEffect(s,'ON_RULE_CHANGED',{side,rule:name});}
 export function terrainAt(s,i){const terrain=s.chaos?.terrain?.[i];const serial=s.cards.b.turnSerial+s.cards.w.turnSerial;return terrain&&terrain.expiresOn>serial?terrain:null;}
 function placeTerrain(s,i,kind){empty(s,i);s.chaos.terrain[i]={kind,expiresOn:s.cards.b.turnSerial+s.cards.w.turnSerial+3};s.log.push(`${kind==='wall'?'壁':kind==='hole'?'穴':'バナナの皮'}を配置`);}
-function destroyUnprotected(s,i,source){const piece=s.board[i];if(!piece||piece.type==='K')return false;s.board[i]=null;emitEffect(s,'ON_PIECE_DESTROYED',{side:piece.side,attacker:source,target:i,pieceType:piece.type});return true;}
+function destroyUnprotected(s,i,source){const piece=s.board[i];if(!piece||piece.type==='K')return false;s.board[i]=null;awardPiecePoints(s,source,piece.side,piece.type);emitEffect(s,'ON_PIECE_DESTROYED',{side:piece.side,attacker:source,target:i,pieceType:piece.type});return true;}
 function area(s,target,radius,predicate,remove){if(!valid(s,target))fail('対象マスが不正です。');const [cx,cy]=xy(s,target);let count=0;for(let i=0;i<s.board.length;i++){const [x,y]=xy(s,i);if(Math.max(Math.abs(x-cx),Math.abs(y-cy))<=radius&&predicate(s.board[i],i)){remove(i);count++;}}if(!count)fail('範囲に対象がありません。');}
 function rearrange(s,transform){const old=s.board,newBoard=Array(old.length).fill(null);for(let i=0;i<old.length;i++)if(old[i]?.type==='K')newBoard[i]=old[i];for(let i=0;i<old.length;i++){const piece=old[i];if(!piece||piece.type==='K')continue;const to=transform(i);const slot=!newBoard[to]?to:!newBoard[i]?i:newBoard.findIndex(p=>!p);if(slot>=0)newBoard[slot]=piece;}s.board=newBoard;}
 function expand(s){if(size(s)>=11)fail('盤面はすでに11×11です。');const oldSize=size(s),nextSize=11,board=Array(121).fill(null),terrain={};for(let i=0;i<s.board.length;i++){const [x,y]=xy(s,i),next=(y+1)*nextSize+x+1;board[next]=s.board[i];if(s.chaos.terrain[i])terrain[next]=s.chaos.terrain[i];}s.board=board;s.size=nextSize;s.chaos.terrain=terrain;s.lastAction=null;}

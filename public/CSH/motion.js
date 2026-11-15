@@ -2,7 +2,7 @@ const GLYPHS={K:'王',R:'飛',B:'角',G:'金',S:'銀',N:'桂',L:'香',P:'歩'};
 const PROMOTED={R:'龍',B:'馬',S:'全',N:'圭',L:'杏',P:'と'};
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
-export function createMotionPlayer({board,cardDetails,sound,reducedMotion}){
+export function createMotionPlayer({board,cardDetails,sound,reducedMotion,skinForEvent}){
   let lastGame='',lastRevision=-1,chain=Promise.resolve(),generation=0;
   const reduced=()=>reducedMotion?.()??window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   function square(index){return Number.isInteger(index)?board.children[index]||null:null;}
@@ -11,12 +11,12 @@ export function createMotionPlayer({board,cardDetails,sound,reducedMotion}){
     const point=center(index);if(!point)return;
     const ring=document.createElement('span');ring.className=`motion-impact motion-${tone}`;ring.style.left=`${point.x}px`;ring.style.top=`${point.y}px`;ring.style.width=`${point.width*1.3}px`;ring.style.height=`${point.height*1.3}px`;document.body.append(ring);setTimeout(()=>ring.remove(),reduced()?120:520);
   }
-  function label(id){const card=cardDetails?.(id);if(!card)return;const rect=board.getBoundingClientRect(),el=document.createElement('div');el.className='motion-card-label';el.style.left=`${rect.left+rect.width/2}px`;el.style.top=`${rect.top+Math.min(80,rect.height/5)}px`;if(card.imagePath){const art=document.createElement('img');art.src=card.imagePath;art.alt='';el.append(art);}const title=document.createElement('strong');title.textContent=card.name;el.append(title);document.body.append(el);setTimeout(()=>el.remove(),reduced()?180:900);}
+  function label(event){const card=cardDetails?.(event.cardId);if(!card)return;const selected=skinForEvent?.(event)||'default',skin=['hologram','gold','rainbow','glitch'].includes(selected)?selected:'default';const el=document.createElement('div');el.className=`motion-card-summon skin-${skin}`;el.setAttribute('role','img');el.setAttribute('aria-label',`${card.name}を使用`);if(card.imagePath){const art=document.createElement('img');art.src=card.imagePath;art.alt='';el.append(art);}const title=document.createElement('strong');title.textContent=card.name;el.append(title);document.body.append(el);setTimeout(()=>el.remove(),reduced()?250:1300);}
   function boardEffect(kind){if(reduced())return;const effect=document.createElement('span');effect.className=`motion-board-effect motion-board-${kind}`;board.parentElement?.append(effect);setTimeout(()=>effect.remove(),700);}
   async function animate(event,token){
     if(token!==generation||!board.isConnected||document.hidden)return;
     const tone=event.fx|| (event.kind==='card'||event.kind==='activate'?'card':event.capture?'capture':event.promoted?'promote':'move');
-    if(event.kind==='card'||event.kind==='activate')label(event.cardId);
+    if(event.kind==='card'||event.kind==='activate')label(event);
     if(event.fx==='rule'||event.fx==='steal')boardEffect(event.fx);
     if(event.kind==='move'||event.kind==='drop'||Number.isInteger(event.from)&&Number.isInteger(event.to)){
       const end=center(event.to),start=event.kind==='drop'?end&&{...end,y:end.y-end.height}:center(event.from);
