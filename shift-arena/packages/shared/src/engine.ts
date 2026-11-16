@@ -189,7 +189,7 @@ export function findAutoAimTarget(g:GameState,p:Fighter,forUltimate=false):[numb
 function move(g:GameState,p:Fighter,input:Input){if(p.hp<=0)return;const c=characterById(p.character),
   overdriveReady=p.powerLevel>=11&&p.overdriveCharge>=100&&p.overdriveTime<=0;
   if(input.overdrive&&overdriveReady){p.overdriveTime=6;p.overdriveCharge=0;event(g,'overdrive',p.x,p.z,undefined,p.team,p.id);}
-  const[dx,dz]=length(input.mx,input.mz)>1?norm(input.mx,input.mz):[input.mx,input.mz];const speed=c.moveSpeed*(p.gear1==='sun_stride'||p.gear2==='sun_stride'?1.05:1)*(p.overdriveTime>0?1.14:1)*(p.slow>0?.58:1)*(p.speedBoost>0?1.22:1)*(g.map.zones.some(z=>z.kind==='speed'&&inZone(p,z))?1.25:1);p.vx=dx*speed;p.vz=dz*speed; // Stop immediately when neutral.const nx=p.x+p.vx*DT,nz=p.z+p.vz*DT;if(!solidAt(g.map,nx,p.z))p.x=nx;if(!solidAt(g.map,p.x,nz))p.z=nz;const [ax,az]=norm(input.ax,input.az);if(length(input.ax,input.az)>.1){p.ax=ax;p.az=az;}if(input.attack){
+  const[dx,dz]=length(input.mx,input.mz)>1?norm(input.mx,input.mz):[input.mx,input.mz];const speed=c.moveSpeed*(p.gear1==='sun_stride'||p.gear2==='sun_stride'?1.05:1)*(p.overdriveTime>0?1.14:1)*(p.slow>0?.58:1)*(p.speedBoost>0?1.22:1)*(g.map.zones.some(z=>z.kind==='speed'&&inZone(p,z))?1.25:1);p.vx=dx*speed;p.vz=dz*speed;const nx=p.x+p.vx*DT,nz=p.z+p.vz*DT;if(!solidAt(g.map,nx,p.z))p.x=nx;if(!solidAt(g.map,p.x,nz))p.z=nz;const [ax,az]=norm(input.ax,input.az);if(length(input.ax,input.az)>.1){p.ax=ax;p.az=az;}if(input.attack){
     if(input.autoAim){const direction=findAutoAimTarget(g,p);if(direction){p.ax=direction[0];p.az=direction[1];}}
     fire(g,p,p.ax,p.az,input.autoAim?1:input.aimDistance);
   }
