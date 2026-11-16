@@ -94,3 +94,50 @@ test('party invites, same-team membership, capacity and retention', () => {
   manager.leave(bob);
   assert.equal(manager.view(alice.id).party.members.length, 2);
 });
+
+
+test('solar tutorial and beginner hero may be claimed only once',async()=>{
+  const store=new ShiftStore(),alice=user('SunLearner');
+  await assert.rejects(store.beginnerCharacter(alice,'jin'),/チュートリアル/);
+  const initial=await store.getProfile(alice);
+  assert.equal(initial.economy.beginner_claimed,false);
+  await store.completeTutorial(alice);
+  const once=await store.getProfile(alice);
+  assert.equal(once.economy.coins,initial.economy.coins+100);
+  await store.completeTutorial(alice);
+  const twice=await store.getProfile(alice);
+  assert.equal(twice.economy.coins,once.economy.coins);
+  const claimed=await Promise.allSettled([store.beginnerCharacter(alice,'jin'),store.beginnerCharacter(alice,'gald')]);
+  assert.equal(claimed.filter(x=>x.status==='fulfilled').length,1);
+  assert.equal((await store.getProfile(alice)).owned_characters.length,2);
+  await assert.rejects(store.beginnerCharacter(alice,'bom'),/受け取り済み/);
+});
+test('sun power and coins are charged atomically for level upgrades',async()=>{
+  const store=new ShiftStore(),alice=user('PowerLearner');
+  let p=await store.getProfile(alice);
+  assert.equal(p.economy.levels.rei,undefined);
+  await store.upgradeHero(alice,'rei');
+  p=await store.getProfile(alice);
+  assert.equal(p.economy.levels.rei,2);
+  assert.equal(p.economy.coins,215);
+  assert.equal(p.economy.sun_power,120);
+  await assert.rejects(store.upgradeHero(alice,'frost'),/未所持/);
+  await store.withProfile(alice,x=>{x.economy.coins=0;});
+  await assert.rejects(store.upgradeHero(alice,'rei'),/不足/);
+  assert.equal((await store.getProfile(alice)).economy.levels.rei,2);
+});
+test('drops are server rolled and paid solar skins use only stored diamonds',async()=>{
+  const store=new ShiftStore(),alice=user('DropLearner');
+  await store.getProfile(alice);
+  const opened=await store.openSunDrop(alice,'sun');
+  assert.equal(opened.rewards.length,1);
+  await assert.rejects(store.openSunDrop(alice,'sun'),/ありません/);
+  await assert.rejects(store.buySunSkin(alice,'rei'),/不足/);
+  await store.withProfile(alice,x=>{x.economy.diamonds=60;});
+  await store.buySunSkin(alice,'rei');
+  await store.equipMasterySkin(alice,'rei','sun_skin');
+  const p=await store.getProfile(alice);
+  assert.equal(p.economy.diamonds,0);
+  assert.equal(p.mastery.rei.equipped_skin,'sun_skin');
+  await assert.rejects(store.buySunSkin(alice,'rei'),/購入済み/);
+});
