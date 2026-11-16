@@ -3,6 +3,7 @@ import { awardPiecePoints } from './chaos-rounds.js';
 
 const fail=message=>{throw new Error(message);};
 const other=side=>side==='b'?'w':'b';
+const hasAwakened=(s,side,id)=>s.onlineMode!=='ranked'&&s.settings?.cardPool!=='ranked'&&s.awakened?.[side]?.includes(id)&&!s.cards[side].awakenedUsed?.includes(id);
 const size=s=>s.size||9;
 const valid=(s,i)=>Number.isInteger(i)&&i>=0&&i<s.board.length;
 const xy=(s,i)=>[i%size(s),Math.floor(i/size(s))];
@@ -59,7 +60,7 @@ export function resolveMemeCard(s,card,action,ops){
     case 'terrain-random':placeTerrain(s,to,random(['wall','hole','banana']));break;
     case 'rule-gravity':setRule(s,'gravity',side,2);setRule(s,'gravity',opponent,2);break;
     case 'rule-ignore':setRule(s,'ignore',side,2);break;
-    case 'shogi-over':{if(board.filter(p=>p?.side===opponent).length>3)fail('相手の盤上駒が3体以下の場合に使えます。');s.status='finished';s.winner=side;s.reason='将棋終了のお知らせ';break;}
+    case 'shogi-over':{if(board.filter(p=>p?.side===opponent).length>(hasAwakened(s,side,card.id)?4:3))fail('相手の盤上駒が3体以下（覚醒時4体以下）の場合に使えます。');s.status='finished';s.winner=side;s.reason='将棋終了のお知らせ';break;}
     case 'rule-pawn-gold':setRule(s,'pawn-gold',side,2);setRule(s,'pawn-gold',opponent,2);break;
     case 'rule-king-dash':setRule(s,'king-dash',side,2);break;
     case 'rule-all-rooks':setRule(s,'all-rooks',side,2);break;
@@ -83,7 +84,7 @@ export function resolveMemeCard(s,card,action,ops){
     case 'assemble':{let count=0;for(const type of ['R','B','G','S','N','L','P'])while(s.hands[side][type]&&count<3){const options=board.map((p,i)=>!p&&!terrainAt(s,i)&&(side==='b'?Math.floor(i/size(s))>=size(s)-3:Math.floor(i/size(s))<=2)?i:-1).filter(i=>i>=0);if(!options.length)break;const i=options[0];board[i]={side,type,promoted:false};s.hands[side][type]--;count++;}if(!count)fail('打てる持ち駒がありません。');break;}
     case 'game-broken':for(const rule of ['pawn-gold','free-promote','gravity']){setRule(s,rule,side,2);if(rule!=='free-promote')setRule(s,rule,opponent,2);}break;
     case 'avada-ex':{const p=enemy(s,side,to,true);if(p.type==='K'){board[to]=null;s.log.push('王将を直接破壊した');}else ops.destroy(s,side,to);break;}
-    case 'forced-ending':{const ownCount=board.filter(p=>p?.side===side).length,enemyCount=board.filter(p=>p?.side===opponent).length;s.status='finished';s.winner=ownCount===enemyCount?null:ownCount>enemyCount?side:opponent;s.reason='強制エンディング';break;}
+    case 'forced-ending':{const ownCount=board.filter(p=>p?.side===side).length,enemyCount=board.filter(p=>p?.side===opponent).length;s.status='finished';const judgedOwn=ownCount+(hasAwakened(s,side,card.id)?1:0);s.winner=judgedOwn===enemyCount?null:judgedOwn>enemyCount?side:opponent;s.reason='強制エンディング';break;}
     case 'admin-power':{if(action.choice==='blast'){const target=board.findIndex(p=>p?.side===opponent&&p.type!=='K');if(target<0)fail('破壊できる敵駒がありません。');ops.destroy(s,side,target);}else if(action.choice==='cp')ownCards.cp=Math.min(10,ownCards.cp+5);else if(action.choice==='draw'){for(let i=0;i<3;i++)ops.draw(ownCards);}else fail('破壊・CP・ドローから選んでください。');break;}
     default:fail('未対応のカード効果です。');
   }
