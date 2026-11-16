@@ -21,10 +21,28 @@ export interface MapDefinition { id:string; name:string; theme:number; ground:nu
 const box=(id:string,x:number,z:number,w:number,h:number,hp=0,kind:Wall['kind']='wall'):Wall=>({id,x,z,w,h,hp,kind});
 const grass=(x:number,z:number,radius:number):Zone=>({x,z,radius,kind:'bush'});
 const base={width:26,height:18,spawn:[[[3,5],[3,9],[3,13]],[[23,5],[23,9],[23,13]]] as MapDefinition['spawn'],goal:[13,9] as [number,number]};
-export const maps:MapDefinition[]=[
+const compactMaps:MapDefinition[]=[
   { ...base,id:'park',name:'グリーンパーク',theme:0x113c3b,ground:0x4f9d70,walls:[box('p1',7,5,1.5,3),box('p2',19,5,1.5,3),box('p3',7,13,1.5,3),box('p4',19,13,1.5,3),box('pc1',11,4,1.4,1.4,1200,'crate'),box('pc2',15,4,1.4,1.4,1200,'crate'),box('pc3',11,14,1.4,1.4,1200,'crate'),box('pc4',15,14,1.4,1.4,1200,'crate')],zones:[grass(6,9,2),grass(20,9,2),grass(12,5,1.5),grass(14,13,1.5),{x:13,z:9,radius:2,kind:'water'}] },
   { ...base,id:'factory',name:'ネオンファクトリー',theme:0x1c274b,ground:0x536382,walls:[box('f1',8,3,1.3,5),box('f2',18,3,1.3,5),box('f3',8,15,1.3,5),box('f4',18,15,1.3,5),box('fc1',12,6,1.3,1.4,1300,'crate'),box('fc2',14,12,1.3,1.4,1300,'crate')],zones:[{x:7,z:9,radius:2.1,kind:'conveyor'},{x:19,z:9,radius:2.1,kind:'conveyor'},{x:13,z:3,radius:2,kind:'speed'},{x:13,z:15,radius:2,kind:'speed'}] },
   { ...base,id:'canyon',name:'クリスタルキャニオン',theme:0x362344,ground:0x9777ac,walls:[box('c1',8,5,2,2.6),box('c2',18,5,2,2.6),box('c3',8,13,2,2.6),box('c4',18,13,2,2.6),box('cc1',13,3,1.5,1.5,1000,'crate'),box('cc2',13,15,1.5,1.5,1000,'crate')],zones:[grass(5.5,9,1.8),grass(20.5,9,1.8),{x:13,z:9,radius:2.5,kind:'speed'}] }
 ];
+/** Extended 36×26 arenas with multiple flanking routes for ten independent fighters. */
+export const maps:MapDefinition[]=compactMaps.map(m=>({
+  ...m,width:36,height:26,goal:[18,13] as [number,number],
+  spawn:[[[4,5],[4,13],[4,21]],[[32,5],[32,13],[32,21]]] as MapDefinition['spawn'],
+  walls:[
+    ...m.walls.map(w=>({...w,x:w.x+5,z:w.z+4})),
+    box(m.id+'-outer-a',9,4,2.4,2.4),
+    box(m.id+'-outer-b',27,4,2.4,2.4),
+    box(m.id+'-outer-c',9,22,2.4,2.4),
+    box(m.id+'-outer-d',27,22,2.4,2.4),
+    box(m.id+'-mid-a',4,10,1.3,2.7,900,'crate'),
+    box(m.id+'-mid-b',32,16,1.3,2.7,900,'crate')
+  ],
+  zones:[
+    ...m.zones.map(z=>({...z,x:z.x+5,z:z.z+4})),
+    grass(6,4,1.4),grass(30,22,1.4),grass(6,22,1.4),grass(30,4,1.4)
+  ]
+}));
 export const mapById=(id:string)=>maps.find(m=>m.id===id)||maps[0];
 
