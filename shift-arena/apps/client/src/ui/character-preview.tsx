@@ -13,6 +13,13 @@ export function CharacterPreview({id,skin}:{id:string;skin?:'skin'|'master_skin'
     renderer.setClearColor(0x000000,0);
     renderer.outputColorSpace=THREE.SRGBColorSpace;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+    // Canvas backing pixels can exceed its CSS container on high-DPI displays.
+    // Ensure the 3D preview cannot overflow or intercept controls beside it.
+    renderer.domElement.style.display='block';
+    renderer.domElement.style.width='100%';
+    renderer.domElement.style.height='100%';
+    renderer.domElement.style.pointerEvents='none';
+    renderer.domElement.setAttribute('aria-hidden','true');
     element.append(renderer.domElement);
     const scene=new THREE.Scene();
     const camera=new THREE.PerspectiveCamera(35,1,.1,30);
@@ -58,5 +65,5 @@ export function CharacterPreview({id,skin}:{id:string;skin?:'skin'|'master_skin'
       renderer.dispose();renderer.domElement.remove();
     };
   },[id,skin]);
-  return <div ref={host} className="character-preview" aria-label={characterById(id).name+'の3Dプレビュー'}/>;
+  return <div ref={host} className="character-preview" aria-label={characterById(id).name+'の3Dプレビュー'} style={{overflow:'hidden',pointerEvents:'none'}}/>;
 }
