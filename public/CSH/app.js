@@ -109,11 +109,26 @@ const onlineLocalRender=render;render=function(){onlineLocalRender();if(game&&!g
 setInterval(async()=>{if(!onlineUser||onlineWs?.readyState===WebSocket.OPEN)return;try{const data=await onlineApi('/me');onlineRoom=data.room;onlineQueue=data.queue;if(data.room?.gameId){const match=await onlineApi(`/games/${data.room.gameId}`);acceptOnlineGame(match);}renderOnline();}catch{}},10000);
 experience=installExperience();
 const detailDialog=document.createElement('dialog');detailDialog.className='card-detail-dialog';detailDialog.innerHTML='<button class="detail-close" type="button" aria-label="閉じる">×</button><div class="detail-art"></div><h2></h2><p class="detail-meta"></p><p class="detail-description"></p>';document.body.append(detailDialog);detailDialog.querySelector('.detail-close').onclick=()=>detailDialog.close();
-function inspectCard(id){const card=catalog[id];if(!card)return;const art=detailDialog.querySelector('.detail-art');art.replaceChildren();if(card.imagePath){const image=document.createElement('img');image.src=card.imagePath;image.alt='';art.append(image);}detailDialog.querySelector('h2').textContent=card.name;detailDialog.querySelector('.detail-meta').textContent=`${card.rarity} · ${card.type} · ${card.cost} CP`;detailDialog.querySelector('.detail-description').textContent=card.description;if(!detailDialog.open)detailDialog.showModal();}
+function inspectCard(id){const card=catalog[id];if(!card)return;const art=detailDialog.querySelector('.detail-art');art.replaceChildren();if(card.imagePath){const image=document.createElement('img');image.src=card.imagePath;image.alt='';art.append(image);}detailDialog.querySelector('h2').textContent=card.name;detailDialog.querySelector('.detail-meta').textContent=`${card.rarity} · ${card.type} · ${card.cost} CP`;detailDialog.querySelector('.detail-description').textContent=card.description+(card.awakeningEffect?'\n\n✦ 覚醒：'+card.awakeningEffect+'（対局中、最初の使用時のみ）':'');if(!detailDialog.open)detailDialog.showModal();}
 const motionPlayer=createMotionPlayer({board:$('board'),cardDetails:id=>catalog[id],sound:tone=>experience.cue(tone),reducedMotion:()=>experience.reducedMotion(),skinForEvent:event=>event.skin||(!game?.online&&event.side==='b'?collectionUI.getEquipped(event.cardId):'default')});
 const chaosLayout=installChaosLayout();
 const boardKeyboard=installBoardKeyboard($('board'),{cancel:()=>{selection=null;render();}});
 const motionRender=render;render=function(){const focus=boardKeyboard.focused();motionRender();chaosLayout.update(game,catalog,selection);const hand=$('cardHand');for(const [index,button] of [...hand.children].entries()){const id=game?.cards?.currentHand?.[index],card=catalog[id];if(!card||!button.classList.contains('hand-card'))continue;if(card.imagePath){const image=document.createElement('img');image.className='hand-art';image.src=card.imagePath;image.alt='';button.prepend(image);}button.classList.add(`skin-${collectionUI.getEquipped(id)}`);const canPlay=!button.disabled;if(!canPlay){button.disabled=false;button.setAttribute('aria-disabled','true');button.classList.add('unavailable');button.onclick=()=>inspectCard(id);}bindCardGestures(button,{inspect:()=>inspectCard(id),drop:square=>{if(!canPlay)return inspectCard(id);chooseCard(id);if(selection?.kind==='card'&&square>=0)tap(square);}});}boardKeyboard.restore(focus);boardKeyboard.sync();motionPlayer.play(game);};
 const roundInfo=document.createElement('span');roundInfo.id='roundInfo';roundInfo.hidden=true;$('status').before(roundInfo);
 const roundRender=render;render=function(){roundRender();roundInfo.hidden=!game;if(!game)return;const last=(game.round||1)>=17;roundInfo.textContent=`${game.round||1}/20ラウンド${last?' · 復活禁止':''} · ▲${game.scores?.b||0}点 / △${game.scores?.w||0}点`;if(last){for(const [i,id] of game.cards.currentHand.entries())if(id==='recycle'){const button=$('cardHand').children[i];if(button){button.classList.add('unavailable');button.setAttribute('aria-disabled','true');button.onclick=()=>notify('17～20ラウンドは復活禁止です。');}}for(const owner of ['b','w'])for(const [i,item] of game.cards.equipment[owner].entries())if(item.id==='immortal'){const label=$(owner==='b'?'equipmentB':'equipmentW').children[i]?.querySelector('em');if(label)label.textContent='復活停止中 · 20ラウンド終了まで';}}};
+const awakeningRender=render;
+render=function(){
+  awakeningRender();
+  if(!game?.cards||!game.awakened)return;
+  const side=ownSide();
+  const unlocked=new Set(game.awakened[side]||[]);
+  const triggered=new Set(game.cards.awakeningTriggered?.[side]||[]);
+  for(const [index,id] of (game.cards.currentHand||[]).entries()){
+    if(!unlocked.has(id))continue;
+    const button=$('cardHand').children[index];if(!button)continue;
+    button.classList.add('awakened-card');
+    const caption=button.querySelector('small');
+    if(caption)caption.textContent+=(triggered.has(id)?' · 覚醒済':' · ✦覚醒可能');
+  }
+};
 onlineInit();
