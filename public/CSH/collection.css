@@ -13,3 +13,16 @@
 .player-card-tile span{font-size:13px;font-weight:700;overflow-wrap:anywhere}.player-card-tile small{color:#ddc6ff}
 .online-player-cards{display:flex;flex-wrap:wrap;gap:7px;margin:7px 0}
 .online-player-cards button{font-size:12px;min-height:34px}
+
+.chaos-progression{margin-top:28px;padding:18px;border:1px solid #59467e;border-radius:14px;background:#201933}
+.chaos-progression h3{margin:12px 0;color:#f2eaff}.chaos-progression p{color:#cbbce8;font-size:.9rem}
+.chaos-progression input[type=search],.chaos-progression select{min-width:0;background:#181428;color:#fff;border:1px solid #7766a2;border-radius:8px;padding:10px}
+.progress-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-top:14px;max-height:460px;overflow-y:auto}
+.progress-card{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#312644;padding:12px;border-radius:10px;border:1px solid #675486}
+.progress-info{display:flex;flex-direction:column;gap:6px;flex:1;min-width:0}
+.progress-info strong{font-size:.87rem;overflow-wrap:anywhere}.progress-info small{color:#c6b7e1}
+.progress-info progress{appearance:auto;width:100%;height:12px;accent-color:#a878f9}
+.progress-card button,.craft-tools button{padding:9px;background:#6d49ad;border-radius:8px;color:white;border:1px solid #a182d9;cursor:pointer;font-weight:650}
+.craft-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px}.craft-tools select{flex:1;min-width:185px}
+.craft-tools span{color:#dbcdf3;font-weight:650}
+@media(max-width:600px){.chaos-progression{padding:12px}.progress-cards{grid-template-columns:1fr}.progress-card{align-items:stretch}.craft-tools{flex-direction:column;align-items:stretch}.craft-tools select{width:100%}}
