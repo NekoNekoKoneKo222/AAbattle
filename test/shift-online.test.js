@@ -38,7 +38,26 @@ test('two browser clients share one server-authoritative 3v3 match',async(t)=>{
   a.send('input',{mx:999,mz:0,ax:1,az:0,attack:false,hp:0,damage:999999});
   const nextState=await updated;
   const player=nextState.players.find(p=>p.id===a.sessionId);
-  assert.equal(player.hp,4200);
+  assert.equal(player.hp,5700);
   assert.ok(Math.abs(player.x-state.players.find(p=>p.id===a.sessionId).x)<1);
 });
 
+
+test('free-for-all fills ten unique slots and keeps online inputs authoritative',async(t)=>{
+  const httpServer=http.createServer((_req,res)=>res.end('ok'));
+  const shift=attachShiftArena(httpServer);
+  httpServer.on('upgrade',(req,socket,head)=>shift.upgrade(req,socket,head));
+  await shift.listen(0);
+  t.after(async()=>{await shift.shutdown();});
+  const port=httpServer.address().port;
+  const client=new Client('ws://127.0.0.1:'+port+'/sam/colyseus');
+  const host=await client.create('shift',{name:'FFA',character:'rei',mode:'ffa',shift:false});
+  t.after(()=>host.leave());
+  const started=next(host,'started');
+  host.send('start');
+  const game=await started;
+  assert.equal(game.mode,'ffa');
+  assert.equal(game.players.length,10);
+  assert.equal(new Set(game.players.map(p=>p.team)).size,10);
+  assert.equal(game.map.width,36);
+});
