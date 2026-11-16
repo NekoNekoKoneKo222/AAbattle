@@ -131,3 +131,41 @@ test('shogi-over awakening can finish when the enemy has four pieces',()=>{
   assert.equal(result.winner,'b');
   assert.equal(result.status,'finished');
 });
+
+test('Avada awakening is not spent when no adjacent enemy pawn exists',()=>{
+  let s=awakened(['avada']);
+  s.cards.b.hand=['avada','avada'];
+  // Eliminate the only immediately adjacent enemy pawn before attacking.
+  s.board[at(1,2)]=null;
+  s=applyAction(s,{kind:'card',cardId:'avada',target:at(0,2)});
+  assert.equal(s.board[at(0,2)],null);
+  assert.equal(s.cards.b.awakenedUsed?.includes('avada'),false);
+  assert.match(s.log.join(' '),/次の使用で再試行/);
+  s.cards.b.cardPlayed=false;s.cards.b.cp=10;
+  s.board[at(1,2)]={side:'w',type:'P',promoted:false};
+  s.board[at(2,2)]={side:'w',type:'P',promoted:false};
+  s=applyAction(s,{kind:'card',cardId:'avada',target:at(1,2)});
+  assert.equal(s.board[at(1,2)],null);
+  assert.equal(s.board[at(2,2)],null);
+  assert.deepEqual(s.cards.b.awakenedUsed,['avada']);
+});
+
+test('Avada awakening requires an adjacent pawn, not a pawn two squares away',()=>{
+  let s=awakened(['avada']);
+  s.cards.b.hand=['avada'];
+  s.board[at(1,2)]=null;
+  s=applyAction(s,{kind:'card',cardId:'avada',target:at(0,2)});
+  assert.ok(s.board[at(2,2)]?.type==='P');
+  assert.ok(!s.cards.b.awakenedUsed?.includes('avada'));
+});
+
+test('Avada awakening does not bypass protections when original attack is blocked',()=>{
+  let s=awakened(['avada']);
+  s.cards.b.hand=['avada'];
+  s.chaos.kingGuard.w=1;
+  s=applyAction(s,{kind:'card',cardId:'avada',target:at(0,2)});
+  assert.equal(s.board[at(0,2)].type,'P');
+  assert.equal(s.board[at(1,2)].type,'P');
+  assert.ok(!s.cards.b.awakenedUsed?.includes('avada'));
+  assert.match(s.log.join(' '),/主攻撃が防がれた/);
+});
