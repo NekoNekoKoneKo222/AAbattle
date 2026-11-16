@@ -42,7 +42,7 @@ export function SolarWallet({profile}:{profile:ShiftProfile|null}){
 const lessons=[
  {title:'移動',text:'PCはWASD、iPadは左スティックで移動。壁の後ろに隠れると攻撃を避けられます。',icon:'move'},
  {title:'通常攻撃と照準',text:'PCはマウス＋左クリック、iPadは右スティック。白い点線は壁で止まる攻撃予測線です。',icon:'target'},
- {title:'必殺技とスキル',text:'攻撃を当ててゲージをため、右クリックで必殺技。Eキーで特殊スキル。iPadは右下ボタンを使います。',icon:'zap'},
+ {title:'必殺技とスキル',text:'攻撃を当ててゲージをため、右クリックで必殺技。Eキーのサンアーツは強化Lv.7で解放。Lv.11ではサンオーバードライブが使えます。',icon:'zap'},
  {title:'シフトと育成',text:'戦場の構造が変化します。コインとサンパワーでキャラを強化し、サンドロップで報酬を獲得。チュートリアル後は10人サバイバルで初優勝すると、ランダムレア度のキャラを1体獲得できます。',icon:'sun'}
 ];
 export function TutorialPage({request,onFinished,onBack}:{request:Request;onFinished:()=>Promise<void>;onBack:()=>void}){

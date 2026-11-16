@@ -26,7 +26,7 @@ export function RoadPage({profile,request,refresh,onBack,onTry}:{profile:ShiftPr
 
 export function LoadoutPage({profile,character,request,refresh,onBack}:{profile:ShiftProfile;character:string;request:Request;refresh:()=>Promise<void>;onBack:()=>void}){
  const options=loadoutOptions[character as CharacterId]||loadoutOptions.rei;
- const saved=profile.loadouts[character]||{skill:options.skills[0].id,passive:options.passives[0].id};
+ const saved=profile.loadouts[character]||{skill:options.skills[0].id,passive:options.passives[0].id,gear1:null,gear2:null};
  const level=powerLevel(profile.economy.levels,character);
  const [skill,setSkill]=useState(saved.skill),[passive,setPassive]=useState(saved.passive);
  const [gear1,setGear1]=useState(saved.gear1||''),[gear2,setGear2]=useState(saved.gear2||''),[message,setMessage]=useState('');

@@ -3,11 +3,11 @@ import type { IncomingMessage, Server as HttpServer } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { Server, Room, type Client, type AuthContext } from '@colyseus/core';
 import { WebSocketTransport } from '@colyseus/ws-transport';
-import { createGame, registerShiftVote, sanitizeInput, stepGame, powerLevel, type GameState, type Input, type Slot, type Mode, type Difficulty, type ShiftKind } from '@shift/shared';
+import { createGame, registerShiftVote, sanitizeInput, stepGame, powerLevel, type GameState, type Input, type Slot, type Mode, type Difficulty, type ShiftKind, type GearId } from '@shift/shared';
 
-interface Guest { sessionId:string; name:string; character:string; team:number; ready:boolean; connected:boolean; accountId?:string; account?:NonNullable<Account>; owned:string[]; loadouts:Record<string,{skill:string;passive:string;gear1?:string|null;gear2?:string|null}>; skins:Record<string,'skin'|'master_skin'|'sun_skin'|null>; levels:Record<string,number>; inputCount:number; }
+interface Guest { sessionId:string; name:string; character:string; team:number; ready:boolean; connected:boolean; accountId?:string; account?:NonNullable<Account>; owned:string[]; loadouts:Record<string,{skill:string;passive:string;gear1?:GearId|null;gear2?:GearId|null}>; skins:Record<string,'skin'|'master_skin'|'sun_skin'|null>; levels:Record<string,number>; inputCount:number; }
 type Account={id:string;username:string}|null;
-type Profile={owned_characters:string[];selected_character:string;loadouts:Record<string,{skill:string;passive:string;gear1?:string|null;gear2?:string|null}>;mastery?:Record<string,{claimed:string[];equipped_skin?:'skin'|'master_skin'|'sun_skin'|null}>;economy?:{tutorial_done?:boolean;beginner_claimed?:boolean;levels?:Record<string,number>;skins?:Record<string,string[]>}};
+type Profile={owned_characters:string[];selected_character:string;loadouts:Record<string,{skill:string;passive:string;gear1?:GearId|null;gear2?:GearId|null}>;mastery?:Record<string,{claimed:string[];equipped_skin?:'skin'|'master_skin'|'sun_skin'|null}>;economy?:{tutorial_done?:boolean;beginner_claimed?:boolean;levels?:Record<string,number>;skins?:Record<string,string[]>}};
 type Services={beginnerWin?:(user:NonNullable<Account>)=>Promise<unknown>;profile:(user:NonNullable<Account>)=>Promise<Profile>;award:(user:NonNullable<Account>,result:{matchId:string;character:string;won:boolean;source:string;seconds:number;kills:number;objective:number;ultimates:number;hits:number;terminal:number})=>Promise<unknown>;presence?:(id:string,event:'connect'|'disconnect'|'playing'|'idle')=>void;sameParty?:(a:string,b:string)=>boolean};
 let resolveAccount:(cookie:string)=>Promise<Account>=async()=>null;
 let services:Services|null=null;
@@ -95,7 +95,7 @@ export class ShiftRoom extends Room {
         if(eligible&&this.beginnerChallenge&&game.mode==='survival'&&
            game.winner===p.team&&p.hp>0&&services.beginnerWin)
           beginner=await services.beginnerWin(guest.account);
-        peer?.send('reward',{...reward,beginner});
+        peer?.send('reward',{...(typeof reward==='object'&&reward!==null?reward:{credited:false}),beginner});
       }catch(error){console.error('SHIFT ARENA reward failed',error);}
     }
   }
