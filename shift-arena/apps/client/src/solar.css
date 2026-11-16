@@ -118,3 +118,29 @@ button.primary:hover,.sun-primary:hover{background:linear-gradient(#fffaa4,#ffce
 @media(max-width:1100px){.dashboard-grid{grid-template-columns:1fr 1fr}.account-card{grid-column:1/-1}.beginner-grid{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:750px){.site-header{justify-content:center;padding:6px}.sun-wallet{order:3;width:100%;justify-content:center}.sun-wallet>span{font-size:12px;padding:4px 8px}.site-header .back-home{display:none}.site-header .header-user{margin-left:auto}.dashboard-grid,.tutorial-card,.power-layout,.sun-drop-grid{grid-template-columns:1fr}.character-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.beginner-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.beginner-hero .beginner-preview{height:170px}.solar-screen{padding:18px 13px 112px}.sun-bottom-nav{gap:2px}.sun-bottom-nav button{min-width:0;font-size:19px;padding:4px 3px}.sun-bottom-nav button span{font-size:10px}.sun-welcome-banner{margin-inline:10px}.tutorial-art{min-height:200px}.tutorial-art .character-preview{height:230px}.power-hero-card .character-preview{height:230px}}
 @media(max-height:540px) and (pointer:coarse){.game-screen .player-hud{font-size:10px}}
+
+/* Unified vector iconography: no platform-specific emoji glyphs. */
+.game-icon{display:inline-block;vertical-align:-.18em;flex-shrink:0;pointer-events:none;stroke:currentColor;fill:none}
+.icon-coin{color:#ffcf4e}.icon-sun{color:#ffce42}.icon-diamond{color:#72eaff}.icon-ticket{color:#e3b6ff}.icon-gold{color:#ffe17b}
+.logo-mark .game-icon{color:#fff8bf;filter:drop-shadow(0 2px 1px #ad6902)}
+.sun-wallet>span{display:inline-flex;align-items:center;gap:7px}
+.sun-wallet .game-icon{width:22px;height:22px;filter:drop-shadow(0 1px 2px #00162c)}
+.sun-bottom-nav button{gap:3px}
+.sun-bottom-nav .game-icon{width:25px;height:25px}
+.sun-bottom-nav button.active .game-icon{color:#523000}
+.tutorial-symbol{display:grid;place-items:center;color:#ffe16b}
+.tutorial-symbol .game-icon{filter:drop-shadow(1px 3px 3px #063364)}
+.solar-screen h1 .game-icon,.solar-screen strong .game-icon{vertical-align:-.1em}
+.sun-drop-card .drop-symbol{display:block;width:clamp(84px,12vw,146px);height:clamp(84px,12vw,146px);margin:12px auto;color:#ffec8a;filter:drop-shadow(0 12px 5px #4623006b)}
+.sun-drop-card.glitch .drop-symbol{color:#e9b6ff;filter:drop-shadow(0 10px 10px #e688ff70)}
+.sun-reveal .reveal-sun{display:block;width:106px;height:106px;margin:auto;color:#ffe68a}
+.reveal-items>div .game-icon{width:28px;height:28px;color:#ffd75e}
+.power-stats .price-pill{align-items:center}
+.power-stats .price-pill span{display:inline-flex;align-items:center;gap:4px}
+.power-stats .price-pill>.game-icon{margin-left:auto}
+.power-hero-card strong{display:block}
+.game-actions .game-icon{vertical-align:middle}
+.match-info em{display:flex;align-items:center;justify-content:center;gap:4px}
+.signal-control button{display:inline-flex;align-items:center;gap:4px}
+.char-stats>.game-icon{vertical-align:-.2em}
+.model-canvas-heading button{display:inline-flex;align-items:center;gap:5px}
