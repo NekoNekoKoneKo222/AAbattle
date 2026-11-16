@@ -66,8 +66,8 @@ test('grant awakening saves delayed recovery instead of immediate CP refunds',()
   assert.equal(s.cards.b.cp,10);
   assert.equal(s.chaos.pendingBonus.b,3);
   assert.deepEqual(s.cards.b.awakenedUsed,['grant']);
-  s=applyAction(s,{kind:'move',from:at(4,8),to:at(3,8)});
-  s=applyAction(s,{kind:'move',from:at(4,0),to:at(3,0)});
+  s=applyAction(s,{kind:'move',from:at(0,6),to:at(0,5)});
+  s=applyAction(s,{kind:'move',from:at(0,2),to:at(0,3)});
   assert.equal(s.cards.b.cp,10);
   assert.equal(s.chaos.pendingBonus.b,undefined);
 });
