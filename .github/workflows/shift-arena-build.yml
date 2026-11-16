@@ -36,6 +36,10 @@ jobs:
         run: npm run build --workspace @shift/shared
       - name: Compile SHIFT ARENA into public/sam
         run: npm run build --workspace @shift/client
+      - name: Build online server
+        run: npm run build --workspace @shift/server
+      - name: Run shared engine and account integration tests
+        run: npm run test --workspace @shift/shared && node --test test/shift*.test.js
       - name: Commit only the generated /sam files
         run: |
           git add -A public/sam
