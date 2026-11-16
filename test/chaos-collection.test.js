@@ -116,6 +116,7 @@ test('card crafting and awakenings validate inventory, shards and required maste
 test('real matches level card mastery and unlock a persistent awakening without touching inventory',async()=>{
   const store=createChaosCollection(),user='alice';
   await store.adminGrant(user,{cardId:'grant',count:20});
+  await store.adminGrant(user,{cardId:'grant',count:5});
   await store.convert(user,'grant','all');
   for(let i=0;i<8;i++){
     await store.settle({
