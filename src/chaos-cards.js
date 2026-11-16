@@ -90,8 +90,9 @@ function equip(s,side,id,action){const p=s.cards[side],slots=s.settings?.slots??
 export function playCard(s,action){const side=s.turn,p=s.cards[side],id=action?.cardId,card=Object.hasOwn(CARD_CATALOG,id)?CARD_CATALOG[id]:null;if(!card||!p.hand.includes(id))fail('手札にないカードです。');if(id==='recycle'&&revivalBlocked(s))fail('17～20ラウンドは復活禁止です。');if(card.allowedModes&&!card.allowedModes.includes(s.mode||'normal'))fail('このカードは完全崩壊モード専用です。');if(s.chaos?.rules?.[`sleep:${side}`]?.expiresOn>p.turnSerial)fail('睡眠中はカードを使用できません。');if(p.cardPlayed)fail('このターンはすでにカードを使いました。');if(p.cp<card.cost)fail('CPが足りません。');
   p.hand.splice(p.hand.indexOf(id),1);
   p.cp-=card.cost;
+  let avadaPrimaryResolved=true;
   if(card.type==='equipment')equip(s,side,id,action);
-  else if(id==='avada'){if(!Number.isInteger(action.target)||s.board[action.target]?.side!==other(side)||s.board[action.target]?.type==='K')fail('敵の王将以外の駒を選んでください。');if(!reflected(s,side))destroyPiece(s,side,action.target);}
+  else if(id==='avada'){if(!Number.isInteger(action.target)||s.board[action.target]?.side!==other(side)||s.board[action.target]?.type==='K')fail('敵の王将以外の駒を選んでください。');avadaPrimaryResolved=!reflected(s,side)&&destroyPiece(s,side,action.target);}
   else if(id==='meteor'){if(!Number.isInteger(action.target)||action.target<0||action.target>=s.board.length)fail('対象マスが不正です。');const width=s.size||9,x=action.target%width,y=Math.floor(action.target/width),targets=[];for(let yy=y-1;yy<=y+1;yy++)for(let xx=x-1;xx<=x+1;xx++){const i=yy*width+xx;if(xx>=0&&xx<width&&yy>=0&&yy<width&&s.board[i]?.side===other(side)&&s.board[i].type!=='K')targets.push(i);}if(!targets.length)fail('範囲に破壊できる駒がありません。');for(const i of targets)destroyPiece(s,side,i);}
   else if(id==='double'){s.movesLeft=Math.min(3,(s.movesLeft||1)+1);emitEffect(s,'ON_RULE_CHANGED',{side,rule:'extra-move'});}
   else if(id==='tax'){const amount=Math.min(2,s.cards[other(side)].cp);s.cards[other(side)].cp-=amount;p.cp=Math.min(10,p.cp+amount);s.log.push(`${side==='b'?'先手':'後手'}が${amount}CPを徴収`);const held=Object.entries(s.hands[other(side)]).filter(([type,count])=>type!=='K'&&count>0);if(held.length){const type=held[Math.floor(Math.random()*held.length)][0];s.hands[other(side)][type]--;s.hands[side][type]++;s.log.push('相手の持ち駒を1枚徴収');}}
@@ -105,7 +106,7 @@ export function playCard(s,action){const side=s.turn,p=s.cards[side],id=action?.
   else if(id==='promote'){const target=action.target,piece=s.board[target];if(!Number.isInteger(target)||target<0||target>=s.board.length||piece?.side!==side||piece.promoted||!['P','L','N','S','B','R'].includes(piece.type))fail('成れる自分の駒を選んでください。');piece.promoted=true;}
   else if(id==='recycle'){if(!p.grave.length||p.hand.length>=7)fail('墓地にカードがないか、手札が満杯です。');p.hand.push(p.grave.splice(Math.floor(Math.random()*p.grave.length),1)[0]);}
   else if(MEME_CARDS[id])resolveMemeCard(s,card,action,{destroy:destroyPiece,draw,reflected,steal,catalog:CARD_CATALOG});
-  p.cardPlayed=true;if(card.type!=='equipment')p.grave.push(id);s.log.push(`${side==='b'?'先手':'後手'}が${card.name}を使用`);applyAwakeningOnPlay(s,side,id,draw,action,{destroy:destroyPiece,catalog:CARD_CATALOG});emitEffect(s,'ON_CARD_PLAYED',{side,cardId:id});
+  p.cardPlayed=true;if(card.type!=='equipment')p.grave.push(id);s.log.push(`${side==='b'?'先手':'後手'}が${card.name}を使用`);if(avadaPrimaryResolved)applyAwakeningOnPlay(s,side,id,draw,action,{destroy:destroyPiece,catalog:CARD_CATALOG});else if(id==='avada'&&s.awakened?.[side]?.includes(id))s.log.push('アバダ・ケダブラ：主攻撃が防がれたため覚醒は未発動');emitEffect(s,'ON_CARD_PLAYED',{side,cardId:id});
 }
 export function activateEquipment(s,action){const side=s.turn,p=s.cards[side],slot=action?.slot;if(!Number.isInteger(slot)||!canActivate(s,side,slot))fail('この装備能力は発動できません。');const item=p.equipment[slot],card=CARD_CATALOG[item.id];
   if(item.id==='dobby')dobby(s,side,action);
