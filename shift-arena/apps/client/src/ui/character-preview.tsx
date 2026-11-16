@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { characterById } from '@shift/shared';
 import { createVoxelHero, poseVoxelHero } from '../game/voxel-heroes';
 
-export function CharacterPreview({id,skin}:{id:string;skin?:'skin'|'master_skin'|null}){
+export function CharacterPreview({id,skin}:{id:string;skin?:'skin'|'master_skin'|'sun_skin'|null}){
   const host=useRef<HTMLDivElement>(null);
   useEffect(()=>{
     const element=host.current;
