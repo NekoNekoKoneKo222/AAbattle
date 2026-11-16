@@ -14,7 +14,7 @@ describe('modes and shifts',()=>{
   it('terminal capture pauses when contested and votes determine the shift',()=>{const g=createGame({mode:'core'});g.players.forEach(p=>{p.bot=false;p.x=p.team===0?g.map.goal[0]:32;p.z=g.map.goal[1];});for(let i=0;i<89;i++)stepGame(g);expect(g.terminal.owner).toBeNull();g.players.find(p=>p.team===1)!.x=g.map.goal[0];for(let i=0;i<15;i++)stepGame(g);expect(g.terminal.owner).toBeNull();g.players.filter(p=>p.team===1).forEach(p=>p.x=32);for(let i=0;i<3;i++)stepGame(g);expect(g.terminal.owner).toBe(0);g.tick=539;stepGame(g);expect(registerShiftVote(g,g.players[0].id,g.terminal.candidates[1])).toBe(true);expect(registerShiftVote(g,g.players[0].id,g.terminal.candidates[0])).toBe(false);g.tick=899;stepGame(g);expect(g.terminal.selected).toBe('heal');expect(g.map.zones.some(z=>z.kind==='heal')).toBe(true);});
   it('wall shift relocates trapped players',()=>{const g=createGame({mode:'core'});g.players.forEach(p=>p.bot=false);g.terminal.owner=0;g.terminal.candidates=['wall','heal'];g.tick=899;g.players[0].x=10;g.players[0].z=8;stepGame(g);expect(g.map.walls.some(w=>w.id==='shift-0-wall-a')).toBe(true);expect(solidAt(g.map,g.players[0].x,g.players[0].z)).toBe(false);});
   it('saved loadout chooses the selected skill and passive',()=>{const g=createGame({mode:'duel',shift:false,slots:[{id:'a',name:'A',character:'rei',team:0,bot:false,loadout:{skill:'energy_shield',passive:'ammo_return'}}]});const p=g.players[0];expect(p.skillChoice).toBe('energy_shield');expect(p.passiveChoice).toBe('ammo_return');stepGame(g,{a:{mx:0,mz:0,ax:1,az:0,attack:false,ultimate:false,skill:true}});expect(p.shield).toBeGreaterThan(0);expect(p.x).toBe(g.map.spawn[0][0][0]);});
-  it('survival uses unique teams and shrinks the safe zone',()=>{const g=createGame({mode:'survival'});expect(new Set(g.players.map(p=>p.team)).size).toBe(10);g.players.forEach(p=>p.bot=false);for(let i=0;i<90;i++)stepGame(g);expect(g.safeRadius).toBeLessThan(12);});
+  it('survival uses unique teams and shrinks the safe zone',()=>{const g=createGame({mode:'survival'});expect(new Set(g.players.map(p=>p.team)).size).toBe(10);const initial=g.safeRadius;g.players.forEach(p=>p.bot=false);for(let i=0;i<90;i++)stepGame(g);expect(g.safeRadius).toBeLessThan(initial);});
   it('training allows unowned characters and invincible dummy without ending',()=>{const g=createGame({training:true,slots:[{id:'a',name:'A',character:'noise',team:0,bot:false}]});expect(g.players).toHaveLength(1);expect(trainingAction(g,'a','add_invincible')).toBe(true);expect(g.players[1].dummy).toBe('invincible');trainingAction(g,'a','ultimate');expect(g.players[0].ultimate).toBe(100);g.tick=5400;stepGame(g);expect(g.winner).toBeNull();expect(g.time).toBe(180);});
 });
 
@@ -23,8 +23,8 @@ describe('modes and shifts',()=>{
 describe('solar power and ten-player solo combat',()=>{
   it('loads larger maps with cover and ten unique free-for-all teams',()=>{
     const g=createGame({mode:'ffa',shift:false});
-    expect(g.map.width).toBeGreaterThanOrEqual(36);
-    expect(g.map.height).toBeGreaterThanOrEqual(26);
+    expect(g.map.width).toBe(100);
+    expect(g.map.height).toBe(100);
     expect(g.players).toHaveLength(10);
     expect(new Set(g.players.map(p=>p.team)).size).toBe(10);
     expect(g.players.every(p=>!solidAt(g.map,p.x,p.z))).toBe(true);
@@ -54,5 +54,44 @@ describe('solar power and ten-player solo combat',()=>{
     }
     const lowTarget=low.players[1],highTarget=high.players[1];
     expect(highTarget.hp).toBeLessThan(lowTarget.hp);
+  });
+});
+
+describe('large arena dimensions and traversal',()=>{
+  it('uses X=50, Z=100 for each standard 3v3 mode on all arena themes',()=>{
+    for(const map of ['park','factory','canyon'])
+      for(const mode of ['core','deathmatch','payload'] as const){
+        const g=createGame({mode,map,size:3,shift:false});
+        expect([g.map.width,g.map.height]).toEqual([50,100]);
+        expect(g.map.goal).toEqual([25,50]);
+        expect(g.players).toHaveLength(6);
+        expect(g.players.every(p=>!solidAt(g.map,p.x,p.z))).toBe(true);
+        expect(g.map.walls.length).toBeGreaterThan(24);
+        expect(g.map.zones.length).toBeGreaterThan(12);
+      }
+  });
+  it('uses a 100×100 map for 5v5, solo/FFA, survival, 1v1 and training',()=>{
+    const configurations=[
+      {mode:'deathmatch' as const,size:5},
+      {mode:'ffa' as const},
+      {mode:'survival' as const},
+      {mode:'duel' as const},
+      {mode:'core' as const,training:true},
+    ];
+    for(const config of configurations){
+      const g=createGame({...config,shift:false});
+      expect([g.map.width,g.map.height]).toEqual([100,100]);
+      expect(g.map.goal).toEqual([50,50]);
+      expect(g.players.every(p=>!solidAt(g.map,p.x,p.z))).toBe(true);
+    }
+  });
+  it('spawns mirror-symmetrically, puts cover in the enlarged area and keeps gameplay boundaries',()=>{
+    const g=createGame({mode:'core',shift:false});
+    expect(g.map.spawn[0][0][0]+g.map.spawn[1][0][0]).toBe(50);
+    expect(g.map.walls.some(w=>w.z<30)).toBe(true);
+    expect(g.map.walls.some(w=>w.z>70)).toBe(true);
+    expect(solidAt(g.map,-1,50)).toBe(true);
+    expect(solidAt(g.map,51,50)).toBe(true);
+    expect(solidAt(g.map,25,101)).toBe(true);
   });
 });

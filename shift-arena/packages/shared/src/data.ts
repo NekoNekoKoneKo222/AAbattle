@@ -26,23 +26,52 @@ const compactMaps:MapDefinition[]=[
   { ...base,id:'factory',name:'ネオンファクトリー',theme:0x1c274b,ground:0x536382,walls:[box('f1',8,3,1.3,5),box('f2',18,3,1.3,5),box('f3',8,15,1.3,5),box('f4',18,15,1.3,5),box('fc1',12,6,1.3,1.4,1300,'crate'),box('fc2',14,12,1.3,1.4,1300,'crate')],zones:[{x:7,z:9,radius:2.1,kind:'conveyor'},{x:19,z:9,radius:2.1,kind:'conveyor'},{x:13,z:3,radius:2,kind:'speed'},{x:13,z:15,radius:2,kind:'speed'}] },
   { ...base,id:'canyon',name:'クリスタルキャニオン',theme:0x362344,ground:0x9777ac,walls:[box('c1',8,5,2,2.6),box('c2',18,5,2,2.6),box('c3',8,13,2,2.6),box('c4',18,13,2,2.6),box('cc1',13,3,1.5,1.5,1000,'crate'),box('cc2',13,15,1.5,1.5,1000,'crate')],zones:[grass(5.5,9,1.8),grass(20.5,9,1.8),{x:13,z:9,radius:2.5,kind:'speed'}] }
 ];
-/** Extended 36×26 arenas with multiple flanking routes for ten independent fighters. */
-export const maps:MapDefinition[]=compactMaps.map(m=>({
-  ...m,width:36,height:26,goal:[18,13] as [number,number],
-  spawn:[[[4,5],[4,13],[4,21]],[[32,5],[32,13],[32,21]]] as MapDefinition['spawn'],
-  walls:[
-    ...m.walls.map(w=>({...w,x:w.x+5,z:w.z+4})),
-    box(m.id+'-outer-a',9,4,2.4,2.4),
-    box(m.id+'-outer-b',27,4,2.4,2.4),
-    box(m.id+'-outer-c',9,22,2.4,2.4),
-    box(m.id+'-outer-d',27,22,2.4,2.4),
-    box(m.id+'-mid-a',4,10,1.3,2.7,900,'crate'),
-    box(m.id+'-mid-b',32,16,1.3,2.7,900,'crate')
-  ],
-  zones:[
-    ...m.zones.map(z=>({...z,x:z.x+5,z:z.z+4})),
-    grass(6,4,1.4),grass(30,22,1.4),grass(6,22,1.4),grass(30,4,1.4)
-  ]
-}));
-export const mapById=(id:string)=>maps.find(m=>m.id===id)||maps[0];
-
+/** Match-specific arenas: 3v3 50×100; all other team sizes and modes 100×100.
+ * Rebuild cover from symmetrical patterns instead of stretching the old tiny map.
+ * x and z are the two horizontal axes in the 3D world (user-facing X × Y).
+ */
+export type ArenaLayout = 'standard' | '3v3';
+function expandArena(source:MapDefinition,width:50|100):MapDefinition{
+  const height=100,centerX=width/2,centerZ=height/2;
+  const offsetX=centerX-13,offsetZ=centerZ-9;
+  const columns=width===50?[.18,.36,.64,.82]:[.14,.30,.42,.58,.70,.86];
+  const rows=[12,26,38,62,74,88];
+  const walls:Wall[]=source.walls.map(w=>({...w,id:source.id+'-center-'+w.id,x:w.x+offsetX,z:w.z+offsetZ}));
+  const zones:Zone[]=source.zones.map(z=>({...z,x:z.x+offsetX,z:z.z+offsetZ}));
+  for(let row=0;row<rows.length;row++){
+    for(let col=0;col<columns.length;col++){
+      const x=Number((width*columns[col]).toFixed(2)),z=rows[row];
+      const variant=(row*2+col+source.id.length)%4;
+      walls.push(box(
+        source.id+'-cover-'+row+'-'+col,x,z,
+        variant===0?1.8:variant===1?3:2.2,
+        variant===0?3:variant===1?1.8:2.5,
+        variant===2?1150:0,
+        variant===2?'crate':'wall'
+      ));
+    }
+  }
+  // Open flank corridors with bush cover. No generated wall is placed on a spawn.
+  const bushes=width===50?[.10,.27,.73,.90]:[.09,.24,.76,.91];
+  for(const z of [19,32,68,81])for(const x of bushes)zones.push(grass(width*x,z,2.2));
+  if(source.id==='factory'){
+    for(const z of [18,82])zones.push({kind:'speed',x:centerX,z,radius:2.5});
+  }else if(source.id==='canyon'){
+    for(const z of [25,75])zones.push({kind:'jump',x:centerX,z,radius:2.1});
+  }else{
+    for(const z of [15,85])zones.push(grass(centerX,z,3));
+  }
+  const spawnZ=[50,25,75,13,87];
+  const spawnX=width===50?5:8;
+  const makeSpawns=(x:number):[number,number][]=>spawnZ.map(z=>[x,z]);
+  return {...source,width,height,goal:[centerX,centerZ],
+    spawn:[makeSpawns(spawnX),makeSpawns(width-spawnX)],
+    walls,zones};
+}
+/** Standard selection and non-3v3 modes use a 100×100 world. */
+export const maps:MapDefinition[]=compactMaps.map(m=>expandArena(m,100));
+const teamMaps:MapDefinition[]=compactMaps.map(m=>expandArena(m,50));
+export const mapById=(id:string,layout:ArenaLayout='standard')=>{
+  const pool=layout==='3v3'?teamMaps:maps;
+  return pool.find(m=>m.id===id)||pool[0];
+};

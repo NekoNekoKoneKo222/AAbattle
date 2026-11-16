@@ -35,12 +35,15 @@ function spawn(index:number,team:number,map:MapDefinition):[number,number]{
 }
 function makeFighter(slot:Slot,index:number,map:MapDefinition):Fighter{const [x,z]=spawn(index,slot.team,map),c=characterById(slot.character),choice=slot.loadout,options=loadoutOptions[c.id as CharacterId];const valid=choice&&validLoadout(c.id,choice.skill,choice.passive);return {id:slot.id,name:slot.name.slice(0,24),character:c.id,team:slot.team,bot:slot.bot,dummy:slot.dummy,modelOwner:slot.modelOwner,skinChoice:slot.skinChoice,skillChoice:valid?choice.skill:options.skills[0].id,passiveChoice:valid?choice.passive:options.passives[0].id,powerLevel:Math.max(1,Math.min(11,Math.floor(slot.powerLevel||1))),bonusAttack:0,evasion:0,burn:0,x,z,vx:0,vz:0,ax:slot.team===1?-1:1,az:0,hp:Math.round(c.maxHp*powerMultiplier(slot.powerLevel||1)),ammo:c.ammo,reloadAt:0,attackAt:0,skillAt:0,ultimate:0,koAt:0,invulnerable:1,shield:0,slow:0,invisible:0,rapid:0,speedBoost:0,defense:0,hitChain:0,lastCombat:0,kills:0,damage:0,healed:0,received:0,objective:0};}
 export function createGame(options:{mode?:Mode;map?:string;difficulty?:Difficulty;shift?:boolean;slots?:Slot[];size?:number;training?:boolean}={}):GameState{
-  const mode=options.mode||'core',map=structuredClone(mapById(options.map||'park'));
+  const mode=options.mode||'core';
   const size=mode==='duel'?1:mode==='survival'||mode==='ffa'?5:options.size===5?5:3;
+  const is3v3=!options.training&&size===3&&(mode==='core'||mode==='deathmatch'||mode==='payload');
+  const map=structuredClone(mapById(options.map||'park',is3v3?'3v3':'standard'));
+  const initialSafeRadius=Math.hypot(map.width/2,map.height/2)+2;
   const slots:Slot[]=(options.slots||[]).map(s=>({...s}));
   if(mode==='survival'||mode==='ffa'){while(slots.length<10){const n=slots.length;slots.push({id:`bot-${n}`,name:`CPU ${n}`,character:['rei','jin','bom','frost','noise'][n%5],team:n+2,bot:true});}slots.forEach((s,i)=>s.team=i+2);}
   else if(!options.training)for(let team=0;team<2;team++)while(slots.filter(s=>s.team===team).length<size){const n=slots.filter(s=>s.team===team).length;slots.push({id:`bot-${team}-${n}`,name:`CPU ${team===0?'A':'B'}${n+1}`,character:['rei','gald','mina','bom','chrono','noise','frost','jin'][(team*3+n)%8],team,bot:true});}
-  return {tick:0,time:mode==='survival'?150:mode==='ffa'?210:180,mode,difficulty:options.difficulty||'normal',training:options.training||false,trainingStats:options.training?{hits:0,attacks:0,lastDamage:0,recentDamage:[]}:undefined,map,players:slots.map((s,i)=>makeFighter(s,i,map)),bullets:[],effects:[],score:[0,0],winner:null,overtime:false,shiftEnabled:options.shift!==false,shiftWarning:false,shiftCount:0,terminal:{x:map.goal[0],z:map.goal[1],radius:1.9,owner:null,progress:[0,0],candidates:shiftChoices(map.id,0),votes:{},selected:null,cycle:0},payload:0,payloadRound:0,payloadRecord:[0,0],safeRadius:12,nextId:1,events:[]};
+  return {tick:0,time:mode==='survival'?150:mode==='ffa'?210:180,mode,difficulty:options.difficulty||'normal',training:options.training||false,trainingStats:options.training?{hits:0,attacks:0,lastDamage:0,recentDamage:[]}:undefined,map,players:slots.map((s,i)=>makeFighter(s,i,map)),bullets:[],effects:[],score:[0,0],winner:null,overtime:false,shiftEnabled:options.shift!==false,shiftWarning:false,shiftCount:0,terminal:{x:map.goal[0],z:map.goal[1],radius:1.9,owner:null,progress:[0,0],candidates:shiftChoices(map.id,0),votes:{},selected:null,cycle:0},payload:0,payloadRound:0,payloadRecord:[0,0],safeRadius:initialSafeRadius,nextId:1,events:[]};
 }
 const shiftPools:Record<string,ShiftKind[]>={park:['wall','heal','speed','cover','jump','trap'],factory:['cover','trap','speed','wall','jump','heal'],canyon:['jump','wall','heal','trap','cover','speed']};
 function shiftChoices(mapId:string,cycle:number):[ShiftKind,ShiftKind]{const pool=shiftPools[mapId]||shiftPools.park;return [pool[(cycle*2)%pool.length],pool[(cycle*2+1)%pool.length]];}
@@ -97,7 +100,7 @@ function scoreMode(g:GameState){if(g.mode==='core'){const inCore=[0,0];for(const
   else if(g.mode==='deathmatch'&&Math.max(...g.score)>=20)g.winner=g.score[0]>g.score[1]?0:1;
   else if(g.mode==='duel'&&Math.max(...g.score)>=3)g.winner=g.score[0]>g.score[1]?0:1;
   else if(g.mode==='payload'){const robot={x:3+(g.map.width-6)*g.payload/100,z:g.map.goal[1]};const near=g.players.filter(p=>p.hp>0&&distance(p,robot)<3);if(near.some(p=>p.team===g.payloadRound)&&!near.some(p=>p.team!==g.payloadRound))g.payload=Math.min(100,g.payload+DT*1.1);if(g.payload>=100)finishPayloadRound(g);}
-  if(g.mode==='survival'){g.safeRadius=Math.max(2.5,12-(150-g.time)*.075);if(g.tick%30===0)for(const p of g.players)if(p.hp>0&&distance(p,{x:g.map.goal[0],z:g.map.goal[1]})>g.safeRadius)damage(g,undefined,p,Math.round((12-g.safeRadius)*40));}
+  if(g.mode==='survival'){const initial=Math.hypot(g.map.width/2,g.map.height/2)+2;const progress=clamp((150-g.time)/150,0,1);g.safeRadius=Math.max(3,initial-(initial-3)*progress);if(g.tick%30===0)for(const p of g.players)if(p.hp>0&&distance(p,{x:g.map.goal[0],z:g.map.goal[1]})>g.safeRadius)damage(g,undefined,p,Math.round(150+progress*850));}
   if(g.time<=0&&g.winner===null){if(g.mode==='payload')finishPayloadRound(g);else if(g.mode==='survival'){const alive=g.players.filter(p=>p.hp>0).sort((a,b)=>b.hp-a.hp);g.winner=alive[0]?.team??0;}else if(g.mode==='ffa'){const ranked=[...g.players].sort((a,b)=>b.kills-a.kills||b.damage-a.damage);g.winner=ranked[0]?.team??2;}else if(g.score[0]===g.score[1]&&!g.overtime){g.overtime=true;g.time=20;event(g,'overtime',g.map.goal[0],g.map.goal[1]);}else g.winner=g.score[0]>=g.score[1]?0:1;}}
 function finishPayloadRound(g:GameState){g.payloadRecord[g.payloadRound as 0|1]=g.payload;if(g.payloadRound===0){g.payloadRound=1;g.payload=0;g.time=180;for(const p of g.players){p.hp=fighterMaxHp(p);[p.x,p.z]=spawn(0,p.team,g.map);}}else g.winner=g.payloadRecord[0]>=g.payloadRecord[1]?0:1;}
 function move(g:GameState,p:Fighter,input:Input){if(p.hp<=0)return;const c=characterById(p.character),[dx,dz]=length(input.mx,input.mz)>1?norm(input.mx,input.mz):[input.mx,input.mz];const speed=c.moveSpeed*(p.slow>0?.58:1)*(p.speedBoost>0?1.22:1)*(g.map.zones.some(z=>z.kind==='speed'&&inZone(p,z))?1.25:1);p.vx=dx*speed+p.vx*.12;p.vz=dz*speed+p.vz*.12;const nx=p.x+p.vx*DT,nz=p.z+p.vz*DT;if(!solidAt(g.map,nx,p.z))p.x=nx;if(!solidAt(g.map,p.x,nz))p.z=nz;const [ax,az]=norm(input.ax,input.az);if(length(input.ax,input.az)>.1){p.ax=ax;p.az=az;}if(input.attack)fire(g,p,p.ax,p.az);if(input.ultimate)ultimate(g,p,p.ax,p.az);if(input.skill)skill(g,p,p.ax,p.az);
@@ -106,13 +109,54 @@ export function stepGame(g:GameState,inputs:Record<string,Input>={}){if(g.winner
   for(const p of g.players){if(p.hp<=0){if(g.mode!=='survival'&&g.tick-p.koAt>=90){const c=characterById(p.character);[p.x,p.z]=nearestFree(g,...spawn(g.players.indexOf(p),p.team,g.map));p.hp=fighterMaxHp(p);p.ammo=c.ammo;p.invulnerable=1;p.koAt=0;event(g,'respawn',p.x,p.z,undefined,p.team);}continue;}const input=p.dummy==='static'||p.dummy==='invincible'?neutral:p.dummy==='moving'?{...neutral,mx:Math.sin(g.tick/35),mz:Math.cos(g.tick/35)}:p.bot?botInput(g,p):sanitizeInput(inputs[p.id]);move(g,p,input);}
   updateBullets(g);updateEffects(g);if(!g.training)scoreMode(g);else if(g.trainingStats){const own=g.players.find(p=>!p.bot&&p.team===0);for(const e of g.events)if(e.owner===own?.id){if(e.kind==='attack')g.trainingStats.attacks++;if(e.kind==='hit'){g.trainingStats.hits++;g.trainingStats.lastDamage=e.value||0;g.trainingStats.recentDamage.push({tick:g.tick,value:e.value||0});}}g.trainingStats.recentDamage=g.trainingStats.recentDamage.filter(e=>g.tick-e.tick<30);}return g;}
 export function sanitizeInput(input:unknown):Input{const i=(input&&typeof input==='object'?input:{}) as Record<string,unknown>;const number=(v:unknown)=>typeof v==='number'&&Number.isFinite(v)?clamp(v,-1,1):0;const [mx,mz]=length(number(i.mx),number(i.mz))>1?norm(number(i.mx),number(i.mz)):[number(i.mx),number(i.mz)];return {mx,mz,ax:number(i.ax),az:number(i.az),attack:i.attack===true,ultimate:i.ultimate===true,skill:i.skill===true};}
-function navDirection(g:GameState,p:Fighter,target:{x:number;z:number}):[number,number]{if(lineClear(g.map,p,target))return norm(target.x-p.x,target.z-p.z);const cell=(x:number,z:number)=>`${Math.round(x)},${Math.round(z)}`;const start=[Math.round(p.x),Math.round(p.z)] as [number,number],goal=[Math.round(target.x),Math.round(target.z)] as [number,number];const queue:[number,number][]=[goal],seen=new Set([cell(...goal)]),parents=new Map<string,[number,number]>();for(let i=0;i<queue.length&&i<500;i++){const [x,z]=queue[i];for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){const nx=x+dx,nz=z+dz,key=cell(nx,nz);if(seen.has(key)||solidAt(g.map,nx,nz,.45))continue;seen.add(key);parents.set(key,[x,z]);queue.push([nx,nz]);}}let cur=start,prev=start;for(let i=0;i<500;i++){const next=parents.get(cell(...cur));if(!next)break;prev=cur;cur=next;if(Math.abs(cur[0]-goal[0])+Math.abs(cur[1]-goal[1])<2)break;}const way=parents.get(cell(...start));return way?norm(way[0]-p.x,way[1]-p.z):norm(target.x-p.x,target.z-p.z);}
-export function botInput(g:GameState,p:Fighter):Input{const c=characterById(p.character),visible=g.players.filter(e=>e.team!==p.team&&e.hp>0&&(e.invisible<=0||distance(p,e)<2.5)&&(!g.map.zones.some(z=>z.kind==='bush'&&inZone(e,z))||distance(p,e)<4));visible.sort((a,b)=>distance(p,a)-distance(p,b));const enemy=visible[0];let target:{x:number;z:number}=enemy||{x:g.map.goal[0],z:g.map.goal[1]};if(g.mode==='core'&&(!enemy||distance(p,enemy)>c.attack.range*.8))target={x:g.map.goal[0],z:g.map.goal[1]};if(g.mode==='payload')target={x:3+(g.map.width-6)*g.payload/100,z:g.map.goal[1]};if(c.role==='support'&&p.hp<fighterMaxHp(p)*.5){const ally=g.players.filter(a=>a.team===p.team&&a.id!==p.id&&a.hp>0).sort((a,b)=>distance(a,p)-distance(b,p))[0];if(ally)target=ally;}if(enemy&&p.hp<c.maxHp*.3)target={x:clamp(p.x-(enemy.x-p.x),1,25),z:clamp(p.z-(enemy.z-p.z),1,17)};
+/** Cache bot routes for several ticks so large-map navigation stays responsive. */
+const navCache=new WeakMap<GameState,Map<string,{tick:number;targetX:number;targetZ:number;dx:number;dz:number}>>();
+function navDirection(g:GameState,p:Fighter,target:{x:number;z:number}):[number,number]{
+  let cache=navCache.get(g);
+  if(!cache){cache=new Map();navCache.set(g,cache);}
+  const cached=cache.get(p.id);
+  if(cached&&g.tick-cached.tick<12&&Math.hypot(cached.targetX-target.x,cached.targetZ-target.z)<2.5)
+    return [cached.dx,cached.dz];
+  let result:[number,number]=norm(target.x-p.x,target.z-p.z);
+  if(!lineClear(g.map,p,target)){
+    const cell=(x:number,z:number)=>x+','+z;
+    const start:[number,number]=[Math.round(p.x),Math.round(p.z)];
+    const goal:[number,number]=[Math.round(target.x),Math.round(target.z)];
+    const queue:[number,number][]=[goal];
+    const seen=new Set([cell(...goal)]);
+    const parents=new Map<string,[number,number]>();
+    // Early stop when the search reaches our position; larger arena requires
+    // a wider search than the old 26×18 board.
+    let reached=false;
+    for(let i=0;i<queue.length&&i<3500&&!reached;i++){
+      const [x,z]=queue[i];
+      for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const nx=x+dx,nz=z+dz,key=cell(nx,nz);
+        if(seen.has(key)||solidAt(g.map,nx,nz,.45))continue;
+        seen.add(key);parents.set(key,[x,z]);queue.push([nx,nz]);
+        if(Math.abs(nx-start[0])+Math.abs(nz-start[1])<=1){reached=true;break;}
+      }
+    }
+    const next=parents.get(cell(...start));
+    if(next)result=norm(next[0]-p.x,next[1]-p.z);
+    else{
+      // Local collision avoidance if the search budget was exhausted.
+      const angle=Math.atan2(result[1],result[0]);
+      for(const off of [0,.55,-.55,1.1,-1.1,1.7,-1.7,Math.PI]){
+        const dx=Math.cos(angle+off),dz=Math.sin(angle+off);
+        if(!solidAt(g.map,p.x+dx*1.7,p.z+dz*1.7)){result=[dx,dz];break;}
+      }
+    }
+  }
+  cache.set(p.id,{tick:g.tick,targetX:target.x,targetZ:target.z,dx:result[0],dz:result[1]});
+  return result;
+}
+export function botInput(g:GameState,p:Fighter):Input{const c=characterById(p.character),visible=g.players.filter(e=>e.team!==p.team&&e.hp>0&&(e.invisible<=0||distance(p,e)<2.5)&&(!g.map.zones.some(z=>z.kind==='bush'&&inZone(e,z))||distance(p,e)<4));visible.sort((a,b)=>distance(p,a)-distance(p,b));const enemy=visible[0];let target:{x:number;z:number}=enemy||{x:g.map.goal[0],z:g.map.goal[1]};if(g.mode==='core'&&(!enemy||distance(p,enemy)>c.attack.range*.8))target={x:g.map.goal[0],z:g.map.goal[1]};if(g.mode==='payload')target={x:3+(g.map.width-6)*g.payload/100,z:g.map.goal[1]};if(c.role==='support'&&p.hp<fighterMaxHp(p)*.5){const ally=g.players.filter(a=>a.team===p.team&&a.id!==p.id&&a.hp>0).sort((a,b)=>distance(a,p)-distance(b,p))[0];if(ally)target=ally;}if(enemy&&p.hp<fighterMaxHp(p)*.3)target={x:clamp(p.x-(enemy.x-p.x),1,g.map.width-1),z:clamp(p.z-(enemy.z-p.z),1,g.map.height-1)};
   const [mx,mz]=navDirection(g,p,target),[ax,az]=enemy?norm(enemy.x-p.x,enemy.z-p.z):[p.ax,p.az];const d=enemy?distance(p,enemy):99;const line=enemy&&lineClear(g.map,p,enemy);const level={easy:0,normal:1,hard:2,expert:3}[g.difficulty];const ready=g.tick%(level===0?24:level===1?12:level===2?6:3)===0;const attack=!!enemy&&!!line&&d<c.attack.range&&ready;return {mx:enemy&&d<c.attack.range*.65?0:mx,mz:enemy&&d<c.attack.range*.65?0:mz,ax,az,attack,ultimate:!!enemy&&p.ultimate>=100&&d<7,skill:!!enemy&&g.tick>=p.skillAt&&(p.hp<c.maxHp*.55||d<4)};}
 
 export type TrainingAction='heal'|'ultimate'|'cooldowns'|'ammo'|'add_cpu'|'remove_cpu'|'add_static'|'add_moving'|'add_attacking'|'add_invincible'|'remove_dummy'|'shift'|'reset';
 export function trainingAction(g:GameState,playerId:string,action:TrainingAction){if(!g.training)return false;const p=g.players.find(v=>v.id===playerId);if(!p)return false;switch(action){
-  case 'heal':p.hp=characterById(p.character).maxHp;break;
+  case 'heal':p.hp=fighterMaxHp(p);break;
   case 'ultimate':p.ultimate=100;break;
   case 'cooldowns':p.skillAt=g.tick;p.attackAt=g.tick;break;
   case 'ammo':p.ammo=characterById(p.character).ammo;break;

@@ -59,5 +59,6 @@ test('free-for-all fills ten unique slots and keeps online inputs authoritative'
   assert.equal(game.mode,'ffa');
   assert.equal(game.players.length,10);
   assert.equal(new Set(game.players.map(p=>p.team)).size,10);
-  assert.equal(game.map.width,36);
+  assert.equal(game.map.width,100);
+  assert.equal(game.map.height,100);
 });
