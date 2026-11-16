@@ -108,7 +108,7 @@ export class ShiftStore {
     if(!valid(first)||!valid(second))throw fail('無効なソーラーギアです。');
     if((first&&level<8)||(second&&level<10))throw fail('ギアの装備レベルが不足しています。');
     if(first&&second&&first===second)throw fail('同じギアは2つ装備できません。');
-    p.loadouts[character]={skill,passive,gear1:first||null,gear2:second||null};
+    p.loadouts[character]={skill,passive,...(first?{gear1:first}:{}),...(second?{gear2:second}:{})};
   }); }
   claimMission(user, id) { return this.withProfile(user, p => {
     const mission = missionDefs.find(m => m.id === id);
