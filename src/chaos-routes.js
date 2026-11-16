@@ -51,10 +51,26 @@ export function mountChaosShogi(app,{currentUser,collection,findUser}={}){
     if(!req.is('application/json'))return fail(res,415,'JSONで送信してください。');
     next();
   });
-  router.post('/games',(req,res)=>{
+  router.post('/games',async(req,res)=>{
     if(games.size>=200)return fail(res,503,'対局数が上限です。時間をおいてください。');
-    try{const cpu=req.body?.cpu===true,decks={b:req.body?.decks?.b,w:cpu?undefined:req.body?.decks?.w};if(cpu&&req.body?.cpuDifficulty!==undefined&&!['easy','normal','hard'].includes(req.body.cpuDifficulty))return fail(res,400,'CPU難易度が不正です。');const game=newGame({cpu,minutes:req.body?.minutes,decks,collapse:req.body?.collapse===true,cpuDifficulty:req.body?.cpuDifficulty,cpuThinkMs:req.body?.cpuThinkMs});games.set(game.id,game);res.status(201).json(view(game));}
-    catch(error){fail(res,400,error.message);}
+    try{
+      const cpu=req.body?.cpu===true,decks={b:req.body?.decks?.b,w:cpu?undefined:req.body?.decks?.w};
+      if(cpu&&req.body?.cpuDifficulty!==undefined&&!['easy','normal','hard'].includes(req.body.cpuDifficulty))return fail(res,400,'CPU難易度が不正です。');
+      const game=newGame({cpu,minutes:req.body?.minutes,decks,collapse:req.body?.collapse===true,cpuDifficulty:req.body?.cpuDifficulty,cpuThinkMs:req.body?.cpuThinkMs});
+      // Read unlocks from the authenticated account on the server. Client-supplied
+      // awakening flags are never trusted. Guests and local hotseat remain vanilla.
+      if(cpu&&typeof currentUser==='function'&&collection){
+        const user=await currentUser(req);
+        if(user?.id){
+          const profile=await collection.profile(user.id);
+          game.awakened={b:(profile.awakened||[]).filter(id=>profile.cards?.[id]>0&&decks.b?.includes(id)),w:[]};
+          // The default deck is used when the caller did not submit a custom one.
+          if(!decks.b)game.awakened.b=(profile.awakened||[]).filter(id=>profile.cards?.[id]>0&&game.cards.b.deck.concat(game.cards.b.hand).includes(id));
+          game.onlineMode='cpu';
+        }
+      }
+      games.set(game.id,game);res.status(201).json(view(game));
+    }catch(error){fail(res,400,error.message);}
   });
   router.get('/cards',(_req,res)=>res.json({cards:Object.fromEntries(Object.entries(CARD_CATALOG).map(([id,card])=>[id,{...card,awakeningEffect:awakeningBonus(id).description,imagePath:`/api/CSH/cards/${encodeURIComponent(id)}/art.svg`}])),skins:SKIN_CATALOG,combos:COMBOS,defaultDeck:STARTER_DECK,packTargets:packTargets(),deckRules:{size:20,maxCopies:2,maxCounters:5,maxMythic:1,maxSaved:10}}));
   router.get('/cards/:id/art.svg',(req,res)=>{const card=Object.hasOwn(CARD_CATALOG,req.params.id)?CARD_CATALOG[req.params.id]:null;if(!card)return res.status(404).end();for(const extension of ['webp','png','svg']){const file=path.join(cardArtDirectory,`${card.id}.${extension}`);if(existsSync(file))return res.set('Cache-Control','public, max-age=86400').sendFile(file);}res.type('image/svg+xml').set('Cache-Control','public, max-age=86400').send(cardArtSvg(card));});

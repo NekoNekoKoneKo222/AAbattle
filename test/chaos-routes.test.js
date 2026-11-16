@@ -44,3 +44,31 @@ test('CPU also completes a three-move turn without waiting for a human action',(
   assert.equal(result.game.turn,'b');
   assert.equal(result.events.filter(event=>event.kind==='move'||event.kind==='drop').length,3);
 });
+
+test('logged-in CPU matches load server-owned awakenings but guest games cannot self-assign them',async()=>{
+  const app=express();app.use(express.json());
+  const collection={
+    profile:async userId=>({
+      cards:{avada:2,meteor:1},
+      awakened:['avada','meteor','not-owned']
+    })
+  };
+  mountChaosShogi(app,{currentUser:async req=>req.headers['x-test-user']?{id:'account-1'}:null,collection});
+  const server=createServer(app);
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  const base=`http://127.0.0.1:${server.address().port}`;
+  const create=async(headers={})=>{
+    const response=await fetch(base+'/api/CSH/games',{method:'POST',headers:{'Content-Type':'application/json',...headers},body:JSON.stringify({cpu:true,awakened:{b:['avada']}})});
+    assert.equal(response.status,201);
+    return response.json();
+  };
+  try{
+    const guest=await create();
+    assert.equal(guest.awakened?.b?.includes('avada')||false,false);
+    const authed=await create({'x-test-user':'account-1'});
+    assert.equal(authed.onlineMode,'cpu');
+    assert.ok(authed.awakened.b.includes('avada'));
+    assert.equal(authed.awakened.b.includes('not-owned'),false);
+    assert.equal(authed.awakened.b.includes('meteor'),true);
+  }finally{await new Promise(resolve=>server.close(resolve));}
+});
