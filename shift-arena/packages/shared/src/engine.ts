@@ -21,8 +21,19 @@ const inZone=(p:{x:number;z:number},z:Zone)=>distance(p,z)<=z.radius;
 const wallCollides=(x:number,z:number,w:Wall,r=.42)=>x+r>w.x-w.w/2&&x-r<w.x+w.w/2&&z+r>w.z-w.h/2&&z-r<w.z+w.h/2;
 export function solidAt(map:MapDefinition,x:number,z:number,r=.42){return x<r||z<r||x>map.width-r||z>map.height-r||map.walls.some(w=>wallCollides(x,z,w,r));}
 export function lineClear(map:MapDefinition,a:{x:number;z:number},b:{x:number;z:number}){const d=distance(a,b),steps=Math.ceil(d/.25);for(let i=1;i<steps;i++){const t=i/steps;if(map.walls.some(w=>wallCollides(a.x+(b.x-a.x)*t,a.z+(b.z-a.z)*t,w,.06)))return false;}return true;}
-function spawn(index:number,team:number,map:MapDefinition):[number,number]{return map.spawn[team===1?1:0][index%3];}
-function makeFighter(slot:Slot,index:number,map:MapDefinition):Fighter{const [x,z]=slot.team>=2?[map.goal[0]+Math.cos(index*Math.PI*2/10)*Math.min(map.width,map.height)*.36,map.goal[1]+Math.sin(index*Math.PI*2/10)*Math.min(map.width,map.height)*.36]:spawn(index,slot.team,map),c=characterById(slot.character),choice=slot.loadout,options=loadoutOptions[c.id as CharacterId];const valid=choice&&validLoadout(c.id,choice.skill,choice.passive);return {id:slot.id,name:slot.name.slice(0,24),character:c.id,team:slot.team,bot:slot.bot,dummy:slot.dummy,modelOwner:slot.modelOwner,skinChoice:slot.skinChoice,skillChoice:valid?choice.skill:options.skills[0].id,passiveChoice:valid?choice.passive:options.passives[0].id,powerLevel:Math.max(1,Math.min(11,Math.floor(slot.powerLevel||1))),bonusAttack:0,evasion:0,burn:0,x,z,vx:0,vz:0,ax:slot.team===1?-1:1,az:0,hp:Math.round(c.maxHp*powerMultiplier(slot.powerLevel||1)),ammo:c.ammo,reloadAt:0,attackAt:0,skillAt:0,ultimate:0,koAt:0,invulnerable:1,shield:0,slow:0,invisible:0,rapid:0,speedBoost:0,defense:0,hitChain:0,lastCombat:0,kills:0,damage:0,healed:0,received:0,objective:0};}
+function spawn(index:number,team:number,map:MapDefinition):[number,number]{
+  if(team>=2){
+    const angle=(team-2)*Math.PI*2/10;
+    const radius=Math.min(map.width,map.height)*.36;
+    for(let r=radius;r>=3;r-=.5){
+      const x=map.goal[0]+Math.cos(angle)*r,z=map.goal[1]+Math.sin(angle)*r;
+      if(!solidAt(map,x,z))return [x,z];
+    }
+    return [map.goal[0],map.goal[1]];
+  }
+  return map.spawn[team===1?1:0][index%3];
+}
+function makeFighter(slot:Slot,index:number,map:MapDefinition):Fighter{const [x,z]=spawn(index,slot.team,map),c=characterById(slot.character),choice=slot.loadout,options=loadoutOptions[c.id as CharacterId];const valid=choice&&validLoadout(c.id,choice.skill,choice.passive);return {id:slot.id,name:slot.name.slice(0,24),character:c.id,team:slot.team,bot:slot.bot,dummy:slot.dummy,modelOwner:slot.modelOwner,skinChoice:slot.skinChoice,skillChoice:valid?choice.skill:options.skills[0].id,passiveChoice:valid?choice.passive:options.passives[0].id,powerLevel:Math.max(1,Math.min(11,Math.floor(slot.powerLevel||1))),bonusAttack:0,evasion:0,burn:0,x,z,vx:0,vz:0,ax:slot.team===1?-1:1,az:0,hp:Math.round(c.maxHp*powerMultiplier(slot.powerLevel||1)),ammo:c.ammo,reloadAt:0,attackAt:0,skillAt:0,ultimate:0,koAt:0,invulnerable:1,shield:0,slow:0,invisible:0,rapid:0,speedBoost:0,defense:0,hitChain:0,lastCombat:0,kills:0,damage:0,healed:0,received:0,objective:0};}
 export function createGame(options:{mode?:Mode;map?:string;difficulty?:Difficulty;shift?:boolean;slots?:Slot[];size?:number;training?:boolean}={}):GameState{
   const mode=options.mode||'core',map=structuredClone(mapById(options.map||'park'));
   const size=mode==='duel'?1:mode==='survival'||mode==='ffa'?5:options.size===5?5:3;
