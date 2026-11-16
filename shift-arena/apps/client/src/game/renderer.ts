@@ -73,7 +73,7 @@ export class ArenaRenderer {
     for(const[id,mesh]of this.effects)if(!effectIds.has(id)){this.scene.remove(mesh);this.effects.delete(id);}
     const own=g.players.find(p=>p.id===localId)||g.players[0];if(own){const aspect=this.host.clientWidth/Math.max(1,this.host.clientHeight),visibleX=10.3*aspect,visibleZ=10.5;const x=THREE.MathUtils.clamp(own.x,Math.min(visibleX,g.map.width/2),Math.max(visibleX,g.map.width-visibleX)),z=THREE.MathUtils.clamp(own.z,Math.min(visibleZ,g.map.height/2),Math.max(visibleZ,g.map.height-visibleZ));const focus=new THREE.Vector3(x,0,z);this.camera.position.lerp(new THREE.Vector3(x,22,z+16),.08);this.camera.lookAt(focus);}
     // Visual-only shot direction preview; authoritative hits are still server-validated.
-    if(own&&own.hp>0){
+    if(own&&own.hp>0&&aiming){
       const config=characterById(own.character).attack;
       const dir=aim||[own.ax,own.az],length=Math.hypot(dir[0],dir[1])||1;
       const dx=dir[0]/length,dz=dir[1]/length;
