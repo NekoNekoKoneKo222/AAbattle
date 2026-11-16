@@ -107,10 +107,10 @@ test('card crafting and awakenings validate inventory, shards and required maste
   // A new card can be crafted when sufficient shards are obtained.
   for(let i=0;i<10;i++)await store.adminGrant('alice',{cardId:'dobby',count:1});
   await store.convert('alice','dobby','all');
-  const crafted=await store.craftCard('alice','avada');
-  assert.equal(crafted.cards.avada,1);
+  const crafted=await store.craftCard('alice','snatch');
+  assert.equal(crafted.cards.snatch,1);
   assert.equal(crafted.shards,150*8-90);
-  await assert.rejects(store.awakenCard('alice','avada'),/Lv.5/);
+  await assert.rejects(store.awakenCard('alice','snatch'),/Lv.5/);
 });
 
 test('real matches level card mastery and unlock a persistent awakening without touching inventory',async()=>{
