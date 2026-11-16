@@ -5,8 +5,8 @@ import { CharacterPreview } from './character-preview';
 export interface ShiftProfile {
   user_id:string; display_name:string; selected_character:string; owned_characters:string[]; credits:number;prestige:number;road_target:string;
   road_tier:string[]; loadouts:Record<string,{skill:string;passive:string}>;
-  mastery:Record<string,{xp:number;stats:Record<string,number>;claimed:string[];equipped_skin?:'skin'|'master_skin'|null}>;
-  missions:Record<string,{count:number;claimed:boolean}>;server_day:string;
+  mastery:Record<string,{xp:number;stats:Record<string,number>;claimed:string[];equipped_skin?:'skin'|'master_skin'|'sun_skin'|null}>;
+  missions:Record<string,{count:number;claimed:boolean}>;server_day:string;economy:import('@shift/shared').Economy;
 }
 export type Request = <T=unknown>(path:string,body?:Record<string,unknown>)=>Promise<T>;
 const errorText=(error:unknown)=>error instanceof Error?error.message:'通信に失敗しました。';
