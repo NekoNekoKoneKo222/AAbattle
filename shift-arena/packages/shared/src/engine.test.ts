@@ -222,3 +222,25 @@ describe('progressively increasing passive regeneration',()=>{
     expect(p.regenChain).toBe(0);
   });
 });
+
+
+describe('10-player battle royale CPU rarity limits',()=>{
+  it('only generates STARTER or SPARK CPU heroes in survival and FFA',()=>{
+    for(const mode of ['survival','ffa'] as const){
+      const g=createGame({mode,shift:false});
+      expect(g.players).toHaveLength(10);
+      expect(g.players.filter(p=>p.bot).every(p=>['rei','gald','mina'].includes(p.character))).toBe(true);
+      expect(g.players.filter(p=>p.bot).some(p=>p.character==='gald')).toBe(true);
+      expect(g.players.filter(p=>p.bot).some(p=>p.character==='mina')).toBe(true);
+    }
+  });
+  it('replaces explicit high-rarity bots without restricting a human selection',()=>{
+    const game=createGame({mode:'survival',shift:false,slots:[
+      {id:'human',name:'Player',character:'noise',team:0,bot:false},
+      {id:'higher-bot',name:'Bot',character:'chrono',team:1,bot:true}
+    ]});
+    expect(game.players.find(p=>p.id==='human')?.character).toBe('noise');
+    expect(['rei','gald','mina']).toContain(game.players.find(p=>p.id==='higher-bot')?.character);
+    expect(game.players.every(p=>!p.bot||['rei','gald','mina'].includes(p.character))).toBe(true);
+  });
+});

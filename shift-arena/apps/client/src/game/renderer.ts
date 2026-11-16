@@ -86,7 +86,11 @@ this.renderer.setClearColor(0x14243b,1);this.canvas=this.renderer.domElement;thi
       }
       const voxel=group.userData.voxelHero as THREE.Group|undefined;
       if(voxel)poseVoxelHero(voxel,now/1000,Math.hypot(p.vx,p.vz),attackElapsed!==null&&attackElapsed<.35,skillElapsed!==null&&skillElapsed<.5);
-      const speed=Math.hypot(p.vx,p.vz),bob=p.hp>0?Math.sin(this.frame*.08+p.x)*Math.min(speed,5)*.013:0;group.visible=p.hp>0||g.mode!=='survival';group.position.lerp(new THREE.Vector3(p.x,p.hp>0?bob:-.35,p.z),.35);group.rotation.y=Math.atan2(p.ax,p.az);group.scale.setScalar(p.hp>0?1:.45);const opacity=p.invisible>0?.35:1;
+      const speed=Math.hypot(p.vx,p.vz),bob=p.hp>0?Math.sin(this.frame*.08+p.x)*Math.min(speed,5)*.013:0;group.visible=p.hp>0||g.mode!=='survival';// No visual slide after the movement stick is released.
+      // Remotes retain brief network smoothing, but local position is exact.
+      const renderY=p.hp>0?bob:-.35;
+      if(p.id===localId)group.position.set(p.x,renderY,p.z);
+      else group.position.lerp(new THREE.Vector3(p.x,renderY,p.z),.65);group.rotation.y=Math.atan2(p.ax,p.az);group.scale.setScalar(p.hp>0?1:.45);const opacity=p.invisible>0?.35:1;
       if(group.userData.lastOpacity!==opacity){
         group.traverse(o=>{if(o instanceof THREE.Mesh&&o.material instanceof THREE.MeshStandardMaterial){o.material.transparent=opacity<1;o.material.opacity=opacity;}});
         group.userData.lastOpacity=opacity;

@@ -41,7 +41,20 @@ export function createGame(options:{mode?:Mode;map?:string;difficulty?:Difficult
   const map=structuredClone(mapById(options.map||'park',is3v3?'3v3':'standard'));
   const initialSafeRadius=Math.hypot(map.width/2,map.height/2)+2;
   const slots:Slot[]=(options.slots||[]).map(s=>({...s}));
-  if(mode==='survival'||mode==='ffa'){while(slots.length<10){const n=slots.length;slots.push({id:`bot-${n}`,name:`CPU ${n}`,character:['rei','jin','bom','frost','noise'][n%5],team:n+2,bot:true});}slots.forEach((s,i)=>s.team=i+2);}
+  if(mode==='survival'||mode==='ffa'){
+    // In 10-player battle royale, AI opponents only use STARTER/SPARK.
+    // Player-owned heroes and the first-win random reward are unaffected.
+    const allowedBots=['rei','gald','mina'] as const;
+    while(slots.length<10){
+      const n=slots.length;
+      slots.push({id:`bot-${n}`,name:`CPU ${n}`,character:allowedBots[n%allowedBots.length],team:n+2,bot:true});
+    }
+    slots.forEach((slot,i)=>{
+      slot.team=i+2;
+      if(slot.bot&&!allowedBots.includes(slot.character as typeof allowedBots[number]))
+        slot.character=allowedBots[i%allowedBots.length];
+    });
+  }
   else if(!options.training)for(let team=0;team<2;team++)while(slots.filter(s=>s.team===team).length<size){const n=slots.filter(s=>s.team===team).length;slots.push({id:`bot-${team}-${n}`,name:`CPU ${team===0?'A':'B'}${n+1}`,character:['rei','gald','mina','bom','chrono','noise','frost','jin'][(team*3+n)%8],team,bot:true});}
   return {tick:0,time:mode==='survival'?150:mode==='ffa'?210:180,mode,difficulty:options.difficulty||'normal',training:options.training||false,trainingStats:options.training?{hits:0,attacks:0,lastDamage:0,recentDamage:[]}:undefined,map,players:slots.map((s,i)=>makeFighter(s,i,map)),bullets:[],effects:[],score:[0,0],winner:null,overtime:false,shiftEnabled:options.shift!==false,shiftWarning:false,shiftCount:0,terminal:{x:map.goal[0],z:map.goal[1],radius:1.9,owner:null,progress:[0,0],candidates:shiftChoices(map.id,0),votes:{},selected:null,cycle:0},payload:0,payloadRound:0,payloadRecord:[0,0],safeRadius:initialSafeRadius,nextId:1,events:[]};
 }

@@ -35,9 +35,13 @@ function TouchStick({label,onMove,size=112,fire=false}:{
     const rect=ref.current?.getBoundingClientRect();if(!rect)return;
     const x=(e.clientX-rect.left-rect.width/2)/(rect.width/2);
     const z=(e.clientY-rect.top-rect.height/2)/(rect.height/2);
-    const magnitude=Math.hypot(x,z),divisor=Math.max(1,magnitude);
-    const nx=x/divisor,nz=z/divisor;
-    last.current=[nx,nz,Math.min(1,magnitude)];
+    const magnitude=Math.hypot(x,z);
+    // Small central dead zone prevents accidental movement from finger jitter.
+    const deadZone=fire?0.08:0.09;
+    const normalized=magnitude<=deadZone?0:Math.min(1,(magnitude-deadZone)/(1-deadZone));
+    const scale=magnitude>0?normalized/magnitude:0;
+    const nx=x*scale,nz=z*scale;
+    last.current=[nx,nz,normalized];
     maxTravel.current=Math.max(maxTravel.current,Math.hypot(e.clientX-origin.current[0],e.clientY-origin.current[1]));
     setPoint([nx,nz]);onMove(nx,nz,true,last.current[2],false,false);
   }
