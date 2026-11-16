@@ -104,7 +104,7 @@ export class ShiftStore {
     const current=p.loadouts[character]||{};
     const first=gear1===undefined?current.gear1:gear1||null;
     const second=gear2===undefined?current.gear2:gear2||null;
-    const valid=id=>id===null||gearOptions.some(g=>g.id===id);
+    const valid=id=>id==null||gearOptions.some(g=>g.id===id);
     if(!valid(first)||!valid(second))throw fail('無効なソーラーギアです。');
     if((first&&level<8)||(second&&level<10))throw fail('ギアの装備レベルが不足しています。');
     if(first&&second&&first===second)throw fail('同じギアは2つ装備できません。');
