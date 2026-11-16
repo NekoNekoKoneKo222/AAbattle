@@ -9,6 +9,12 @@ const mat=(color:number,roughness=.7)=>new THREE.MeshStandardMaterial({color,rou
 const floorMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:.9});
 const projectileGeo=new THREE.SphereGeometry(.16,8,6);
 const helper=new THREE.Object3D();
+/** iPadOS may advertise Macintosh; touch count disambiguates it from desktop Macs. */
+function isAppleTouchBrowser():boolean{
+  if(typeof navigator==='undefined')return false;
+  return /iPad|iPhone|iPod/.test(navigator.userAgent)||
+    (/Macintosh/.test(navigator.userAgent)&&navigator.maxTouchPoints>1);
+}
 export async function loadCharacterModel(url:string){return (await new GLTFLoader().loadAsync(url)).scene;}
 function fighterMesh(p:Fighter,model:PlayerModel|null){
   const c=characterById(p.character),group=new THREE.Group();
@@ -34,19 +40,30 @@ function fighterMesh(p:Fighter,model:PlayerModel|null){
 }
 export class ArenaRenderer {
   readonly canvas:HTMLCanvasElement; private renderer:THREE.WebGLRenderer; private scene=new THREE.Scene(); private camera=new THREE.OrthographicCamera(-8,8,5,-5,.1,100); private ground=new THREE.Group(); private signalGroup=new THREE.Group(); private signalMeshes=new Map<string,THREE.Group>(); private terminalRing:THREE.Mesh|null=null; private actors=new Map<string,THREE.Group>(); private modelDocs=new Map<string,PlayerModel|null>(); private modelLoading=new Set<string>(); private bullets=new Map<number,THREE.Mesh>(); private effects=new Map<number,THREE.Mesh>(); private ray=new THREE.Raycaster(); private plane=new THREE.Plane(new THREE.Vector3(0,1,0),0); private target=new THREE.Vector3(); private frame=0; private quality:Quality; private aimLine:THREE.Line; private aimTip:THREE.Mesh; private nameplateLayer:HTMLDivElement;private nameplates=new Map<string,Nameplate>();
+  private readonly appleTouch=isAppleTouchBrowser();
+  private readonly projectileMaterials={
+    blue:new THREE.MeshBasicMaterial({color:0x75f4ff,depthWrite:true,depthTest:true}),
+    red:new THREE.MeshBasicMaterial({color:0xffa879,depthWrite:true,depthTest:true}),
+  };
   private requestModel(owner:string){if(this.modelDocs.has(owner)||this.modelLoading.has(owner))return;this.modelLoading.add(owner);fetch(`/api/shift/model/${encodeURIComponent(owner)}`).then(r=>r.ok?r.json():{model:null}).then(data=>{this.modelDocs.set(owner,data.model?validatePlayerModel(data.model):null);}).catch(()=>this.modelDocs.set(owner,null)).finally(()=>this.modelLoading.delete(owner));}
-  constructor(private host:HTMLElement,quality:Quality){this.quality=quality;this.renderer=new THREE.WebGLRenderer({antialias:quality==='high',powerPreference:'high-performance'});this.canvas=this.renderer.domElement;this.canvas.className='arena-canvas';host.append(this.canvas);
+  constructor(private host:HTMLElement,quality:Quality){this.quality=quality;this.renderer=new THREE.WebGLRenderer({
+  antialias:quality==='high'&&!this.appleTouch,
+  powerPreference:this.appleTouch?'default':'high-performance',
+  alpha:false,stencil:false,preserveDrawingBuffer:false,
+});
+this.renderer.autoClear=false; // Exactly one explicit color/depth/stencil clear per frame.
+this.renderer.setClearColor(0x14243b,1);this.canvas=this.renderer.domElement;this.canvas.className='arena-canvas';host.append(this.canvas);
  this.nameplateLayer=document.createElement('div');this.nameplateLayer.className='fighter-nameplate-layer';
- this.nameplateLayer.setAttribute('aria-hidden','true');host.appendChild(this.nameplateLayer);this.renderer.setPixelRatio(Math.min(devicePixelRatio,quality==='low'?1:quality==='medium'?1.5:2));this.renderer.shadowMap.enabled=quality==='high';this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.scene.background=new THREE.Color(0x14243b);this.scene.fog=new THREE.Fog(0x14243b,28,48);this.scene.add(new THREE.HemisphereLight(0xffffff,0x153e48,2.0));const sun=new THREE.DirectionalLight(0xffeed1,2.2);sun.position.set(8,18,11);sun.castShadow=this.renderer.shadowMap.enabled;this.scene.add(sun);this.scene.add(this.ground);this.scene.add(this.signalGroup);
+ this.nameplateLayer.setAttribute('aria-hidden','true');host.appendChild(this.nameplateLayer);this.renderer.setPixelRatio(Math.min(devicePixelRatio,this.appleTouch?1.5:quality==='low'?1:quality==='medium'?1.5:2));this.renderer.shadowMap.enabled=quality==='high'&&!this.appleTouch;this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.scene.background=new THREE.Color(0x14243b);this.scene.fog=new THREE.Fog(0x14243b,28,48);this.scene.add(new THREE.HemisphereLight(0xffffff,0x153e48,2.0));const sun=new THREE.DirectionalLight(0xffeed1,2.2);sun.position.set(8,18,11);sun.castShadow=this.renderer.shadowMap.enabled;this.scene.add(sun);this.scene.add(this.ground);this.scene.add(this.signalGroup);
   this.aimLine=new THREE.Line(new THREE.BufferGeometry().setAttribute('position',new THREE.BufferAttribute(new Float32Array(25*3),3)),new THREE.LineDashedMaterial({color:0xffedf2,dashSize:.31,gapSize:.15,transparent:true,opacity:.90,depthTest:false}));
   this.aimLine.computeLineDistances();this.aimLine.frustumCulled=false;this.aimLine.renderOrder=50;this.scene.add(this.aimLine);
   this.aimTip=new THREE.Mesh(new THREE.RingGeometry(.23,.34,28),new THREE.MeshBasicMaterial({color:0xffffff,side:THREE.DoubleSide,depthTest:false,transparent:true,opacity:.85}));
   this.aimTip.rotation.x=-Math.PI/2;this.aimTip.renderOrder=50;this.scene.add(this.aimTip);
   this.camera.position.set(18,22,29);this.camera.lookAt(18,0,13);this.resize();}
-  setQuality(value:Quality){this.quality=value;this.renderer.setPixelRatio(Math.min(devicePixelRatio,value==='low'?1:value==='medium'?1.5:2));this.renderer.shadowMap.enabled=value==='high';this.resize();}
+  setQuality(value:Quality){this.quality=value;this.renderer.setPixelRatio(Math.min(devicePixelRatio,this.appleTouch?1.5:value==='low'?1:value==='medium'?1.5:2));this.renderer.shadowMap.enabled=value==='high'&&!this.appleTouch;this.resize();}
   resize(){const w=this.host.clientWidth||800,h=this.host.clientHeight||500,aspect=w/h,half=10.3;this.camera.left=-half*aspect;this.camera.right=half*aspect;this.camera.top=half;this.camera.bottom=-half;this.camera.updateProjectionMatrix();this.renderer.setSize(w,h,false);}
   aim(clientX:number,clientY:number,origin:Fighter):[number,number,number]{const rect=this.canvas.getBoundingClientRect(),x=(clientX-rect.left)/rect.width*2-1,y=-(clientY-rect.top)/rect.height*2+1;this.ray.setFromCamera(new THREE.Vector2(x,y),this.camera);this.ray.ray.intersectPlane(this.plane,this.target);const dx=this.target.x-origin.x,dz=this.target.z-origin.z,d=Math.hypot(dx,dz)||1;return[dx/d,dz/d,Math.max(.12,Math.min(1,d/Math.max(.5,characterById(origin.character).attack.range)))];}
-  buildMap(g:GameState){this.ground.clear();const map=g.map;this.camera.position.set(map.goal[0],22,map.goal[1]+16);this.camera.lookAt(map.goal[0],0,map.goal[1]);this.scene.background=new THREE.Color(map.theme);this.scene.fog=new THREE.Fog(map.theme,28,48);const abyss=new THREE.Mesh(new THREE.BoxGeometry(map.width+3,.3,map.height+3),new THREE.MeshStandardMaterial({color:map.id==='park'?0x5741a7:map.theme,emissive:0x33186d,emissiveIntensity:.7}));abyss.position.set(map.width/2,-.47,map.height/2);this.ground.add(abyss);const floor=new THREE.Mesh(new THREE.BoxGeometry(map.width,.3,map.height),floorMat.clone());(floor.material as THREE.MeshStandardMaterial).color.setHex(map.ground);floor.position.set(map.width/2,-.17,map.height/2);floor.receiveShadow=true;this.ground.add(floor);
+  buildMap(g:GameState){this.ground.clear();const map=g.map;this.renderer.setClearColor(map.theme,1);this.camera.position.set(map.goal[0],22,map.goal[1]+16);this.camera.lookAt(map.goal[0],0,map.goal[1]);this.scene.background=new THREE.Color(map.theme);this.scene.fog=new THREE.Fog(map.theme,28,48);const abyss=new THREE.Mesh(new THREE.BoxGeometry(map.width+3,.3,map.height+3),new THREE.MeshStandardMaterial({color:map.id==='park'?0x5741a7:map.theme,emissive:0x33186d,emissiveIntensity:.7}));abyss.position.set(map.width/2,-.47,map.height/2);this.ground.add(abyss);const floor=new THREE.Mesh(new THREE.BoxGeometry(map.width,.3,map.height),floorMat.clone());(floor.material as THREE.MeshStandardMaterial).color.setHex(map.ground);floor.position.set(map.width/2,-.17,map.height/2);floor.receiveShadow=true;this.ground.add(floor);
     const grid=new THREE.GridHelper(Math.max(map.width,map.height),26,0xffffff,0xffffff);grid.position.set(map.width/2,.01,map.height/2);(grid.material as THREE.Material).transparent=true;(grid.material as THREE.Material).opacity=.12;this.ground.add(grid);
     for(const zone of map.zones){const color={bush:0x59bc6c,speed:0x6adcf4,water:0x4ba0db,conveyor:0xf8ca64,slow:0x99dff9,heal:0x6bf5b8,danger:0xfa5c79,jump:0xffda7c}[zone.kind];const disc=new THREE.Mesh(new THREE.CylinderGeometry(zone.radius,zone.radius,.035,28),new THREE.MeshBasicMaterial({color,transparent:true,opacity:zone.kind==='bush'?.24:.46}));disc.position.set(zone.x,.03,zone.z);this.ground.add(disc);if(zone.kind==='bush'){for(let k=0;k<10;k++){const a=k*2.4,r=zone.radius*(.25+(k%5)/7),leaf=new THREE.Mesh(new THREE.ConeGeometry(.3,.9,5),mat(color));leaf.position.set(zone.x+Math.cos(a)*r,.4,zone.z+Math.sin(a)*r);leaf.rotation.z=Math.sin(a)*.2;this.ground.add(leaf);}}}
     for(const wall of map.walls){const mesh=new THREE.Mesh(new THREE.BoxGeometry(wall.w,wall.kind==='crate'?.9:1.35,wall.h),mat(wall.kind==='crate'?0xc99365:wall.kind==='ice'?0x95dcff:map.id==='factory'?0x627493:0x8e9ea6));mesh.position.set(wall.x,wall.kind==='crate'?.45:.675,wall.z);mesh.castShadow=true;mesh.receiveShadow=true;mesh.userData.wallId=wall.id;this.ground.add(mesh);if(wall.kind==='crate'){const lid=new THREE.Mesh(new THREE.BoxGeometry(wall.w+.05,.06,wall.h+.05),mat(0xeeba70));lid.position.set(wall.x,.93,wall.z);this.ground.add(lid);}else{for(let k=0;k<3;k++){const cap=new THREE.Mesh(new THREE.BoxGeometry(wall.w/3-.035,.09,wall.h+.03),mat(wall.kind==='ice'?0xc4f6ff:map.id==='factory'?0x8499af:0xb9b5ad));cap.position.set(wall.x-wall.w/3+k*wall.w/3,1.37,wall.z);this.ground.add(cap);}}}
@@ -70,7 +87,7 @@ export class ArenaRenderer {
       if(voxel)poseVoxelHero(voxel,now/1000,Math.hypot(p.vx,p.vz),attackElapsed!==null&&attackElapsed<.35,skillElapsed!==null&&skillElapsed<.5);
       const speed=Math.hypot(p.vx,p.vz),bob=p.hp>0?Math.sin(this.frame*.08+p.x)*Math.min(speed,5)*.013:0;group.visible=p.hp>0||g.mode!=='survival';group.position.lerp(new THREE.Vector3(p.x,p.hp>0?bob:-.35,p.z),.35);group.rotation.y=Math.atan2(p.ax,p.az);group.scale.setScalar(p.hp>0?1:.45);group.traverse(o=>{if(o instanceof THREE.Mesh&&o.material instanceof THREE.MeshStandardMaterial){o.material.transparent=p.invisible>0;o.material.opacity=p.invisible>0?.35:1;}if(o instanceof THREE.Mesh&&o.userData.hpBar){o.scale.x=Math.max(.01,p.hp/fighterMaxHp(p));}});}
     for(const [id,mesh] of this.actors)if(!live.has(id)){this.scene.remove(mesh);if(mesh.userData.modelRig)disposeModelRig(mesh.userData.modelRig as ModelRig);if(mesh.userData.voxelHero)disposeVoxelHero(mesh.userData.voxelHero as THREE.Group);this.actors.delete(id);}
-    const bulletIds=new Set<number>();for(const b of g.bullets){bulletIds.add(b.id);let mesh=this.bullets.get(b.id);if(!mesh){mesh=new THREE.Mesh(projectileGeo,new THREE.MeshBasicMaterial({color:b.team===0?0x75f4ff:0xffa879}));this.scene.add(mesh);this.bullets.set(b.id,mesh);}const progress=b.lob&&b.flightTime?Math.max(0,Math.min(1,1-b.life/b.flightTime)):0;
+    const bulletIds=new Set<number>();for(const b of g.bullets){bulletIds.add(b.id);let mesh=this.bullets.get(b.id);if(!mesh){mesh=new THREE.Mesh(projectileGeo,b.team===0?this.projectileMaterials.blue:this.projectileMaterials.red);mesh.castShadow=false;mesh.receiveShadow=false;this.scene.add(mesh);this.bullets.set(b.id,mesh);}const progress=b.lob&&b.flightTime?Math.max(0,Math.min(1,1-b.life/b.flightTime)):0;
     const distance=b.lob?Math.hypot((b.landX??0)-(b.launchX??0),(b.landZ??0)-(b.launchZ??0)):0;
     const maxDistance=b.lob?characterById(g.players.find(p=>p.id===b.owner)?.character||'bom').attack.range:1;
     const arcHeight=3.5-2.7*Math.max(0,Math.min(1,distance/maxDistance));
@@ -140,8 +157,12 @@ export class ArenaRenderer {
       this.aimLine.computeLineDistances();this.aimLine.visible=true;
       this.aimTip.position.set(endX,.20,endZ);this.aimTip.scale.setScalar(config.kind==='lob'?Math.max(.45,config.splashRadius)/.34:1);this.aimTip.visible=true;
     }else{this.aimLine.visible=false;this.aimTip.visible=false;}
+    // Safari/WebKit can display stale dark fragments when dynamic projectiles
+    // are removed. Clear color and depth on EVERY rendered frame.
+    this.renderer.setScissorTest(false);
+    this.renderer.clear(true,true,true);
     this.renderer.render(this.scene,this.camera);
   }
-  dispose(){this.aimLine.geometry.dispose();(this.aimLine.material as THREE.Material).dispose();this.aimTip.geometry.dispose();(this.aimTip.material as THREE.Material).dispose();this.renderer.dispose();this.canvas.remove();this.nameplateLayer.remove();this.nameplates.clear();for(const mesh of [...this.bullets.values(),...this.effects.values()])this.scene.remove(mesh);for(const mesh of this.actors.values()){if(mesh.userData.modelRig)disposeModelRig(mesh.userData.modelRig as ModelRig);if(mesh.userData.voxelHero)disposeVoxelHero(mesh.userData.voxelHero as THREE.Group);}this.actors.clear();}
+  dispose(){this.projectileMaterials.blue.dispose();this.projectileMaterials.red.dispose();this.aimLine.geometry.dispose();(this.aimLine.material as THREE.Material).dispose();this.aimTip.geometry.dispose();(this.aimTip.material as THREE.Material).dispose();this.renderer.dispose();this.canvas.remove();this.nameplateLayer.remove();this.nameplates.clear();for(const mesh of [...this.bullets.values(),...this.effects.values()])this.scene.remove(mesh);for(const mesh of this.actors.values()){if(mesh.userData.modelRig)disposeModelRig(mesh.userData.modelRig as ModelRig);if(mesh.userData.voxelHero)disposeVoxelHero(mesh.userData.voxelHero as THREE.Group);}this.actors.clear();}
 }
 
