@@ -36,14 +36,27 @@ export function applyMasteryFromReplay(profile,match,playerId,catalog){
   return changes;
 }
 
+export const AWAKEN_BONUSES=Object.freeze({
+  dobby:{cp:2,draw:1,description:'最初の発動時に2CP返還＋1枚ドロー'},
+  avada:{cp:3,draw:0,description:'最初の使用時に3CP返還'},
+  meteor:{cp:2,draw:1,description:'最初の使用時に2CP返還＋1枚ドロー'},
+  insight:{cp:1,draw:1,description:'最初の使用時に1CP返還＋追加1枚ドロー'},
+  grant:{cp:3,draw:0,description:'最初の使用時に3CP返還'},
+  infinity:{cp:2,draw:1,description:'最初の装備時に2CP返還＋1枚ドロー'},
+  warp:{cp:2,draw:1,description:'最初の使用時に2CP返還＋1枚ドロー'}
+});
+export const awakeningBonus=cardId=>AWAKEN_BONUSES[cardId]||{cp:2,draw:0,description:'最初の使用時に2CP返還'};
+
 export function applyAwakeningOnPlay(game,side,cardId,draw){
   if(game.onlineMode==='ranked'||!game.awakened?.[side]?.includes(cardId))return false;
   const player=game.cards[side];
   player.awakenedUsed ||= [];
   if(player.awakenedUsed.includes(cardId))return false;
   player.awakenedUsed.push(cardId);
-  player.cp=Math.min(game.settings?.cpCap??10,player.cp+2);
-  if(cardId==='dobby'&&typeof draw==='function')draw(player);
-  game.log.push('覚醒 '+cardId+'：初回使用時に2CP返還'+(cardId==='dobby'?'・追加ドロー':''));
+  const bonus=awakeningBonus(cardId);
+  player.cp=Math.min(game.settings?.cpCap??10,player.cp+bonus.cp);
+  let drawn=0;
+  if(typeof draw==='function')for(let i=0;i<bonus.draw;i++)if(draw(player))drawn++;
+  game.log.push('覚醒 '+cardId+'：'+bonus.cp+'CP返還'+(drawn?'・'+drawn+'枚ドロー':''));
   return true;
 }
