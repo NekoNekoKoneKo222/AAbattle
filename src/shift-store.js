@@ -5,7 +5,31 @@ const utcDay = () => new Date().toISOString().slice(0, 10);
 const clone = (value) => structuredClone(value);
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 const initial = (id, name) => ({ user_id: id, display_name: name, selected_character: 'rei', owned_characters: ['rei'], credits: 0, prestige: 0, road_target: 'gald', loadouts: {}, mastery: {}, missions: {}, mission_day: utcDay(), first_win_day: null, solo_day: null, solo_count: 0, economy: defaultEconomy() });
-const normalize = (row) => ({ ...row, economy: { ...defaultEconomy(), ...(row.economy || {}), levels: { ...(row.economy?.levels || {}) }, skins: { ...(row.economy?.skins || {}) }, drops: { ...defaultEconomy().drops, ...(row.economy?.drops || {}) } }, mission_day: row.mission_day instanceof Date ? row.mission_day.toISOString().slice(0, 10) : row.mission_day, first_win_day: row.first_win_day instanceof Date ? row.first_win_day.toISOString().slice(0, 10) : row.first_win_day, solo_day: row.solo_day instanceof Date ? row.solo_day.toISOString().slice(0, 10) : row.solo_day });
+// The existing loadouts JSONB column is writable by the service account.
+// Keep Sun progression under a reserved key instead of changing table ownership/schema at startup.
+const SOLAR_DATA_KEY = '__shift_solar_economy_v1';
+const normalize = (row) => {
+  const loadouts = row.loadouts && typeof row.loadouts === 'object' && !Array.isArray(row.loadouts) ? { ...row.loadouts } : {};
+  // Prefer the writable JSONB key. Also read 007's economy column when present,
+  // so any data saved during an earlier deployment can be recovered.
+  const storedEconomy = loadouts[SOLAR_DATA_KEY] || row.economy || {};
+  delete loadouts[SOLAR_DATA_KEY];
+  const defaults = defaultEconomy();
+  return {
+    ...row,
+    loadouts,
+    economy: {
+      ...defaults,
+      ...storedEconomy,
+      levels: { ...(storedEconomy.levels || {}) },
+      skins: { ...(storedEconomy.skins || {}) },
+      drops: { ...defaults.drops, ...(storedEconomy.drops || {}) },
+    },
+    mission_day: row.mission_day instanceof Date ? row.mission_day.toISOString().slice(0, 10) : row.mission_day,
+    first_win_day: row.first_win_day instanceof Date ? row.first_win_day.toISOString().slice(0, 10) : row.first_win_day,
+    solo_day: row.solo_day instanceof Date ? row.solo_day.toISOString().slice(0, 10) : row.solo_day,
+  };
+};
 function today(profile) { if (profile.mission_day !== utcDay()) { profile.mission_day = utcDay(); profile.missions = {}; } }
 function mastery(profile, id) { return profile.mastery[id] ||= { xp: 0, stats: { matches: 0, wins: 0, ko: 0, ultimates: 0, objective: 0, hits: 0, terminal: 0 }, claimed: [], equipped_skin: null }; }
 function publicProfile(profile) { today(profile); return { ...clone(profile), road_tier: nextRoadTier(profile.owned_characters), mastery_levels: Object.fromEntries(Object.entries(profile.mastery).map(([id, value]) => [id, masteryLevel(value.xp)])), server_day: utcDay() }; }
@@ -16,7 +40,7 @@ export class ShiftStore {
     if (!this.pool) return;
     const { rows } = await this.pool.query("SELECT to_regclass('public.shift_profiles') AS profiles, to_regclass('public.shift_reward_transactions') AS rewards, to_regclass('public.shift_friend_requests') AS requests, to_regclass('public.shift_friendships') AS friends, to_regclass('public.shift_blocks') AS blocks, to_regclass('public.shift_models') AS models");
     if (Object.values(rows[0] || {}).some(v => !v)) throw new Error('SHIFT ARENA schema missing. Apply migrations/005_shift_arena.sql and 006_shift_models.sql first.');
-    await this.pool.query("ALTER TABLE shift_profiles ADD COLUMN IF NOT EXISTS economy jsonb NOT NULL DEFAULT '{}'::jsonb");
+    // No DDL here: the runtime database role may not own shift_profiles.
   }
   async getModel(userId) {
     if (!this.pool) return this.models.get(userId) || null;
@@ -58,7 +82,7 @@ export class ShiftStore {
       const { rows } = await client.query('SELECT * FROM shift_profiles WHERE user_id=$1 FOR UPDATE', [user.id]);
       const profile = normalize(rows[0]); today(profile);
       const result = await change(profile, client);
-      await client.query(`UPDATE shift_profiles SET display_name=$2,selected_character=$3,owned_characters=$4,credits=$5,prestige=$6,road_target=$7,loadouts=$8,mastery=$9,missions=$10,mission_day=$11,first_win_day=$12,solo_day=$13,solo_count=$14,economy=$15,updated_at=now() WHERE user_id=$1`, [user.id,user.username,profile.selected_character,profile.owned_characters,profile.credits,profile.prestige,profile.road_target,JSON.stringify(profile.loadouts),JSON.stringify(profile.mastery),JSON.stringify(profile.missions),profile.mission_day,profile.first_win_day,profile.solo_day,profile.solo_count,JSON.stringify(profile.economy)]);
+      await client.query(`UPDATE shift_profiles SET display_name=$2,selected_character=$3,owned_characters=$4,credits=$5,prestige=$6,road_target=$7,loadouts=$8,mastery=$9,missions=$10,mission_day=$11,first_win_day=$12,solo_day=$13,solo_count=$14,updated_at=now() WHERE user_id=$1`, [user.id,user.username,profile.selected_character,profile.owned_characters,profile.credits,profile.prestige,profile.road_target,JSON.stringify({ ...profile.loadouts, [SOLAR_DATA_KEY]: profile.economy }),JSON.stringify(profile.mastery),JSON.stringify(profile.missions),profile.mission_day,profile.first_win_day,profile.solo_day,profile.solo_count]);
       await client.query('COMMIT'); return result === undefined ? publicProfile(profile) : result;
     } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
   }

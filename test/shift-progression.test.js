@@ -141,3 +141,53 @@ test('drops are server rolled and paid solar skins use only stored diamonds',asy
   assert.equal(p.mastery.rei.equipped_skin,'sun_skin');
   await assert.rejects(store.buySunSkin(alice,'rei'),/購入済み/);
 });
+
+test('runtime profile startup and power upgrade work without ALTER TABLE privilege', async () => {
+  const alice = user('NoDDLUser');
+  const stored = {
+    user_id: alice.id, display_name: alice.username, selected_character: 'rei',
+    owned_characters: ['rei'], credits: 0, prestige: 0, road_target: 'gald',
+    loadouts: { rei: { skill: 'energy_shield', passive: 'ammo_return' } },
+    mastery: {}, missions: {}, mission_day: '2026-11-17',
+    first_win_day: null, solo_day: null, solo_count: 0,
+  };
+  const statements = [];
+  let lastUpdate = null;
+  const client = {
+    async query(sql, args = []) {
+      statements.push(sql);
+      if (sql.startsWith('SELECT * FROM shift_profiles')) return { rows: [structuredClone(stored)] };
+      if (sql.startsWith('UPDATE shift_profiles')) {
+        lastUpdate = { sql, args };
+        stored.loadouts = JSON.parse(args[7]);
+      }
+      return { rows: [], rowCount: 1 };
+    },
+    release() {},
+  };
+  const pool = {
+    async query(sql) {
+      statements.push(sql);
+      if (!sql.startsWith('SELECT to_regclass')) throw new Error('DDL or unexpected query at startup: ' + sql);
+      return { rows: [{ profiles: 'shift_profiles', rewards: 'shift_reward_transactions', requests: 'shift_friend_requests', friends: 'shift_friendships', blocks: 'shift_blocks', models: 'shift_models' }] };
+    },
+    async connect() { return client; },
+  };
+  const store = new ShiftStore(pool);
+  await store.init();
+  const upgraded = await store.upgradeHero(alice, 'rei');
+  assert.equal(upgraded.profile.economy.levels.rei, 2);
+  assert.equal(upgraded.profile.economy.coins, 215);
+  assert.equal(upgraded.profile.economy.sun_power, 120);
+  assert.ok(lastUpdate);
+  assert.doesNotMatch(lastUpdate.sql, /economy\s*=/);
+  assert.equal(lastUpdate.args.length, 14);
+  assert.equal(stored.loadouts.__shift_solar_economy_v1.levels.rei, 2);
+  assert.equal(stored.loadouts.rei.skill, 'energy_shield');
+  const restartedStore = new ShiftStore(pool);
+  const persisted = await restartedStore.getProfile(alice);
+  assert.equal(persisted.economy.levels.rei, 2);
+  assert.equal(persisted.economy.coins, 215);
+  assert.equal(persisted.loadouts.__shift_solar_economy_v1, undefined);
+  assert.ok(statements.every(sql => !/ALTER\s+TABLE/i.test(sql)));
+});
