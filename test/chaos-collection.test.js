@@ -65,3 +65,13 @@ test('bulk conversion exchanges all excess cards once and preserves two copies',
   assert.equal(second.profile.shards,first.amount+second.amount);
   await assert.rejects(store.convertAll(id),/余剰カード/);
 });
+
+test('another player card showcase includes only owned cards and equipped cosmetics',async()=>{
+  const store=createChaosCollection();
+  const showcase=await store.cardShowcase('alice');
+  assert.equal(showcase.cards.grant,2);
+  assert.equal(showcase.skins.grant,'default');
+  assert.deepEqual(Object.keys(showcase).sort(),['cards','skins']);
+  await store.adminGrant('alice',{cardId:'grant',count:1});
+  assert.equal((await store.cardShowcase('alice')).cards.grant,3);
+});
