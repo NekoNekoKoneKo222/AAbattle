@@ -2,6 +2,7 @@ import { registerEffectHandler, emitEffect } from './chaos-effects.js';
 import { MEME_CARDS } from './chaos-memes.js';
 import { resolveMemeCard, resolveChaosTurnStart, terrainAt } from './chaos-meme-effects.js';
 import { awardPiecePoints, revivalBlocked } from './chaos-rounds.js';
+import { applyAwakeningOnPlay } from './chaos-progression.js';
 
 export const CARD_CATALOG=Object.freeze({
   avada:{id:'avada',name:'アバダ・ケダブラ',type:'instant',rarity:'rare',cost:4,target:'enemy-piece',description:'敵の王将以外の駒を1体破壊する。'},
@@ -103,7 +104,7 @@ export function playCard(s,action){const side=s.turn,p=s.cards[side],id=action?.
   else if(id==='promote'){const target=action.target,piece=s.board[target];if(!Number.isInteger(target)||target<0||target>=s.board.length||piece?.side!==side||piece.promoted||!['P','L','N','S','B','R'].includes(piece.type))fail('成れる自分の駒を選んでください。');piece.promoted=true;}
   else if(id==='recycle'){if(!p.grave.length||p.hand.length>=7)fail('墓地にカードがないか、手札が満杯です。');p.hand.push(p.grave.splice(Math.floor(Math.random()*p.grave.length),1)[0]);}
   else if(MEME_CARDS[id])resolveMemeCard(s,card,action,{destroy:destroyPiece,draw,reflected,steal,catalog:CARD_CATALOG});
-  p.cardPlayed=true;if(card.type!=='equipment')p.grave.push(id);s.log.push(`${side==='b'?'先手':'後手'}が${card.name}を使用`);emitEffect(s,'ON_CARD_PLAYED',{side,cardId:id});
+  p.cardPlayed=true;if(card.type!=='equipment')p.grave.push(id);s.log.push(`${side==='b'?'先手':'後手'}が${card.name}を使用`);applyAwakeningOnPlay(s,side,id,draw);emitEffect(s,'ON_CARD_PLAYED',{side,cardId:id});
 }
 export function activateEquipment(s,action){const side=s.turn,p=s.cards[side],slot=action?.slot;if(!Number.isInteger(slot)||!canActivate(s,side,slot))fail('この装備能力は発動できません。');const item=p.equipment[slot],card=CARD_CATALOG[item.id];
   if(item.id==='dobby')dobby(s,side,action);
