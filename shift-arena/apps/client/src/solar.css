@@ -144,3 +144,34 @@ button.primary:hover,.sun-primary:hover{background:linear-gradient(#fffaa4,#ffce
 .signal-control button{display:inline-flex;align-items:center;gap:4px}
 .char-stats>.game-icon{vertical-align:-.2em}
 .model-canvas-heading button{display:inline-flex;align-items:center;gap:5px}
+
+/* Game-native SVG item descriptions and power milestones. */
+.sun-wallet .wallet-item{display:inline-flex;align-items:center;gap:7px;padding:5px 12px;background:#04152e;border:2px solid #3159a7;border-radius:10px;box-shadow:inset 0 2px #507dbc,0 3px #031334;color:#fff;text-shadow:1px 2px #02112c;font-size:16px;font-weight:900}
+.sun-wallet .wallet-item:hover{background:#19599c}
+.item-info-overlay{position:fixed;inset:0;background:#041334e1;z-index:220;display:grid;place-items:center;padding:18px}
+.item-info-card{width:min(410px,92vw);padding:28px;text-align:center;background:radial-gradient(circle at 50% 0%,#4596d7,#073777 75%);border:4px solid #ffdb62;border-radius:23px;box-shadow:0 10px 46px #0008}
+.item-info-card>.game-icon{margin:4px auto;color:#ffde62}
+.item-info-card h2{font-size:33px;margin:8px 0}
+.item-info-card p{line-height:1.85;color:#f2f8ff}
+.drop-help{border:0;background:transparent;box-shadow:none;padding:0;display:grid;place-items:center;cursor:help}
+.drop-help:hover{filter:brightness(1.15)}
+.beginner-challenge{display:grid;grid-template-columns:220px 1fr;align-items:center;gap:24px;border:3px solid #a0dbfa;background:linear-gradient(120deg,#175eac,#082b70);border-radius:21px;padding:26px}
+.beginner-challenge>div:last-child{display:grid;gap:12px;justify-items:start}
+.beginner-challenge h2{font-size:30px;margin:0}
+.beginner-challenge p{line-height:1.7}
+.challenge-symbol{display:grid;place-items:center;min-height:180px;color:#ffdd57;background:radial-gradient(circle,#3082e1,#0a3f83);border-radius:15px}
+.rarity-odds{display:flex;gap:8px;flex-wrap:wrap}
+.rarity-badge{display:inline-block;border:2px solid #ffd76b;border-radius:9px;background:#071a46;padding:6px 11px;font-weight:900;text-shadow:0 1px #0009}
+.rarity-label{font-weight:950;text-shadow:1px 2px #01183b}
+.beginner-victory{display:flex;align-items:center;justify-content:center;gap:15px;flex-wrap:wrap;background:linear-gradient(90deg,#6845a4,#d09a29);border:4px solid #ffe06b;border-radius:15px;padding:18px}
+.beginner-victory svg{color:#ffe177}
+.power-unlocks{display:grid;gap:7px}
+.power-unlocks>div{display:grid;grid-template-columns:1fr auto;gap:3px;align-items:center;padding:9px 12px;border:2px solid #416eab;border-radius:12px;background:#0c3574}
+.power-unlocks .unlocked{border-color:#f8d957}
+.power-unlocks .locked{opacity:.53}
+.power-unlocks p{grid-column:1/-1;margin:0;font-size:12px;color:#d4e7fb}
+.power-unlocks small{font-weight:850}
+.overdrive-hud{width:100%;min-width:145px}
+.game-screen .meter.overdrive i{background:linear-gradient(#fff7a0,#ff7c23)}
+.touch-right .touch-drive{background:linear-gradient(#fff19a,#ff9328);color:#522b02;border:3px solid #ffdb63;box-shadow:0 4px #a14903;font-weight:1000}
+@media(max-width:750px){.beginner-challenge{grid-template-columns:1fr}.challenge-symbol{min-height:115px}.sun-wallet .wallet-item{padding:4px 7px;font-size:12px}}
