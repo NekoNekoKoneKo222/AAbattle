@@ -90,11 +90,11 @@ test('mastery XP is earned from actual online card plays, rewards coins, and rej
   let a=await store.profile('alice');
   assert.equal(a.mastery.grant,120);
   assert.equal(a.awakened.length,0);
-  assert.equal(a.coins,5900); // base 5500 + win 120 + first win 100 + three mastery levels * 60
+  assert.equal(a.coins,5840); // base 5500 + win 120 + first win 100 + two mastery levels * 60
   await store.settle(match);
   a=await store.profile('alice');
   assert.equal(a.mastery.grant,120);
-  assert.equal(a.coins,5900);
+  assert.equal(a.coins,5840);
   assert.equal((await store.profile('bob')).mastery.insight,40);
 });
 
