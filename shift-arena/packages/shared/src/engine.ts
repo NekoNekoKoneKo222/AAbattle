@@ -60,8 +60,8 @@ function fire(g:GameState,p:Fighter,ax:number,az:number){const c=characterById(p
 function addEffect(g:GameState,kind:string,p:Fighter,x:number,z:number,radius:number,life:number,damageValue=0){if(g.effects.length>=45)return;g.effects.push({id:g.nextId++,kind,x,z,radius,life,team:p.team,owner:p.id,damage:damageValue});event(g,kind,x,z,undefined,p.team);}
 function ultimate(g:GameState,p:Fighter,ax:number,az:number){if(p.ultimate<100||p.hp<=0)return;const c=characterById(p.character),[dx,dz]=norm(ax,az);p.ultimate=0;p.invulnerable=0;event(g,'ultimate',p.x,p.z,undefined,p.team,p.id);switch(c.ultimate.kind){
   case 'rapid':p.rapid=6;break;
-  case 'shockwave':for(const t of g.players)if(t.team!==p.team&&distance(p,t)<4.2)damage(g,p,t,850,7,(t.x-p.x)/4,(t.z-p.z)/4);addEffect(g,'shockwave',p,p.x,p.z,4.2,.45);break;
-  case 'assassinate':{const targets=g.players.filter(t=>t.team!==p.team&&t.hp>0&&distance(t,p)<8&&lineClear(g.map,p,t)).sort((a,b)=>distance(a,p)-distance(b,p));const t=targets[0];if(t){const x=t.x-dx*.8,z=t.z-dz*.8;if(!solidAt(g.map,x,z)){p.x=x;p.z=z;}damage(g,p,t,1350,3,dx,dz);}break;}
+  case 'shockwave':for(const t of g.players)if(t.team!==p.team&&distance(p,t)<4.2)damage(g,p,t,1600,7,(t.x-p.x)/4,(t.z-p.z)/4);addEffect(g,'shockwave',p,p.x,p.z,4.2,.45);break;
+  case 'assassinate':{const targets=g.players.filter(t=>t.team!==p.team&&t.hp>0&&distance(t,p)<8&&lineClear(g.map,p,t)).sort((a,b)=>distance(a,p)-distance(b,p));const t=targets[0];if(t){const x=t.x-dx*.8,z=t.z-dz*.8;if(!solidAt(g.map,x,z)){p.x=x;p.z=z;}damage(g,p,t,1750,3,dx,dz);}break;}
   case 'healwave':for(const t of g.players)if(t.team===p.team&&distance(t,p)<5)heal(g,t,1600);addEffect(g,'healwave',p,p.x,p.z,5,.5);break;
   case 'megabomb':addEffect(g,'bomb',p,clamp(p.x+dx*5,1,g.map.width-1),clamp(p.z+dz*5,1,g.map.height-1),3.3,1,1800);break;
   case 'timefield':addEffect(g,'slowfield',p,clamp(p.x+dx*5,1,g.map.width-1),clamp(p.z+dz*5,1,g.map.height-1),3.5,5);break;
