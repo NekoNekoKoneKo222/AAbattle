@@ -27,7 +27,7 @@ export function classifyRewardSource(source:string,participants:{accountId?:stri
 export class ShiftRoom extends Room {
   maxClients=6;
   private guests=new Map<string,Guest>();
-  private playerInputs:Record<string,Input>={};
+  private playerInputs:Record<string,Input>={};private lastInputAt=new Map<string,number>();
   private game:GameState|null=null;
   private mode:Mode='core';
   private map='park';
@@ -59,8 +59,13 @@ export class ShiftRoom extends Room {
     this.onMessage('sync',(client)=>{client.send('lobby',this.lobbyData());if(this.game)client.send('state',this.game);});
     this.onMessage('vote',(client,message:unknown)=>{if(!this.game||typeof message!=='string')return;if(registerShiftVote(this.game,client.sessionId,message as ShiftKind))this.broadcast('state',this.game);});
     this.onMessage('signal',(client,message:unknown)=>{if(!this.game||!message||typeof message!=='object')return;const guest=this.guests.get(client.sessionId);if(!guest)return;const value=message as Record<string,unknown>,id=typeof value.id==='string'?value.id:'',kind=value.kind==='chat'?'chat':'pin',label=(kind==='chat'?chatLabels:pinLabels)[id];if(!label)return;const now=Date.now(),recent=(this.signalRate.get(client.sessionId)||[]).filter(t=>t>now-10000);if(recent.length>=3)return;recent.push(now);this.signalRate.set(client.sessionId,recent);const x=typeof value.x==='number'&&Number.isFinite(value.x)?Math.max(0,Math.min(this.game.map.width,value.x)):this.game.terminal.x,z=typeof value.z==='number'&&Number.isFinite(value.z)?Math.max(0,Math.min(this.game.map.height,value.z)):this.game.terminal.z;const signal={kind,id,label,x,z,from:guest.name,team:guest.team,expiresAt:now+4500};for(const peer of this.clients)if(this.guests.get(peer.sessionId)?.team===guest.team)peer.send('signal',signal);});
-    this.onMessage('input',(client,message:unknown)=>{if(!this.game||this.game.winner!==null)return;const second=Math.floor(Date.now()/1000),rate=this.inputRate.get(client.sessionId)||{second,count:0};if(rate.second!==second){rate.second=second;rate.count=0;}if(++rate.count>40)return;this.inputRate.set(client.sessionId,rate);this.playerInputs[client.sessionId]=sanitizeInput(message);const guest=this.guests.get(client.sessionId);if(guest)guest.inputCount++;});
-    this.setSimulationInterval(()=>{if(!this.game||this.game.winner!==null)return;stepGame(this.game,this.playerInputs);for(const e of this.game.events){if(!['hit','ultimate','terminal'].includes(e.kind))continue;const metric=e.owner?this.metrics.get(e.owner):null;if(metric)metric[e.kind==='hit'?'hits':e.kind==='terminal'?'terminal':'ultimates']++;}if(this.game.tick%2===0)this.broadcast('state',this.game);if(this.game.winner!==null&&!this.resultSent){this.resultSent=true;this.broadcast('result',this.game);for(const guest of this.guests.values())if(guest.accountId)services?.presence?.(guest.accountId,'idle');void this.awardResults();}},1000/30);
+    this.onMessage('input',(client,message:unknown)=>{if(!this.game||this.game.winner!==null)return;const second=Math.floor(Date.now()/1000),rate=this.inputRate.get(client.sessionId)||{second,count:0};if(rate.second!==second){rate.second=second;rate.count=0;}if(++rate.count>40)return;this.inputRate.set(client.sessionId,rate);this.playerInputs[client.sessionId]=sanitizeInput(message);this.lastInputAt.set(client.sessionId,Date.now());const guest=this.guests.get(client.sessionId);if(guest)guest.inputCount++;});
+    this.setSimulationInterval(()=>{if(!this.game||this.game.winner!==null)return;
+      const now=Date.now();
+      for(const [id,command] of Object.entries(this.playerInputs))
+        if(now-(this.lastInputAt.get(id)||0)>260)
+          this.playerInputs[id]={...command,mx:0,mz:0,attack:false,ultimate:false,skill:false,autoAim:false,autoUltimate:false,overdrive:false};
+      stepGame(this.game,this.playerInputs);for(const e of this.game.events){if(!['hit','ultimate','terminal'].includes(e.kind))continue;const metric=e.owner?this.metrics.get(e.owner):null;if(metric)metric[e.kind==='hit'?'hits':e.kind==='terminal'?'terminal':'ultimates']++;}if(this.game.tick%2===0)this.broadcast('state',this.game);if(this.game.winner!==null&&!this.resultSent){this.resultSent=true;this.broadcast('result',this.game);for(const guest of this.guests.values())if(guest.accountId)services?.presence?.(guest.accountId,'idle');void this.awardResults();}},1000/30);
     if(options.quick===true)this.clock.setTimeout(()=>{if(!this.game&&this.clients.length>0)this.startGame();},6000);
   }
   async onJoin(client:Client,options:Record<string,unknown>,auth?:{account:Account}){

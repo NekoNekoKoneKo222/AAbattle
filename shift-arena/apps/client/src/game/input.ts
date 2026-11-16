@@ -2,7 +2,7 @@ import { neutral, type Fighter, type Input } from '@shift/shared';
 
 export class InputController {
   private keys=new Set<string>();
-  private mouseAttack=false;
+  private mouseAttack=false;private mouseAttackPulse=false;
   private mouseUltimate=false;
   private skillPulse=false;
   private ultimatePulse=false;
@@ -46,7 +46,7 @@ export class InputController {
     });
     listen(canvas,'mousedown',e=>{
       e.preventDefault();
-      if(e.button===0)this.mouseAttack=true;
+      if(e.button===0){this.mouseAttack=true;this.mouseAttackPulse=true;}
       if(e.button===2)this.mouseUltimate=true;
     });
     listen(window,'mouseup',e=>{
@@ -57,7 +57,7 @@ export class InputController {
   }
   private stopAll(){
     this.keys.clear();this.moveX=0;this.moveZ=0;
-    this.mouseAttack=false;this.mouseUltimate=false;
+    this.mouseAttack=false;this.mouseUltimate=false;this.mouseAttackPulse=false;
     this.attackActive=false;this.ultimateActive=false;
     this.attackPulse=false;this.ultimatePulse=false;
     this.autoAimPulse=false;this.autoUltimatePulse=false;
@@ -106,13 +106,13 @@ export class InputController {
       mx:Math.max(-1,Math.min(1,keyboardX+this.moveX)),
       mz:Math.max(-1,Math.min(1,keyboardZ+this.moveZ)),
       ax:this.aimX,az:this.aimZ,
-      attack:this.attackPulse||(this.mouseAttack&&this.autoFire()),
+      attack:this.attackPulse||this.mouseAttackPulse||(this.mouseAttack&&this.autoFire()),
       autoAim:this.autoAimPulse,
       ultimate:this.ultimatePulse,autoUltimate:this.autoUltimatePulse,
       skill:this.skillPulse,overdrive:this.overdrivePulse,
       aimDistance:this.lastAimDistance,
     };
-    this.attackPulse=false;this.autoAimPulse=false;
+    this.attackPulse=false;this.mouseAttackPulse=false;this.autoAimPulse=false;
     this.ultimatePulse=false;this.autoUltimatePulse=false;
     this.skillPulse=false;this.overdrivePulse=false;
     return result;
