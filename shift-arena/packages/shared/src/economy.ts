@@ -16,8 +16,8 @@ export type SunSkin = 'sun_skin';
 export type PowerLevel = number;
 export const powerLevel = (levels:Record<string,number> | undefined,character:string) =>
   Math.min(MAX_POWER_LEVEL,Math.max(1,Math.floor(levels?.[character]||1)));
-/** At maximum level HP and damage are 45% above level one; all character types scale equally. */
-export const powerMultiplier=(level:number)=>1+0.045*(Math.min(MAX_POWER_LEVEL,Math.max(1,level))-1);
+/** Every level increases health and direct attack power by 10% of their level-1 base; Lv11 = 200%. */
+export const powerMultiplier=(level:number)=>1+0.1*(Math.min(MAX_POWER_LEVEL,Math.max(1,Math.floor(level)))-1);
 export function upgradeCost(level:number){
   return level<1||level>=MAX_POWER_LEVEL?null:powerCosts[Math.floor(level)-1];
 }

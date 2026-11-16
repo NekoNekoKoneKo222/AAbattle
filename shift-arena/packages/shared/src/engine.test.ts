@@ -7,13 +7,13 @@ describe('SHIFT ARENA combat',()=>{
   it('uses ammo, hits opponents, charges ultimate and reloads',()=>{const g=duel(),a=g.players[0],b=g.players[1];stepGame(g,{a:{mx:0,mz:0,ax:1,az:0,attack:true,ultimate:false,skill:false}});expect(a.ammo).toBe(2);for(let i=0;i<15;i++)stepGame(g);expect(b.hp).toBeLessThan(characterById('gald').maxHp);expect(a.ultimate).toBeGreaterThan(0);for(let i=0;i<60;i++)stepGame(g);expect(a.ammo).toBe(3);});
   it('walls block projectiles and line of sight',()=>{const g=duel();g.map.walls=[{id:'barrier',x:6.5,z:9,w:1,h:3,hp:0,kind:'wall'}];expect(lineClear(g.map,g.players[0],g.players[1])).toBe(false);stepGame(g,{a:{mx:0,mz:0,ax:1,az:0,attack:true,ultimate:false,skill:false}});for(let i=0;i<15;i++)stepGame(g);expect(g.players[1].hp).toBe(characterById('gald').maxHp);});
   it('KO increments score and respawns with invulnerability',()=>{const g=duel();g.players[1].hp=200;stepGame(g,{a:{mx:0,mz:0,ax:1,az:0,attack:true,ultimate:false,skill:false}});for(let i=0;i<15;i++)stepGame(g);expect(g.players[1].hp).toBe(0);expect(g.score[0]).toBe(1);for(let i=0;i<91;i++)stepGame(g);expect(g.players[1].hp).toBe(characterById('gald').maxHp);expect(g.players[1].invulnerable).toBeGreaterThan(0);});
-  it('all eight characters have usable skills and ultimates',()=>{expect(characters).toHaveLength(8);for(const c of characters){const g=createGame({mode:'duel',shift:false,slots:[{id:'a',name:'A',character:c.id,team:0,bot:false},{id:'b',name:'B',character:'rei',team:1,bot:false}]});g.players.forEach(p=>p.bot=false);g.players[0].ultimate=100;stepGame(g,{a:{mx:0,mz:0,ax:1,az:0,attack:false,ultimate:true,skill:true}});expect(g.players[0].ultimate).toBe(0);expect(g.players[0].skillAt).toBeGreaterThan(g.tick);}});
+  it('all eight characters have usable skills and ultimates',()=>{expect(characters).toHaveLength(8);for(const c of characters){const g=createGame({mode:'duel',shift:false,slots:[{id:'a',name:'A',character:c.id,team:0,bot:false,powerLevel:7},{id:'b',name:'B',character:'rei',team:1,bot:false}]});g.players.forEach(p=>p.bot=false);g.players[0].ultimate=100;stepGame(g,{a:{mx:0,mz:0,ax:1,az:0,attack:false,ultimate:true,skill:true}});expect(g.players[0].ultimate).toBe(0);expect(g.players[0].skillAt).toBeGreaterThan(g.tick);}});
 });
 describe('modes and shifts',()=>{
   it('core does not score when both teams contest',()=>{const g=createGame({mode:'core',shift:false});for(const p of g.players){p.bot=false;p.x=g.map.goal[0];p.z=g.map.goal[1];}for(let i=0;i<30;i++)stepGame(g);expect(g.score).toEqual([0,0]);g.players.filter(p=>p.team===1).forEach(p=>{p.x=32;p.z=g.map.goal[1];});for(let i=0;i<30;i++)stepGame(g);expect(g.score[0]).toBe(1);});
   it('terminal capture pauses when contested and votes determine the shift',()=>{const g=createGame({mode:'core'});g.players.forEach(p=>{p.bot=false;p.x=p.team===0?g.map.goal[0]:32;p.z=g.map.goal[1];});for(let i=0;i<89;i++)stepGame(g);expect(g.terminal.owner).toBeNull();g.players.find(p=>p.team===1)!.x=g.map.goal[0];for(let i=0;i<15;i++)stepGame(g);expect(g.terminal.owner).toBeNull();g.players.filter(p=>p.team===1).forEach(p=>p.x=32);for(let i=0;i<3;i++)stepGame(g);expect(g.terminal.owner).toBe(0);g.tick=539;stepGame(g);expect(registerShiftVote(g,g.players[0].id,g.terminal.candidates[1])).toBe(true);expect(registerShiftVote(g,g.players[0].id,g.terminal.candidates[0])).toBe(false);g.tick=899;stepGame(g);expect(g.terminal.selected).toBe('heal');expect(g.map.zones.some(z=>z.kind==='heal')).toBe(true);});
   it('wall shift relocates trapped players',()=>{const g=createGame({mode:'core'});g.players.forEach(p=>p.bot=false);g.terminal.owner=0;g.terminal.candidates=['wall','heal'];g.tick=899;g.players[0].x=10;g.players[0].z=8;stepGame(g);expect(g.map.walls.some(w=>w.id==='shift-0-wall-a')).toBe(true);expect(solidAt(g.map,g.players[0].x,g.players[0].z)).toBe(false);});
-  it('saved loadout chooses the selected skill and passive',()=>{const g=createGame({mode:'duel',shift:false,slots:[{id:'a',name:'A',character:'rei',team:0,bot:false,loadout:{skill:'energy_shield',passive:'ammo_return'}}]});const p=g.players[0];expect(p.skillChoice).toBe('energy_shield');expect(p.passiveChoice).toBe('ammo_return');stepGame(g,{a:{mx:0,mz:0,ax:1,az:0,attack:false,ultimate:false,skill:true}});expect(p.shield).toBeGreaterThan(0);expect(p.x).toBe(g.map.spawn[0][0][0]);});
+  it('saved loadout chooses the selected skill and passive',()=>{const g=createGame({mode:'duel',shift:false,slots:[{id:'a',name:'A',character:'rei',team:0,bot:false,powerLevel:9,loadout:{skill:'energy_shield',passive:'ammo_return'}}]});const p=g.players[0];expect(p.skillChoice).toBe('energy_shield');expect(p.passiveChoice).toBe('ammo_return');stepGame(g,{a:{mx:0,mz:0,ax:1,az:0,attack:false,ultimate:false,skill:true}});expect(p.shield).toBeGreaterThan(0);expect(p.x).toBe(g.map.spawn[0][0][0]);});
   it('survival uses unique teams and shrinks the safe zone',()=>{const g=createGame({mode:'survival'});expect(new Set(g.players.map(p=>p.team)).size).toBe(10);const initial=g.safeRadius;g.players.forEach(p=>p.bot=false);for(let i=0;i<90;i++)stepGame(g);expect(g.safeRadius).toBeLessThan(initial);});
   it('training allows unowned characters and invincible dummy without ending',()=>{const g=createGame({training:true,slots:[{id:'a',name:'A',character:'noise',team:0,bot:false}]});expect(g.players).toHaveLength(1);expect(trainingAction(g,'a','add_invincible')).toBe(true);expect(g.players[1].dummy).toBe('invincible');trainingAction(g,'a','ultimate');expect(g.players[0].ultimate).toBe(100);g.tick=5400;stepGame(g);expect(g.winner).toBeNull();expect(g.time).toBe(180);});
 });
@@ -43,7 +43,7 @@ describe('solar power and ten-player solo combat',()=>{
     const low=createGame({mode:'duel',shift:false,slots:[{id:'a',name:'A',character:'rei',team:0,bot:false,powerLevel:1}]});
     const high=createGame({mode:'duel',shift:false,slots:[{id:'a',name:'A',character:'rei',team:0,bot:false,powerLevel:11}]});
     expect(fighterMaxHp(high.players[0])).toBeGreaterThan(fighterMaxHp(low.players[0]));
-    expect(powerMultiplier(11)).toBeCloseTo(1.45);
+    expect(powerMultiplier(11)).toBeCloseTo(2);
     expect(upgradeCost(11)).toBeNull();
     expect(upgradeCost(1)?.coins).toBeGreaterThan(0);
     for(const g of [low,high]){
@@ -125,5 +125,51 @@ describe('level gates and adjustable throws',()=>{
   it('sanitizes overdrive and ranged targeting from the network',()=>{
     const input=sanitizeInput({aimDistance:100,overdrive:true,attack:true,ax:1,az:0});
     expect(input.aimDistance).toBe(1);expect(input.overdrive).toBe(true);
+  });
+});
+
+
+describe('fixed + growing ultimate damage rules',()=>{
+  it('adds exactly 10% of the level-one base for HP, bullets and direct ultimate hits',()=>{
+    for(const level of [1,2,5,11]){
+      const multiplier=1+(level-1)*.1;
+      expect(powerMultiplier(level)).toBeCloseTo(multiplier);
+      const g=createGame({mode:'duel',shift:false,slots:[{id:'a',name:'A',character:'gald',team:0,bot:false,powerLevel:level}]});
+      expect(fighterMaxHp(g.players[0])).toBe(Math.round(characterById('gald').maxHp*multiplier));
+      const hit=createGame({mode:'duel',shift:false,slots:[{id:'g',name:'G',character:'gald',team:0,bot:false,powerLevel:level},{id:'t',name:'T',character:'rei',team:1,bot:false}]});
+      hit.players.forEach(p=>{p.bot=false;p.invulnerable=0;});hit.map.walls=[];
+      hit.players[0].x=20;hit.players[0].z=20;hit.players[1].x=22;hit.players[1].z=20;
+      hit.players[0].ultimate=100;
+      const hp=hit.players[1].hp;
+      stepGame(hit,{g:{...neutral,ax:1,az:0,ultimate:true}});
+      expect(hp-hit.players[1].hp).toBe(Math.round(1600*multiplier));
+      expect(characterById('gald').ultimate.baseDamage).toBe(1600);
+    }
+  });
+  it('heals a fixed amount at any level and gives buff ultimates no direct damage',()=>{
+    for(const level of [1,11]){
+      const g=createGame({mode:'duel',shift:false,slots:[{id:'h',name:'Healer',character:'mina',team:0,bot:false,powerLevel:level}]});
+      const p=g.players[0];p.bot=false;p.invulnerable=0;p.hp=fighterMaxHp(p)-2000;p.ultimate=100;
+      stepGame(g,{h:{...neutral,ultimate:true}});
+      expect(p.hp).toBe(fighterMaxHp(p)-400);
+      expect(characterById('rei').ultimate.baseDamage).toBeUndefined();
+      expect(characterById('mina').ultimate.healAmount).toBe(1600);
+    }
+  });
+  it('summoned clone attacks remain exactly 220 damage at both power levels',()=>{
+    for(const level of [1,11]){
+      const g=createGame({mode:'duel',shift:false,slots:[{id:'c',name:'Clone',character:'noise',team:0,bot:false,powerLevel:level},{id:'t',name:'Target',character:'gald',team:1,bot:false}]});
+      const p=g.players[0],t=g.players[1];g.map.walls=[];for(const x of g.players){x.bot=false;x.invulnerable=0;}
+      p.x=20;p.z=20;t.x=23;t.z=20;
+      p.ultimate=100;
+      stepGame(g,{c:{...neutral,ultimate:true}});
+      expect(g.effects.filter(e=>e.kind==='clone')).toHaveLength(3);
+      t.hp=fighterMaxHp(t);
+      g.tick=28;
+      stepGame(g);
+      const dealt=fighterMaxHp(t)-t.hp;
+      expect(dealt).toBe(660);
+      expect(characterById('noise').ultimate.fixedDamage).toBe(220);
+    }
   });
 });
