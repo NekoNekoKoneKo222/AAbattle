@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { characters, characterById, createGame, fighterMaxHp, lineClear, neutral, powerMultiplier, registerShiftVote, sanitizeInput, solidAt, stepGame, trainingAction, upgradeCost } from './index.js';
+import { characters, characterById, createGame, fighterMaxHp, findAutoAimTarget, lineClear, neutral, powerMultiplier, registerShiftVote, sanitizeInput, solidAt, stepGame, trainingAction, upgradeCost } from './index.js';
 
 const duel=()=>{const g=createGame({mode:'duel',shift:false,slots:[{id:'a',name:'A',character:'rei',team:0,bot:false},{id:'b',name:'B',character:'gald',team:1,bot:false}]});g.map.walls=[];for(const p of g.players){p.invulnerable=0;p.z=9;p.bot=false;}g.players[0].x=5;g.players[1].x=8;return g;};
 describe('SHIFT ARENA combat',()=>{
@@ -171,5 +171,54 @@ describe('fixed + growing ultimate damage rules',()=>{
       expect(dealt).toBe(660);
       expect(characterById('noise').ultimate.fixedDamage).toBe(220);
     }
+  });
+});
+
+
+describe('responsive controls',()=>{
+  it('released movement stops exactly next tick without inertia',()=>{
+    const g=duel(),p=g.players[0];g.map.zones=[];
+    const x=p.x;stepGame(g,{a:{...neutral,mx:1,mz:0}});
+    expect(p.x).toBeGreaterThan(x);
+    const stopped=p.x;
+    stepGame(g,{a:{...neutral,mx:0,mz:0}});
+    expect(p.x).toBeCloseTo(stopped,8);
+    expect(p.vx).toBe(0);expect(p.vz).toBe(0);
+  });
+  it('tap auto aim targets nearest in-range enemy once and shot remains dodgeable',()=>{
+    const g=duel(),p=g.players[0],enemy=g.players[1];
+    p.x=20;p.z=20;p.ax=0;p.az=-1;enemy.x=24;enemy.z=20;
+    expect(findAutoAimTarget(g,p)).toEqual([1,0]);
+    stepGame(g,{a:{...neutral,ax:0,az:-1,attack:true,autoAim:true}});
+    expect(p.ax).toBeCloseTo(1);expect(p.az).toBeCloseTo(0);
+    expect(g.bullets.some(b=>b.owner===p.id&&b.vx>0)).toBe(true);
+    const hp=enemy.hp;enemy.z+=4;
+    for(let i=0;i<20;i++)stepGame(g);
+    expect(enemy.hp).toBe(hp);
+  });
+  it('auto aim does not select a target through a wall',()=>{
+    const g=duel(),p=g.players[0],enemy=g.players[1];
+    p.x=20;p.z=20;enemy.x=24;enemy.z=20;
+    g.map.walls=[{id:'wall',x:22,z:20,w:1,h:4,hp:0,kind:'wall'}];
+    expect(findAutoAimTarget(g,p)).toBeNull();
+  });
+  it('sanitizes auto-aim flags as strict booleans',()=>{
+    expect(sanitizeInput({attack:true,autoAim:'true',autoUltimate:1}).autoAim).toBe(false);
+    expect(sanitizeInput({attack:true,autoAim:true,autoUltimate:true}).autoUltimate).toBe(true);
+  });
+});
+describe('progressively increasing passive regeneration',()=>{
+  it('waits four seconds and ramps after uninterrupted healing',()=>{
+    const g=duel(),p=g.players[0];g.map.zones=[];g.players.forEach(x=>x.bot=false);p.hp=1500;
+    for(let i=0;i<119;i++)stepGame(g);
+    expect(p.hp).toBe(1500);
+    stepGame(g);
+    const first=p.hp-1500;
+    expect(first).toBe(Math.round(fighterMaxHp(p)*.025));
+    for(let i=0;i<30;i++)stepGame(g);
+    expect(p.hp-1500-first).toBe(Math.round(fighterMaxHp(p)*.04));
+    expect(p.regenChain).toBe(2);
+    stepGame(g,{a:{...neutral,attack:true}});
+    expect(p.regenChain).toBe(0);
   });
 });
