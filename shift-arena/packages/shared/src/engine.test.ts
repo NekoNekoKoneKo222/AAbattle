@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { characters, characterById, createGame, fighterMaxHp, lineClear, neutral, sanitizeInput, powerMultiplier, registerShiftVote, sanitizeInput, solidAt, stepGame, trainingAction, upgradeCost } from './index.js';
+import { characters, characterById, createGame, fighterMaxHp, lineClear, neutral, powerMultiplier, registerShiftVote, sanitizeInput, solidAt, stepGame, trainingAction, upgradeCost } from './index.js';
 
 const duel=()=>{const g=createGame({mode:'duel',shift:false,slots:[{id:'a',name:'A',character:'rei',team:0,bot:false},{id:'b',name:'B',character:'gald',team:1,bot:false}]});g.map.walls=[];for(const p of g.players){p.invulnerable=0;p.z=9;p.bot=false;}g.players[0].x=5;g.players[1].x=8;return g;};
 describe('SHIFT ARENA combat',()=>{
