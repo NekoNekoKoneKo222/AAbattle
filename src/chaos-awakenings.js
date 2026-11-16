@@ -63,7 +63,8 @@ const destroyNearby=(s,side,anchor,n,restrict,ops)=>{
   let done=false;
   for(let t=0;t<n;t++){
     const index=pickEnemy(s,side,anchor,p=>(restrict!=='P'||p.type==='P'));
-    if(index===undefined||near(s,index,anchor)>2)break;
+    // 「隣」は上下左右1マスに限定する。対象がない・防御された場合は未発動。
+    if(index===undefined||near(s,index,anchor)!==1)break;
     done=ops.destroy(s,side,index)||done;
   }
   return done;
