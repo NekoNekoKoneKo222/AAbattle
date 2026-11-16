@@ -177,7 +177,7 @@ button.primary:hover,.sun-primary:hover{background:linear-gradient(#fffaa4,#ffce
 @media(max-width:750px){.beginner-challenge{grid-template-columns:1fr}.challenge-symbol{min-height:115px}.sun-wallet .wallet-item{padding:4px 7px;font-size:12px}}
 
 /* Reference-inspired in-world battle interface. Screen-space tags sit above heroes. */
-.arena-host{position:relative}
+.arena-host{position:absolute;inset:0;overflow:hidden}
 .fighter-nameplate-layer{position:absolute;inset:0;pointer-events:none;z-index:3;overflow:hidden}
 .fighter-nameplate{position:absolute;display:flex;flex-direction:column;gap:2px;align-items:center;width:118px;transform:translate(-50%,-100%);filter:drop-shadow(0 2px 1px #000b);white-space:nowrap;user-select:none}
 .fighter-nameplate-name{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:1000;color:#ffa3aa;-webkit-text-stroke:2.1px #071426;paint-order:stroke fill;letter-spacing:.2px}
