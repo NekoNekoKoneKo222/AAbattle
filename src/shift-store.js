@@ -150,7 +150,7 @@ export class ShiftStore {
       if(type==='coins'){const amount=(kind==='glitch'?90:55)+randomInt(kind==='glitch'?151:96);e.coins+=amount;rewards.push({type,amount});}
       else if(type==='sun_power'){const amount=(kind==='glitch'?75:35)+randomInt(kind==='glitch'?96:76);e.sun_power+=amount;rewards.push({type,amount});}
       else if(type==='credits'){const amount=20+randomInt(kind==='glitch'?61:36);if(!nextRoadTier(p.owned_characters).length)p.prestige+=amount;else p.credits+=amount;rewards.push({type,amount});}
-      else if(type==='diamonds'){const amount=kind==='glitch'?3:1;e.diamonds+=amount;rewards.push({type,amount});}
+      else if(type==='diamonds'){const amount=kind==='glitch'?15:6;e.diamonds+=amount;rewards.push({type,amount});}
       else {e.drops.sun++;rewards.push({type:'sun',amount:1});}
     }
     return {kind,rewards,profile:publicProfile(p)};
