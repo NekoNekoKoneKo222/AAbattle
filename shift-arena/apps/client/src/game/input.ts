@@ -12,7 +12,7 @@ export class InputController {
     listen(canvas,'contextmenu',e=>e.preventDefault());
   }
   setMove(x:number,z:number){this.moveX=x;this.moveZ=z;}
-  setAttackStick(x:number,z:number,active:boolean){if(active){this.touchAimX=x;this.touchAimZ=z;this.touchAimDistance=Math.max(.12,Math.min(1,Math.hypot(x,z)));this.touchAttack=true;}else{if(this.touchAttack)this.attackPulse=true;this.touchAttack=false;}}
+  setAttackStick(x:number,z:number,active:boolean,strength=1){if(active){this.touchAimX=x;this.touchAimZ=z;this.touchAimDistance=Math.max(.12,Math.min(1,strength));this.touchAttack=true;}else{if(this.touchAttack)this.attackPulse=true;this.touchAttack=false;}}
   setSkill(){this.skillPulse=true;}
   setUltimate(){this.ultimatePulse=true;}
   setOverdrive(){this.overdrivePulse=true;}

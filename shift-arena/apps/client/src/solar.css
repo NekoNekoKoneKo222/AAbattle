@@ -175,3 +175,38 @@ button.primary:hover,.sun-primary:hover{background:linear-gradient(#fffaa4,#ffce
 .game-screen .meter.overdrive i{background:linear-gradient(#fff7a0,#ff7c23)}
 .touch-right .touch-drive{background:linear-gradient(#fff19a,#ff9328);color:#522b02;border:3px solid #ffdb63;box-shadow:0 4px #a14903;font-weight:1000}
 @media(max-width:750px){.beginner-challenge{grid-template-columns:1fr}.challenge-symbol{min-height:115px}.sun-wallet .wallet-item{padding:4px 7px;font-size:12px}}
+
+/* Reference-inspired in-world battle interface. Screen-space tags sit above heroes. */
+.arena-host{position:relative}
+.fighter-nameplate-layer{position:absolute;inset:0;pointer-events:none;z-index:3;overflow:hidden}
+.fighter-nameplate{position:absolute;display:flex;flex-direction:column;gap:2px;align-items:center;width:118px;transform:translate(-50%,-100%);filter:drop-shadow(0 2px 1px #000b);white-space:nowrap;user-select:none}
+.fighter-nameplate-name{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:1000;color:#ffa3aa;-webkit-text-stroke:2.1px #071426;paint-order:stroke fill;letter-spacing:.2px}
+.fighter-nameplate.local .fighter-nameplate-name{color:#6efa63}
+.fighter-nameplate.allied .fighter-nameplate-name{color:#8bedff}
+.fighter-nameplate-hp{font-size:13px;font-weight:1000;color:#fff;-webkit-text-stroke:2px #09203d;paint-order:stroke fill;line-height:1}
+.fighter-nameplate-track{position:relative;width:106px;height:13px;border:3px solid #0b173f;border-radius:9px;background:#b12648;overflow:hidden;box-shadow:0 2px #0007}
+.fighter-nameplate-fill{height:100%;display:block;background:linear-gradient(#a7ff5c,#35db4a);border-radius:5px;transition:width .08s linear}
+.fighter-nameplate-ammo{display:flex;justify-content:center;gap:3px;width:106px}
+.fighter-nameplate-ammo span{flex:1;height:7px;background:#604f71;border:2px solid #0b2246;border-radius:2px;max-width:42px}
+.fighter-nameplate-ammo span.loaded{background:linear-gradient(#ffc84b,#f18a20)}
+.game-screen .player-hud{width:min(252px,30vw);padding:9px 12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:7}
+.player-hud .meter.ult{margin-top:5px}
+.player-hud .meter.ult i{background:linear-gradient(#ffe77a,#ffa821)}
+.game-screen .match-info{background:#091c49f2;border-color:#98c3f3}
+.game-screen .hud-top{padding:9px 14px}
+.game-screen .touch-pad{z-index:9}
+.touch-right .touch-ult,.touch-right .touch-skill,.touch-right .touch-drive{position:relative;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:1px;border-radius:50%;font-weight:1000;text-shadow:0 1px #0004;box-shadow:0 5px 0 #06214c}
+.touch-right .touch-ult{width:79px;height:79px;color:#392700;background:linear-gradient(#ffef84,#ffac10);border:4px solid #6b4000}
+.touch-right .touch-ult:disabled{background:#455f7d;color:#b5c1d4;border-color:#1c3b5a}
+.touch-right .touch-ult small,.touch-right .touch-skill small,.touch-right .touch-drive small{font-size:10px;letter-spacing:-.03em}
+.touch-right .touch-charge-ring{position:absolute;inset:-5px;border-radius:50%;background:conic-gradient(#ffe543 var(--charge,0%),#172d4b var(--charge,0%));z-index:-1;filter:drop-shadow(0 2px 1px #0007)}
+.touch-right .touch-skill,.touch-right .touch-drive{width:55px;height:55px}
+.touch-right .touch-skill{background:#61cefa;border:3px solid #144580;color:#082b54}
+.touch-right .touch-drive{background:#e7ac42;border:3px solid #895512;color:#3d2201}
+.touch-right .touch-drive:disabled,.touch-right .touch-skill:disabled{filter:grayscale(.8);opacity:.55}
+.game-screen .touch-pad .attack-stick{border-color:#e4fdff;background:#17385e99;box-shadow:0 0 0 4px #8beaff33}
+.game-screen .touch-pad .attack-stick .stick-knob{background:radial-gradient(circle,#9af7ff,#299bf1);border:3px solid #fff5}
+@media(max-width:900px){.game-screen .player-hud{left:calc(7px + env(safe-area-inset-left));bottom:calc(7px + env(safe-area-inset-bottom));width:192px;padding:5px 7px;font-size:11px}.game-screen .player-hud .meter{height:18px}.game-screen .player-hud .player-title small{display:none}}
+@media(max-width:700px){.fighter-nameplate{width:90px}.fighter-nameplate-name{font-size:10px}.fighter-nameplate-hp{font-size:11px}.fighter-nameplate-track{width:80px;height:10px}.fighter-nameplate-ammo{width:80px}.game-screen .touch-right{gap:6px}.touch-right .touch-ult{height:62px;width:62px}.touch-right .touch-skill,.touch-right .touch-drive{height:43px;width:43px}.touch-right .touch-ult small,.touch-right .touch-skill small,.touch-right .touch-drive small{font-size:8px}}
+.power-stats .stat-increment{color:#6cff7a;font-size:15px;white-space:nowrap;margin-left:7px;font-weight:1000}
+.power-stats .ultimate-note{color:#d0e9ff;line-height:1.6;font-size:12px;margin:2px 0 6px}

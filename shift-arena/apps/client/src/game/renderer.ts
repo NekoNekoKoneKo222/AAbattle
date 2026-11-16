@@ -4,6 +4,7 @@ import { characterById, fighterMaxHp, solidAt, validatePlayerModel, type Fighter
 import { createModelRig, poseModelRig, disposeModelRig, type ModelRig } from './model-rig';
 import { createVoxelHero, poseVoxelHero, disposeVoxelHero } from './voxel-heroes';
 export type Quality='auto'|'low'|'medium'|'high';
+type Nameplate={root:HTMLDivElement;name:HTMLSpanElement;hp:HTMLSpanElement;fill:HTMLSpanElement;ammo:HTMLDivElement};
 const mat=(color:number,roughness=.7)=>new THREE.MeshStandardMaterial({color,roughness,metalness:.15});
 const floorMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:.9});
 const projectileGeo=new THREE.SphereGeometry(.16,8,6);
@@ -32,9 +33,11 @@ function fighterMesh(p:Fighter,model:PlayerModel|null){
   return group;
 }
 export class ArenaRenderer {
-  readonly canvas:HTMLCanvasElement; private renderer:THREE.WebGLRenderer; private scene=new THREE.Scene(); private camera=new THREE.OrthographicCamera(-8,8,5,-5,.1,100); private ground=new THREE.Group(); private signalGroup=new THREE.Group(); private signalMeshes=new Map<string,THREE.Group>(); private terminalRing:THREE.Mesh|null=null; private actors=new Map<string,THREE.Group>(); private modelDocs=new Map<string,PlayerModel|null>(); private modelLoading=new Set<string>(); private bullets=new Map<number,THREE.Mesh>(); private effects=new Map<number,THREE.Mesh>(); private ray=new THREE.Raycaster(); private plane=new THREE.Plane(new THREE.Vector3(0,1,0),0); private target=new THREE.Vector3(); private frame=0; private quality:Quality; private aimLine:THREE.Line; private aimTip:THREE.Mesh;
+  readonly canvas:HTMLCanvasElement; private renderer:THREE.WebGLRenderer; private scene=new THREE.Scene(); private camera=new THREE.OrthographicCamera(-8,8,5,-5,.1,100); private ground=new THREE.Group(); private signalGroup=new THREE.Group(); private signalMeshes=new Map<string,THREE.Group>(); private terminalRing:THREE.Mesh|null=null; private actors=new Map<string,THREE.Group>(); private modelDocs=new Map<string,PlayerModel|null>(); private modelLoading=new Set<string>(); private bullets=new Map<number,THREE.Mesh>(); private effects=new Map<number,THREE.Mesh>(); private ray=new THREE.Raycaster(); private plane=new THREE.Plane(new THREE.Vector3(0,1,0),0); private target=new THREE.Vector3(); private frame=0; private quality:Quality; private aimLine:THREE.Line; private aimTip:THREE.Mesh; private nameplateLayer:HTMLDivElement;private nameplates=new Map<string,Nameplate>();
   private requestModel(owner:string){if(this.modelDocs.has(owner)||this.modelLoading.has(owner))return;this.modelLoading.add(owner);fetch(`/api/shift/model/${encodeURIComponent(owner)}`).then(r=>r.ok?r.json():{model:null}).then(data=>{this.modelDocs.set(owner,data.model?validatePlayerModel(data.model):null);}).catch(()=>this.modelDocs.set(owner,null)).finally(()=>this.modelLoading.delete(owner));}
-  constructor(private host:HTMLElement,quality:Quality){this.quality=quality;this.renderer=new THREE.WebGLRenderer({antialias:quality==='high',powerPreference:'high-performance'});this.canvas=this.renderer.domElement;this.canvas.className='arena-canvas';host.append(this.canvas);this.renderer.setPixelRatio(Math.min(devicePixelRatio,quality==='low'?1:quality==='medium'?1.5:2));this.renderer.shadowMap.enabled=quality==='high';this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.scene.background=new THREE.Color(0x14243b);this.scene.fog=new THREE.Fog(0x14243b,28,48);this.scene.add(new THREE.HemisphereLight(0xffffff,0x153e48,2.0));const sun=new THREE.DirectionalLight(0xffeed1,2.2);sun.position.set(8,18,11);sun.castShadow=this.renderer.shadowMap.enabled;this.scene.add(sun);this.scene.add(this.ground);this.scene.add(this.signalGroup);
+  constructor(private host:HTMLElement,quality:Quality){this.quality=quality;this.renderer=new THREE.WebGLRenderer({antialias:quality==='high',powerPreference:'high-performance'});this.canvas=this.renderer.domElement;this.canvas.className='arena-canvas';host.append(this.canvas);
+ this.nameplateLayer=document.createElement('div');this.nameplateLayer.className='fighter-nameplate-layer';
+ this.nameplateLayer.setAttribute('aria-hidden','true');host.appendChild(this.nameplateLayer);this.renderer.setPixelRatio(Math.min(devicePixelRatio,quality==='low'?1:quality==='medium'?1.5:2));this.renderer.shadowMap.enabled=quality==='high';this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.scene.background=new THREE.Color(0x14243b);this.scene.fog=new THREE.Fog(0x14243b,28,48);this.scene.add(new THREE.HemisphereLight(0xffffff,0x153e48,2.0));const sun=new THREE.DirectionalLight(0xffeed1,2.2);sun.position.set(8,18,11);sun.castShadow=this.renderer.shadowMap.enabled;this.scene.add(sun);this.scene.add(this.ground);this.scene.add(this.signalGroup);
   this.aimLine=new THREE.Line(new THREE.BufferGeometry().setAttribute('position',new THREE.BufferAttribute(new Float32Array(25*3),3)),new THREE.LineDashedMaterial({color:0xffedf2,dashSize:.31,gapSize:.15,transparent:true,opacity:.90,depthTest:false}));
   this.aimLine.computeLineDistances();this.aimLine.frustumCulled=false;this.aimLine.renderOrder=50;this.scene.add(this.aimLine);
   this.aimTip=new THREE.Mesh(new THREE.RingGeometry(.23,.34,28),new THREE.MeshBasicMaterial({color:0xffffff,side:THREE.DoubleSide,depthTest:false,transparent:true,opacity:.85}));
@@ -76,6 +79,43 @@ export class ArenaRenderer {
     const effectIds=new Set<number>();for(const e of g.effects){effectIds.add(e.id);let mesh=this.effects.get(e.id);if(!mesh){const color=e.kind==='slowfield'?0x9de1ff:e.kind==='drone'?0x7bffc3:e.kind==='bomb'||e.kind==='mine'?0xffbd6d:0xd8a6ff;mesh=new THREE.Mesh(new THREE.CylinderGeometry(e.radius,e.radius,.04,24),new THREE.MeshBasicMaterial({color,transparent:true,opacity:.38,depthWrite:false}));this.scene.add(mesh);this.effects.set(e.id,mesh);}mesh.position.set(e.x,.1,e.z);}
     for(const[id,mesh]of this.effects)if(!effectIds.has(id)){this.scene.remove(mesh);this.effects.delete(id);}
     const own=g.players.find(p=>p.id===localId)||g.players[0];if(own){const aspect=this.host.clientWidth/Math.max(1,this.host.clientHeight),visibleX=10.3*aspect,visibleZ=10.5;const x=THREE.MathUtils.clamp(own.x,Math.min(visibleX,g.map.width/2),Math.max(visibleX,g.map.width-visibleX)),z=THREE.MathUtils.clamp(own.z,Math.min(visibleZ,g.map.height/2),Math.max(visibleZ,g.map.height-visibleZ));const focus=new THREE.Vector3(x,0,z);this.camera.position.lerp(new THREE.Vector3(x,22,z+16),.08);this.camera.lookAt(focus);}
+    // Screen-aligned player names, health text, and three/four ammo blocks.
+    this.camera.updateMatrixWorld(true);
+    const seen=new Set<string>();
+    for(const p of g.players){
+      seen.add(p.id);
+      let plate=this.nameplates.get(p.id);
+      if(!plate){
+        const root=document.createElement('div');root.className='fighter-nameplate';
+        const name=document.createElement('span');name.className='fighter-nameplate-name';
+        const hp=document.createElement('span');hp.className='fighter-nameplate-hp';
+        const track=document.createElement('div');track.className='fighter-nameplate-track';
+        const fill=document.createElement('span');fill.className='fighter-nameplate-fill';
+        track.appendChild(fill);
+        const ammo=document.createElement('div');ammo.className='fighter-nameplate-ammo';
+        root.append(name,hp,track,ammo);this.nameplateLayer.appendChild(root);
+        plate={root,name,hp,fill,ammo};this.nameplates.set(p.id,plate);
+      }
+      const point=new THREE.Vector3(p.x,2.75,p.z).project(this.camera);
+      const onscreen=p.hp>0&&point.z>=-1&&point.z<=1&&Math.abs(point.x)<1.12&&Math.abs(point.y)<1.15;
+      plate.root.style.display=onscreen?'flex':'none';
+      if(!onscreen)continue;
+      plate.root.style.left=((point.x+1)*.5*100).toFixed(2)+'%';
+      plate.root.style.top=((1-point.y)*.5*100).toFixed(2)+'%';
+      plate.root.classList.toggle('local',p.id===localId);
+      plate.root.classList.toggle('allied',p.team===own?.team&&p.id!==localId);
+      plate.name.textContent=p.name;
+      plate.hp.textContent=String(Math.ceil(p.hp));
+      plate.fill.style.width=(Math.max(0,p.hp/fighterMaxHp(p))*100).toFixed(1)+'%';
+      const totalAmmo=characterById(p.character).ammo;
+      if(plate.ammo.children.length!==totalAmmo){
+        plate.ammo.replaceChildren(...Array.from({length:totalAmmo},()=>document.createElement('span')));
+      }
+      for(let i=0;i<totalAmmo;i++)plate.ammo.children[i].classList.toggle('loaded',i<p.ammo);
+    }
+    for(const [id,plate] of this.nameplates){
+      if(!seen.has(id)){plate.root.remove();this.nameplates.delete(id);}
+    }
     // Visual-only shot direction preview; authoritative hits are still server-validated.
     if(own&&own.hp>0&&aiming){
       const config=characterById(own.character).attack;
@@ -102,6 +142,6 @@ export class ArenaRenderer {
     }else{this.aimLine.visible=false;this.aimTip.visible=false;}
     this.renderer.render(this.scene,this.camera);
   }
-  dispose(){this.aimLine.geometry.dispose();(this.aimLine.material as THREE.Material).dispose();this.aimTip.geometry.dispose();(this.aimTip.material as THREE.Material).dispose();this.renderer.dispose();this.canvas.remove();for(const mesh of [...this.bullets.values(),...this.effects.values()])this.scene.remove(mesh);for(const mesh of this.actors.values()){if(mesh.userData.modelRig)disposeModelRig(mesh.userData.modelRig as ModelRig);if(mesh.userData.voxelHero)disposeVoxelHero(mesh.userData.voxelHero as THREE.Group);}this.actors.clear();}
+  dispose(){this.aimLine.geometry.dispose();(this.aimLine.material as THREE.Material).dispose();this.aimTip.geometry.dispose();(this.aimTip.material as THREE.Material).dispose();this.renderer.dispose();this.canvas.remove();this.nameplateLayer.remove();this.nameplates.clear();for(const mesh of [...this.bullets.values(),...this.effects.values()])this.scene.remove(mesh);for(const mesh of this.actors.values()){if(mesh.userData.modelRig)disposeModelRig(mesh.userData.modelRig as ModelRig);if(mesh.userData.voxelHero)disposeVoxelHero(mesh.userData.voxelHero as THREE.Group);}this.actors.clear();}
 }
 

@@ -165,7 +165,7 @@ describe('fixed + growing ultimate damage rules',()=>{
       stepGame(g,{c:{...neutral,ultimate:true}});
       expect(g.effects.filter(e=>e.kind==='clone')).toHaveLength(3);
       t.hp=fighterMaxHp(t);
-      g.tick=28;
+      g.tick=29;
       stepGame(g);
       const dealt=fighterMaxHp(t)-t.hp;
       expect(dealt).toBe(660);
