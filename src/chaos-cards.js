@@ -2,6 +2,7 @@ import { registerEffectHandler, emitEffect } from './chaos-effects.js';
 import { MEME_CARDS } from './chaos-memes.js';
 import { resolveMemeCard, resolveChaosTurnStart, terrainAt } from './chaos-meme-effects.js';
 import { awardPiecePoints, revivalBlocked } from './chaos-rounds.js';
+import { applyAwakeningOnPlay } from './chaos-progression.js';
 
 export const CARD_CATALOG=Object.freeze({
   avada:{id:'avada',name:'アバダ・ケダブラ',type:'instant',rarity:'rare',cost:4,target:'enemy-piece',description:'敵の王将以外の駒を1体破壊する。'},
@@ -46,7 +47,7 @@ export const DEFAULT_DECK=Object.freeze(['avada','meteor','double','tax','warp',
 export function validateDeck(ids){if(!Array.isArray(ids)||ids.length!==20)fail('デッキは20枚にしてください。');const counts=Object.create(null);for(const id of ids){if(typeof id!=='string'||!Object.hasOwn(CARD_CATALOG,id))fail('存在しないカードが入っています。');counts[id]=(counts[id]||0)+1;if(counts[id]>2)fail('同名カードは2枚までです。');}const counterCount=ids.filter(id=>CARD_CATALOG[id].type==='counter').length;if(counterCount>5)fail('カウンターカードは5枚までです。');if(ids.filter(id=>CARD_CATALOG[id].rarity==='mythic').length>1)fail('神話級カードは合計1枚までです。');return [...ids];}
 const player=deck=>({deck:shuffle(deck),hand:[],grave:[],equipment:[],cp:4,cardPlayed:false,turnSerial:0});
 export function initCards(decks={}){const cards={b:player(validateDeck(decks.b??DEFAULT_DECK)),w:player(validateDeck(decks.w??DEFAULT_DECK))};for(const side of ['b','w'])for(let i=0;i<4;i++)draw(cards[side]);cards.b.turnSerial=1;return cards;}
-export function cloneCards(cards){return Object.fromEntries(['b','w'].map(side=>[side,{...cards[side],deck:[...cards[side].deck],hand:[...cards[side].hand],grave:[...cards[side].grave],equipment:cards[side].equipment.map(e=>({...e}))}]));}
+export function cloneCards(cards){return Object.fromEntries(['b','w'].map(side=>[side,{...cards[side],deck:[...cards[side].deck],hand:[...cards[side].hand],grave:[...cards[side].grave],awakenedUsed:[...(cards[side].awakenedUsed||[])],equipment:cards[side].equipment.map(e=>({...e}))}]));}
 function draw(p){if(!p.deck.length&&p.grave.length){p.deck=shuffle(p.grave);p.grave=[];}if(p.hand.length>=7||!p.deck.length)return false;p.hand.push(p.deck.pop());return true;}
 export function startTurnCards(s){const p=s.cards[s.turn],recovery=s.settings?.cpRecovery??2,cap=s.settings?.cpCap??10;p.turnSerial++;p.cp=Math.min(cap,p.cp+recovery);p.cardPlayed=false;const drawn=draw(p);s.log.push(`${s.turn==='b'?'先手':'後手'}は${recovery}CP回復し1枚ドロー`);if(s.settings?.randomEvents&&Math.random()<.2){p.cp=Math.min(cap,p.cp+1);s.log.push('ランダムイベント: 追加で1CPを獲得');}resolveChaosTurnStart(s,s.turn);emitEffect(s,'ON_TURN_START',{side:s.turn});if(drawn)emitEffect(s,'ON_CARD_DRAWN',{side:s.turn,source:'turn'});}
 export function combosFor(s,side){if(s.settings?.allowCombos===false)return [];const ids=new Set(s.cards[side].equipment.map(e=>e.id));return COMBOS.filter(combo=>combo.requiredEquipment.every(id=>ids.has(id))&&combo.requiredConditions.every(condition=>condition==='own-turn'?s.turn===side:true)).sort((a,b)=>b.priority-a.priority);}
@@ -103,7 +104,7 @@ export function playCard(s,action){const side=s.turn,p=s.cards[side],id=action?.
   else if(id==='promote'){const target=action.target,piece=s.board[target];if(!Number.isInteger(target)||target<0||target>=s.board.length||piece?.side!==side||piece.promoted||!['P','L','N','S','B','R'].includes(piece.type))fail('成れる自分の駒を選んでください。');piece.promoted=true;}
   else if(id==='recycle'){if(!p.grave.length||p.hand.length>=7)fail('墓地にカードがないか、手札が満杯です。');p.hand.push(p.grave.splice(Math.floor(Math.random()*p.grave.length),1)[0]);}
   else if(MEME_CARDS[id])resolveMemeCard(s,card,action,{destroy:destroyPiece,draw,reflected,steal,catalog:CARD_CATALOG});
-  p.cardPlayed=true;if(card.type!=='equipment')p.grave.push(id);s.log.push(`${side==='b'?'先手':'後手'}が${card.name}を使用`);emitEffect(s,'ON_CARD_PLAYED',{side,cardId:id});
+  p.cardPlayed=true;if(card.type!=='equipment')p.grave.push(id);s.log.push(`${side==='b'?'先手':'後手'}が${card.name}を使用`);applyAwakeningOnPlay(s,side,id,draw);emitEffect(s,'ON_CARD_PLAYED',{side,cardId:id});
 }
 export function activateEquipment(s,action){const side=s.turn,p=s.cards[side],slot=action?.slot;if(!Number.isInteger(slot)||!canActivate(s,side,slot))fail('この装備能力は発動できません。');const item=p.equipment[slot],card=CARD_CATALOG[item.id];
   if(item.id==='dobby')dobby(s,side,action);
