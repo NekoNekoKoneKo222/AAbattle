@@ -1,11 +1,11 @@
-import { randomUUID } from 'node:crypto';
-import { characterRoad, loadoutOptions, masteryLevel, masteryRewards, missionDefs, nextRoadTier, rewardConfig, validLoadout, validatePlayerModel } from '../shift-arena/packages/shared/dist/index.js';
+import { randomUUID, randomInt } from 'node:crypto';
+import { characterRoad, loadoutOptions, masteryLevel, masteryRewards, missionDefs, nextRoadTier, rewardConfig, validLoadout, validatePlayerModel, defaultEconomy, powerLevel, upgradeCost, MAX_POWER_LEVEL, beginnerChoices, skinPrice } from '../shift-arena/packages/shared/dist/index.js';
 
 const utcDay = () => new Date().toISOString().slice(0, 10);
 const clone = (value) => structuredClone(value);
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
-const initial = (id, name) => ({ user_id: id, display_name: name, selected_character: 'rei', owned_characters: ['rei'], credits: 0, prestige: 0, road_target: 'gald', loadouts: {}, mastery: {}, missions: {}, mission_day: utcDay(), first_win_day: null, solo_day: null, solo_count: 0 });
-const normalize = (row) => ({ ...row, mission_day: row.mission_day instanceof Date ? row.mission_day.toISOString().slice(0, 10) : row.mission_day, first_win_day: row.first_win_day instanceof Date ? row.first_win_day.toISOString().slice(0, 10) : row.first_win_day, solo_day: row.solo_day instanceof Date ? row.solo_day.toISOString().slice(0, 10) : row.solo_day });
+const initial = (id, name) => ({ user_id: id, display_name: name, selected_character: 'rei', owned_characters: ['rei'], credits: 0, prestige: 0, road_target: 'gald', loadouts: {}, mastery: {}, missions: {}, mission_day: utcDay(), first_win_day: null, solo_day: null, solo_count: 0, economy: defaultEconomy() });
+const normalize = (row) => ({ ...row, economy: { ...defaultEconomy(), ...(row.economy || {}), levels: { ...(row.economy?.levels || {}) }, skins: { ...(row.economy?.skins || {}) }, drops: { ...defaultEconomy().drops, ...(row.economy?.drops || {}) } }, mission_day: row.mission_day instanceof Date ? row.mission_day.toISOString().slice(0, 10) : row.mission_day, first_win_day: row.first_win_day instanceof Date ? row.first_win_day.toISOString().slice(0, 10) : row.first_win_day, solo_day: row.solo_day instanceof Date ? row.solo_day.toISOString().slice(0, 10) : row.solo_day });
 function today(profile) { if (profile.mission_day !== utcDay()) { profile.mission_day = utcDay(); profile.missions = {}; } }
 function mastery(profile, id) { return profile.mastery[id] ||= { xp: 0, stats: { matches: 0, wins: 0, ko: 0, ultimates: 0, objective: 0, hits: 0, terminal: 0 }, claimed: [], equipped_skin: null }; }
 function publicProfile(profile) { today(profile); return { ...clone(profile), road_tier: nextRoadTier(profile.owned_characters), mastery_levels: Object.fromEntries(Object.entries(profile.mastery).map(([id, value]) => [id, masteryLevel(value.xp)])), server_day: utcDay() }; }
@@ -16,6 +16,7 @@ export class ShiftStore {
     if (!this.pool) return;
     const { rows } = await this.pool.query("SELECT to_regclass('public.shift_profiles') AS profiles, to_regclass('public.shift_reward_transactions') AS rewards, to_regclass('public.shift_friend_requests') AS requests, to_regclass('public.shift_friendships') AS friends, to_regclass('public.shift_blocks') AS blocks, to_regclass('public.shift_models') AS models");
     if (Object.values(rows[0] || {}).some(v => !v)) throw new Error('SHIFT ARENA schema missing. Apply migrations/005_shift_arena.sql and 006_shift_models.sql first.');
+    await this.pool.query("ALTER TABLE shift_profiles ADD COLUMN IF NOT EXISTS economy jsonb NOT NULL DEFAULT '{}'::jsonb");
   }
   async getModel(userId) {
     if (!this.pool) return this.models.get(userId) || null;
@@ -57,7 +58,7 @@ export class ShiftStore {
       const { rows } = await client.query('SELECT * FROM shift_profiles WHERE user_id=$1 FOR UPDATE', [user.id]);
       const profile = normalize(rows[0]); today(profile);
       const result = await change(profile, client);
-      await client.query(`UPDATE shift_profiles SET display_name=$2,selected_character=$3,owned_characters=$4,credits=$5,prestige=$6,road_target=$7,loadouts=$8,mastery=$9,missions=$10,mission_day=$11,first_win_day=$12,solo_day=$13,solo_count=$14,updated_at=now() WHERE user_id=$1`, [user.id,user.username,profile.selected_character,profile.owned_characters,profile.credits,profile.prestige,profile.road_target,JSON.stringify(profile.loadouts),JSON.stringify(profile.mastery),JSON.stringify(profile.missions),profile.mission_day,profile.first_win_day,profile.solo_day,profile.solo_count]);
+      await client.query(`UPDATE shift_profiles SET display_name=$2,selected_character=$3,owned_characters=$4,credits=$5,prestige=$6,road_target=$7,loadouts=$8,mastery=$9,missions=$10,mission_day=$11,first_win_day=$12,solo_day=$13,solo_count=$14,economy=$15,updated_at=now() WHERE user_id=$1`, [user.id,user.username,profile.selected_character,profile.owned_characters,profile.credits,profile.prestige,profile.road_target,JSON.stringify(profile.loadouts),JSON.stringify(profile.mastery),JSON.stringify(profile.missions),profile.mission_day,profile.first_win_day,profile.solo_day,profile.solo_count,JSON.stringify(profile.economy)]);
       await client.query('COMMIT'); return result === undefined ? publicProfile(profile) : result;
     } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
   }
@@ -95,10 +96,64 @@ export class ShiftStore {
   }); }
   equipMasterySkin(user, character, skin) { return this.withProfile(user, p => {
     if (!p.owned_characters.includes(character)) throw fail('未所持のキャラクターです。', 403);
-    if (skin !== null && !['skin', 'master_skin'].includes(skin)) throw fail('無効なスキンです。');
+    if (skin !== null && !['skin', 'master_skin', 'sun_skin'].includes(skin)) throw fail('無効なスキンです。');
     const m = mastery(p, character);
-    if (skin !== null && !m.claimed.includes(skin)) throw fail('このスキンを獲得していません。', 403);
+    if (skin !== null && !m.claimed.includes(skin) && !(skin==='sun_skin'&&p.economy?.skins?.[character]?.includes('sun_skin'))) throw fail('このスキンを獲得していません。', 403);
     m.equipped_skin = skin;
+  }); }
+
+  completeTutorial(user) { return this.withProfile(user, p => {
+    const e=p.economy ||= defaultEconomy();
+    if (!e.tutorial_done) {
+      e.tutorial_done=true;
+      e.coins+=100;e.sun_power+=80;e.drops.sun++;
+    }
+  }); }
+  beginnerCharacter(user, character) { return this.withProfile(user, p => {
+    const e=p.economy ||= defaultEconomy();
+    if (!e.tutorial_done) throw fail('チュートリアルを完了してください。');
+    if (e.beginner_claimed) throw fail('初心者ボーナスは受け取り済みです。');
+    if (!beginnerChoices.includes(character)) throw fail('このキャラクターは初心者特典の対象外です。');
+    if (p.owned_characters.includes(character)) throw fail('すでに所持しているキャラクターです。');
+    p.owned_characters.push(character);
+    e.beginner_claimed=true;p.selected_character=character;
+    p.road_target=nextRoadTier(p.owned_characters)[0]||'';
+    return {character,profile:publicProfile(p)};
+  }); }
+  upgradeHero(user, character) { return this.withProfile(user, p => {
+    if (!p.owned_characters.includes(character)) throw fail('未所持キャラクターは強化できません。');
+    const e=p.economy ||= defaultEconomy(),level=powerLevel(e.levels,character),cost=upgradeCost(level);
+    if (!cost) throw fail('すでに最大レベルです。');
+    if (e.coins<cost.coins||e.sun_power<cost.sunPower) throw fail('コインかサンパワーが不足しています。');
+    e.coins-=cost.coins;e.sun_power-=cost.sunPower;e.levels[character]=Math.min(MAX_POWER_LEVEL,level+1);
+    return {character,level:e.levels[character],profile:publicProfile(p)};
+  }); }
+  buySunSkin(user, character) { return this.withProfile(user, p => {
+    if (!p.owned_characters.includes(character)) throw fail('未所持のキャラクターです。');
+    const e=p.economy ||= defaultEconomy();
+    if (e.skins[character]?.includes('sun_skin')) throw fail('スキンはすでに購入済みです。');
+    if (e.diamonds<skinPrice) throw fail('ダイヤモンドが不足しています。');
+    e.diamonds-=skinPrice;(e.skins[character] ||= []).push('sun_skin');
+    return {character,skin:'sun_skin',profile:publicProfile(p)};
+  }); }
+  openSunDrop(user,kind) { return this.withProfile(user, p => {
+    if (!['sun','glitch'].includes(kind)) throw fail('不明な報酬です。');
+    const e=p.economy ||= defaultEconomy();
+    if (!e.drops[kind]||e.drops[kind]<1) throw fail('開封できる報酬がありません。');
+    e.drops[kind]--;
+    const rewards=[];
+    const rolls=kind==='glitch'?3:1;
+    for(let i=0;i<rolls;i++){
+      // Only obtainable through free play. A drop contains no paid gambling.
+      const v=randomInt(1000);
+      const type=v<470?'coins':v<850?'sun_power':v<970?'credits':v<995?'diamonds':'bonus_drop';
+      if(type==='coins'){const amount=(kind==='glitch'?90:55)+randomInt(kind==='glitch'?151:96);e.coins+=amount;rewards.push({type,amount});}
+      else if(type==='sun_power'){const amount=(kind==='glitch'?75:35)+randomInt(kind==='glitch'?96:76);e.sun_power+=amount;rewards.push({type,amount});}
+      else if(type==='credits'){const amount=20+randomInt(kind==='glitch'?61:36);if(!nextRoadTier(p.owned_characters).length)p.prestige+=amount;else p.credits+=amount;rewards.push({type,amount});}
+      else if(type==='diamonds'){const amount=kind==='glitch'?3:1;e.diamonds+=amount;rewards.push({type,amount});}
+      else {e.drops.sun++;rewards.push({type:'sun',amount:1});}
+    }
+    return {kind,rewards,profile:publicProfile(p)};
   }); }
   async awardMatch(user, result) { return this.withProfile(user, async (p, client) => {
     const { matchId, character, won, source, seconds, kills = 0, objective = 0, ultimates = 0, hits = 0, terminal = 0 } = result;
@@ -119,6 +174,12 @@ export class ShiftStore {
     if (source === 'solo') p.solo_count++;
     if (firstWin) p.first_win_day = utcDay();
     if (!nextRoadTier(p.owned_characters).length) p.prestige += amount; else p.credits += amount;
+    const economy=p.economy ||= defaultEconomy();
+    const coins=source==='solo'?10:won?30:14,sunPower=source==='solo'?8:won?22:12;
+    economy.coins+=coins;economy.sun_power+=sunPower;economy.total_matches++;
+    if(economy.last_drop_day!==utcDay()){economy.last_drop_day=utcDay();economy.daily_drops=0;}
+    if(economy.total_matches%3===0&&economy.daily_drops<3){economy.drops.sun++;economy.daily_drops++;}
+    if(economy.total_matches%12===0)economy.drops.glitch++;
     const m = mastery(p, character); m.xp += xp; m.stats.matches++; m.stats.wins += Number(won); m.stats.ko += kills; m.stats.objective += objective; m.stats.ultimates += ultimates; m.stats.hits += hits; m.stats.terminal += terminal;
     for (const [id, count] of Object.entries({ play3: 1, win1: Number(won), ko10: kills, ult5: ultimates, objective30: objective })) {
       const mission = missionDefs.find(item => item.id === id);
@@ -126,7 +187,7 @@ export class ShiftStore {
       entry.count = Math.min(mission.goal, entry.count + count); p.missions[id] = entry;
     }
     if (client) await client.query('UPDATE shift_reward_transactions SET credits=$3,mastery_xp=$4 WHERE match_id=$1 AND user_id=$2', [matchId,user.id,amount,xp]);
-    return { credited: true, credits: amount, xp, profile: publicProfile(p) };
+    return { credited: true, credits: amount, coins, sunPower, xp, profile: publicProfile(p) };
   }); }
   async searchUsers(user, query) {
     const key = String(query || '').trim().slice(0, 24).toLowerCase();
