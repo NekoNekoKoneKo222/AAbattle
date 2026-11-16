@@ -1,0 +1,49 @@
+name: Build SHIFT ARENA for /sam
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'shift-arena/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/shift-arena-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: shift-arena-build
+  cancel-in-progress: true
+
+jobs:
+  build-sam:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --include=dev
+      - name: Build shared data
+        run: npm run build --workspace @shift/shared
+      - name: Compile SHIFT ARENA into public/sam
+        run: npm run build --workspace @shift/client
+      - name: Commit only the generated /sam files
+        run: |
+          git add -A public/sam
+          if git diff --cached --quiet; then
+            echo "public/sam is already up to date"
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -m 'build(shift): refresh public/sam assets [skip ci]'
+          git push origin HEAD:main
