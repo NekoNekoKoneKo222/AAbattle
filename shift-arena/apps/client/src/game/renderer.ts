@@ -35,8 +35,8 @@ export class ArenaRenderer {
   readonly canvas:HTMLCanvasElement; private renderer:THREE.WebGLRenderer; private scene=new THREE.Scene(); private camera=new THREE.OrthographicCamera(-8,8,5,-5,.1,100); private ground=new THREE.Group(); private signalGroup=new THREE.Group(); private signalMeshes=new Map<string,THREE.Group>(); private terminalRing:THREE.Mesh|null=null; private actors=new Map<string,THREE.Group>(); private modelDocs=new Map<string,PlayerModel|null>(); private modelLoading=new Set<string>(); private bullets=new Map<number,THREE.Mesh>(); private effects=new Map<number,THREE.Mesh>(); private ray=new THREE.Raycaster(); private plane=new THREE.Plane(new THREE.Vector3(0,1,0),0); private target=new THREE.Vector3(); private frame=0; private quality:Quality; private aimLine:THREE.Line; private aimTip:THREE.Mesh;
   private requestModel(owner:string){if(this.modelDocs.has(owner)||this.modelLoading.has(owner))return;this.modelLoading.add(owner);fetch(`/api/shift/model/${encodeURIComponent(owner)}`).then(r=>r.ok?r.json():{model:null}).then(data=>{this.modelDocs.set(owner,data.model?validatePlayerModel(data.model):null);}).catch(()=>this.modelDocs.set(owner,null)).finally(()=>this.modelLoading.delete(owner));}
   constructor(private host:HTMLElement,quality:Quality){this.quality=quality;this.renderer=new THREE.WebGLRenderer({antialias:quality==='high',powerPreference:'high-performance'});this.canvas=this.renderer.domElement;this.canvas.className='arena-canvas';host.append(this.canvas);this.renderer.setPixelRatio(Math.min(devicePixelRatio,quality==='low'?1:quality==='medium'?1.5:2));this.renderer.shadowMap.enabled=quality==='high';this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.scene.background=new THREE.Color(0x14243b);this.scene.fog=new THREE.Fog(0x14243b,28,48);this.scene.add(new THREE.HemisphereLight(0xffffff,0x153e48,2.0));const sun=new THREE.DirectionalLight(0xffeed1,2.2);sun.position.set(8,18,11);sun.castShadow=this.renderer.shadowMap.enabled;this.scene.add(sun);this.scene.add(this.ground);this.scene.add(this.signalGroup);
-  this.aimLine=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3()]),new THREE.LineDashedMaterial({color:0xffedf2,dashSize:.31,gapSize:.15,transparent:true,opacity:.90,depthTest:false}));
-  this.aimLine.computeLineDistances();this.aimLine.renderOrder=50;this.scene.add(this.aimLine);
+  this.aimLine=new THREE.Line(new THREE.BufferGeometry().setAttribute('position',new THREE.BufferAttribute(new Float32Array(25*3),3)),new THREE.LineDashedMaterial({color:0xffedf2,dashSize:.31,gapSize:.15,transparent:true,opacity:.90,depthTest:false}));
+  this.aimLine.computeLineDistances();this.aimLine.frustumCulled=false;this.aimLine.renderOrder=50;this.scene.add(this.aimLine);
   this.aimTip=new THREE.Mesh(new THREE.RingGeometry(.23,.34,28),new THREE.MeshBasicMaterial({color:0xffffff,side:THREE.DoubleSide,depthTest:false,transparent:true,opacity:.85}));
   this.aimTip.rotation.x=-Math.PI/2;this.aimTip.renderOrder=50;this.scene.add(this.aimTip);
   this.camera.position.set(18,22,29);this.camera.lookAt(18,0,13);this.resize();}
@@ -84,8 +84,13 @@ export class ArenaRenderer {
           if(solidAt(g.map,x,z,.08)){endX=own.x+dx*Math.max(0,d-.14);endZ=own.z+dz*Math.max(0,d-.14);break;}
         }
       }
-      this.aimLine.geometry.dispose();
-      this.aimLine.geometry=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(own.x,.19,own.z),new THREE.Vector3(endX,.19,endZ)]);
+      const positions=this.aimLine.geometry.getAttribute('position') as THREE.BufferAttribute;
+      for(let i=0;i<25;i++){
+        const t=i/24;
+        positions.setXYZ(i,own.x+(endX-own.x)*t,.19+(config.kind==='lob'?Math.sin(Math.PI*t)*1.35:0),own.z+(endZ-own.z)*t);
+      }
+      positions.needsUpdate=true;
+      this.aimLine.geometry.computeBoundingSphere();
       this.aimLine.computeLineDistances();this.aimLine.visible=true;
       this.aimTip.position.set(endX,.20,endZ);this.aimTip.visible=true;
     }else{this.aimLine.visible=false;this.aimTip.visible=false;}
