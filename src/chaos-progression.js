@@ -50,6 +50,12 @@ export function applyAwakeningOnPlay(game,side,cardId,draw,action={},ops={}){
   if(!awakeningBonus(cardId))return false;
   // Recording happens after the normal effect resolves. Rewinds must clone this flag.
   const applied=resolveUniqueAwakening(game,side,cardId,action,{...ops,draw});
+  // Avada requires an actual secondary capture: without an adjacent pawn (or
+  // when its destruction was prevented) the awakening remains ready for reuse.
+  if(cardId==='avada'&&!applied){
+    game.log.push('アバダ・ケダブラ覚醒：隣の敵の歩を破壊できず未発動。次の使用で再試行できます。');
+    return false;
+  }
   const player=game.cards[side];
   player.awakenedUsed||=[];
   player.awakenedUsed.push(cardId);
