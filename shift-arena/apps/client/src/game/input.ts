@@ -15,6 +15,7 @@ export class InputController {
   setAttackStick(x:number,z:number,active:boolean){if(active){this.touchAimX=x;this.touchAimZ=z;this.touchAttack=true;}else{if(this.touchAttack)this.attackPulse=true;this.touchAttack=false;}}
   setSkill(){this.skillPulse=true;}
   setUltimate(){this.ultimatePulse=true;}
+  peekAim():[number,number]{const d=Math.hypot(this.touchAimX,this.touchAimZ);return d>.2?[this.touchAimX/d,this.touchAimZ/d]:[this.aimX,this.aimZ];}
   read():Input{const keyboardX=Number(this.keys.has('KeyD')||this.keys.has('ArrowRight'))-Number(this.keys.has('KeyA')||this.keys.has('ArrowLeft'));const keyboardZ=Number(this.keys.has('KeyS')||this.keys.has('ArrowDown'))-Number(this.keys.has('KeyW')||this.keys.has('ArrowUp'));const aimLength=Math.hypot(this.touchAimX,this.touchAimZ);if(aimLength>.2){this.aimX=this.touchAimX/aimLength;this.aimZ=this.touchAimZ/aimLength;}const result={...neutral,mx:keyboardX||this.moveX,mz:keyboardZ||this.moveZ,ax:this.aimX,az:this.aimZ,attack:this.mouseAttack||this.attackPulse||(this.touchAttack&&this.autoFire()),ultimate:this.ultimatePulse,skill:this.skillPulse};this.attackPulse=false;this.ultimatePulse=false;this.skillPulse=false;return result;}
   dispose(){for(const fn of this.handlers)fn();}
 }
