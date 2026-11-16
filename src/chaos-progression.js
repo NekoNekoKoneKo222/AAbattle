@@ -1,3 +1,4 @@
+import { AWAKENINGS, resolveUniqueAwakening } from './chaos-awakenings.js';
 // CHAOS SHOGI progression: persisted mastery and optional awakened card bonuses.
 export const MASTERY_THRESHOLDS = Object.freeze([0,30,90,180,300,450,630,840,1080,1350]);
 export const MASTERY_XP_PER_PLAY = 40;
@@ -36,27 +37,21 @@ export function applyMasteryFromReplay(profile,match,playerId,catalog){
   return changes;
 }
 
-export const AWAKEN_BONUSES=Object.freeze({
-  dobby:{cp:2,draw:1,description:'最初の発動時に2CP返還＋1枚ドロー'},
-  avada:{cp:3,draw:0,description:'最初の使用時に3CP返還'},
-  meteor:{cp:2,draw:1,description:'最初の使用時に2CP返還＋1枚ドロー'},
-  insight:{cp:1,draw:1,description:'最初の使用時に1CP返還＋追加1枚ドロー'},
-  grant:{cp:3,draw:0,description:'最初の使用時に3CP返還'},
-  infinity:{cp:2,draw:1,description:'最初の装備時に2CP返還＋1枚ドロー'},
-  warp:{cp:2,draw:1,description:'最初の使用時に2CP返還＋1枚ドロー'}
-});
-export const awakeningBonus=cardId=>AWAKEN_BONUSES[cardId]||{cp:2,draw:0,description:'最初の使用時に2CP返還'};
 
-export function applyAwakeningOnPlay(game,side,cardId,draw){
-  if(game.onlineMode==='ranked'||!game.awakened?.[side]?.includes(cardId))return false;
+export const AWAKEN_BONUSES = AWAKENINGS;
+export const awakeningBonus = cardId=>AWAKENINGS[cardId]||null;
+export const hasUnusedAwakening=(game,side,cardId)=>
+  game?.onlineMode!=='ranked'&&game?.settings?.cardPool!=='ranked'&&
+  game?.awakened?.[side]?.includes(cardId)===true&&
+  !game?.cards?.[side]?.awakenedUsed?.includes(cardId);
+
+export function applyAwakeningOnPlay(game,side,cardId,draw,action={},ops={}){
+  if(!hasUnusedAwakening(game,side,cardId))return false;
+  if(!awakeningBonus(cardId))return false;
+  // Recording happens after the normal effect resolves. Rewinds must clone this flag.
+  const applied=resolveUniqueAwakening(game,side,cardId,action,{...ops,draw});
   const player=game.cards[side];
-  player.awakenedUsed ||= [];
-  if(player.awakenedUsed.includes(cardId))return false;
+  player.awakenedUsed||=[];
   player.awakenedUsed.push(cardId);
-  const bonus=awakeningBonus(cardId);
-  player.cp=Math.min(game.settings?.cpCap??10,player.cp+bonus.cp);
-  let drawn=0;
-  if(typeof draw==='function')for(let i=0;i<bonus.draw;i++)if(draw(player))drawn++;
-  game.log.push('覚醒 '+cardId+'：'+bonus.cp+'CP返還'+(drawn?'・'+drawn+'枚ドロー':''));
-  return true;
+  return applied;
 }
