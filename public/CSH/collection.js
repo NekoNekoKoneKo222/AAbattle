@@ -8,7 +8,7 @@ export function initCollection({api,catalog,skins,packTargets,getDeckBuilder}){
   let profile=null,pending=[],busy=false;
   const progress=document.createElement('section');
   progress.className='chaos-progression';
-  progress.innerHTML='<h3>カードマスタリー・覚醒</h3><p>対戦でカードを使用すると熟練度が上昇。Lv.5から欠片で覚醒を解放できます。ランク戦では覚醒による戦闘ボーナスは無効です。</p><input id="progressSearch" type="search" placeholder="カード名を検索" aria-label="マスタリーカード検索"><div id="progressCards" class="progress-cards"></div><h3>欠片カード制作</h3><div class="craft-tools"><select id="craftCard" aria-label="制作するカード"></select><span id="craftPrice"></span><button id="craftButton" type="button">カードを制作</button></div>';
+  progress.innerHTML='<h3>カードマスタリー・覚醒</h3><p>対戦でカードを使用すると熟練度が上昇。Lv.5から欠片でカード固有の覚醒を解放できます。固有効果は対局中の初回使用時だけ発動し、ランク戦では無効です。</p><input id="progressSearch" type="search" placeholder="カード名を検索" aria-label="マスタリーカード検索"><div id="progressCards" class="progress-cards"></div><h3>欠片カード制作</h3><div class="craft-tools"><select id="craftCard" aria-label="制作するカード"></select><span id="craftPrice"></span><button id="craftButton" type="button">カードを制作</button></div>';
   root.querySelector('.collection-grid').after(progress);
   let progressSearch='';
   progress.querySelector('#progressSearch').oninput=e=>{progressSearch=e.target.value.trim().toLowerCase();renderMastery();};
