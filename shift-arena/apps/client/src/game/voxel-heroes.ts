@@ -157,3 +157,13 @@ export function poseVoxelHero(group: THREE.Group, time: number, speed: number, a
   p.rightArm.rotation.x = Math.sin(phase) * stride * .5 - (attacking ? 1.03 : .10);
   p.rightArm.rotation.z = attacking ? -.12 : 0;
 }
+
+/** Prevent GPU resource leaks when a character changes skin or leaves the match. */
+export function disposeVoxelHero(group: THREE.Group): void {
+  group.traverse(object => {
+    if (!(object instanceof THREE.Mesh)) return;
+    object.geometry.dispose();
+    const mats = Array.isArray(object.material) ? object.material : [object.material];
+    mats.forEach(material => material.dispose());
+  });
+}
