@@ -13,7 +13,7 @@ test('packs use server catalog, guarantee rare fifth card, and cannot overspend'
 });
 
 test('daily reward is once per day; decks require ownership; duplicate conversion preserves two',async()=>{
-  const store=createChaosCollection();assert.equal((await store.claimDaily('alice')).coins,5600);await assert.rejects(store.claimDaily('alice'),/受け取り済み/);
+  const store=createChaosCollection();assert.equal((await store.claimDaily('alice')).coins,5750);await assert.rejects(store.claimDaily('alice'),/受け取り済み/);
   await assert.rejects(store.checkOwned('alice',[...DEFAULT_DECK.slice(0,19),'world-end']),/所持枚数/);
   const saved=await store.saveDeck('alice',{name:'テスト',cards:STARTER_DECK});assert.equal(saved.decks.length,2);
   const bad=[...DEFAULT_DECK];bad[0]='world-end';await assert.rejects(store.saveDeck('alice',{name:'不正',cards:bad}),/所持枚数/);
@@ -23,7 +23,7 @@ test('daily reward is once per day; decks require ownership; duplicate conversio
 test('finished online match awards once and saves replay and rating',async()=>{
   const store=createChaosCollection(),match={room:{mode:'ranked',code:'ABCD1234'},game:{id:'game-1',winner:'b',reason:'投了'},teams:{b:[{id:'alice',username:'alice'}],w:[{id:'bob',username:'bob'}]},replay:[{revision:0},{revision:1}]};
   assert.deepEqual(await store.settle(match),{alice:1025,bob:975});await store.settle(match);
-  const alice=await store.profile('alice'),bob=await store.profile('bob');assert.equal(alice.coins,5610);assert.equal(bob.coins,5580);assert.equal(alice.wins,1);assert.equal(bob.losses,1);assert.equal(alice.matches.length,1);assert.equal((await store.replay('alice','game-1')).events.length,2);await assert.rejects(store.replay('eve','game-1'),/見つかりません/);
+  const alice=await store.profile('alice'),bob=await store.profile('bob');assert.equal(alice.coins,5720);assert.equal(bob.coins,5660);assert.equal(alice.wins,1);assert.equal(bob.losses,1);assert.equal(alice.matches.length,1);assert.equal((await store.replay('alice','game-1')).events.length,2);await assert.rejects(store.replay('eve','game-1'),/見つかりません/);
 });
 
 test('card skins spend shards once, require ownership, and do not change ranked card rules',async()=>{
@@ -74,4 +74,41 @@ test('another player card showcase includes only owned cards and equipped cosmet
   assert.deepEqual(Object.keys(showcase).sort(),['cards','skins']);
   await store.adminGrant('alice',{cardId:'grant',count:1});
   assert.equal((await store.cardShowcase('alice')).cards.grant,3);
+});
+
+test('mastery XP is earned from actual online card plays, rewards coins, and rejects duplicate settlement',async()=>{
+  const store=createChaosCollection();
+  const match={room:{mode:'casual',code:'E5BCA123'},game:{id:'game-mastery-1',winner:'b',reason:'詰み'},teams:{b:[{id:'alice',username:'alice'}],w:[{id:'bob',username:'bob'}]},replay:[
+    {actor:'alice',action:{kind:'card',cardId:'grant'}},
+    {actor:'alice',action:{kind:'card',cardId:'grant'}},
+    {actor:'alice',action:{kind:'card',cardId:'grant'}},
+    {actor:'alice',action:{kind:'card',cardId:'grant'}},
+    {actor:'alice',action:{kind:'move',from:0,to:1}},
+    {actor:'bob',action:{kind:'card',cardId:'insight'}}
+  ]};
+  await store.settle(match);
+  let a=await store.profile('alice');
+  assert.equal(a.mastery.grant,120);
+  assert.equal(a.awakened.length,0);
+  assert.equal(a.coins,5900); // base 5500 + win 120 + first win 100 + three mastery levels * 60
+  await store.settle(match);
+  a=await store.profile('alice');
+  assert.equal(a.mastery.grant,120);
+  assert.equal(a.coins,5900);
+  assert.equal((await store.profile('bob')).mastery.insight,40);
+});
+
+test('card crafting and awakenings validate inventory, shards and required mastery',async()=>{
+  const store=createChaosCollection();
+  await assert.rejects(store.craftCard('alice','missing'),/存在しない/);
+  await assert.rejects(store.craftCard('alice','dobby'),/欠片/);
+  await assert.rejects(store.awakenCard('alice','dobby'),/所持カード/);
+  await assert.rejects(store.awakenCard('alice','grant'),/Lv.5/);
+  // A new card can be crafted when sufficient shards are obtained.
+  for(let i=0;i<10;i++)await store.adminGrant('alice',{cardId:'dobby',count:1});
+  await store.convert('alice','dobby','all');
+  const crafted=await store.craftCard('alice','avada');
+  assert.equal(crafted.cards.avada,1);
+  assert.equal(crafted.shards,150*8-90);
+  await assert.rejects(store.awakenCard('alice','avada'),/Lv.5/);
 });
