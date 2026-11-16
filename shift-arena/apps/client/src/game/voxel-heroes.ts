@@ -4,7 +4,7 @@ import * as THREE from 'three';
  * Shared, original, Blockbench-inspired low-poly hero visuals.
  * Cuboids only: the same silhouette is used in battles and the character browser.
  */
-type Skin = 'skin' | 'master_skin' | null | undefined;
+type Skin = 'skin' | 'master_skin' | 'sun_skin' | null | undefined;
 type BodyParts = { leftArm: THREE.Group; rightArm: THREE.Group; leftLeg: THREE.Group; rightLeg: THREE.Group };
 const SKIN = 0xf5c9a9;
 const DARK = 0x17263a;
@@ -13,7 +13,7 @@ const eyeColor = 0x192637;
 function tint(color: number, skin: Skin): number {
   if (!skin) return color;
   const base = new THREE.Color(color);
-  base.lerp(new THREE.Color(skin === 'master_skin' ? 0xffcf60 : 0xb187ff), skin === 'master_skin' ? .49 : .38);
+  base.lerp(new THREE.Color(skin === 'sun_skin' ? 0xffdf35 : skin === 'master_skin' ? 0xffcf60 : 0xb187ff), skin === 'sun_skin' ? .67 : skin === 'master_skin' ? .49 : .38);
   return base.getHex();
 }
 function cube(parent: THREE.Object3D, size: [number, number, number], pos: [number, number, number], color: number, name = ''): THREE.Mesh {
