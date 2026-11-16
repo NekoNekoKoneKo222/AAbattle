@@ -210,3 +210,14 @@ button.primary:hover,.sun-primary:hover{background:linear-gradient(#fffaa4,#ffce
 @media(max-width:700px){.fighter-nameplate{width:90px}.fighter-nameplate-name{font-size:10px}.fighter-nameplate-hp{font-size:11px}.fighter-nameplate-track{width:80px;height:10px}.fighter-nameplate-ammo{width:80px}.game-screen .touch-right{gap:6px}.touch-right .touch-ult{height:62px;width:62px}.touch-right .touch-skill,.touch-right .touch-drive{height:43px;width:43px}.touch-right .touch-ult small,.touch-right .touch-skill small,.touch-right .touch-drive small{font-size:8px}}
 .power-stats .stat-increment{color:#6cff7a;font-size:15px;white-space:nowrap;margin-left:7px;font-weight:1000}
 .power-stats .ultimate-note{color:#d0e9ff;line-height:1.6;font-size:12px;margin:2px 0 6px}
+
+/* Touch sticks always return to zero. SUPER stays visible and aims with its own drag. */
+.ultimate-stick-wrap{position:relative;display:grid;place-items:center;pointer-events:auto;touch-action:none;isolation:isolate}
+.ultimate-stick-wrap .stick{border:4px solid #e0ac28;background:radial-gradient(circle,#a16a07,#3c2d4c);box-shadow:0 0 0 3px #080f34bd}
+.ultimate-stick-wrap.ready .stick{border-color:#fff078;box-shadow:0 0 18px #ffdf4e66}
+.ultimate-stick-wrap .stick-knob{background:linear-gradient(#ffe577,#ff9a25)}
+.ultimate-stick-wrap.charging .stick-knob{filter:grayscale(.7);opacity:.68}
+.ultimate-stick-wrap .stick-label{color:#fff4a5;z-index:1;font-size:10px;transform:translateY(-29px);text-shadow:0 1px 3px #000}
+.ultimate-stick-charge{position:absolute;inset:-4px;border-radius:50%;border:3px solid transparent;background:conic-gradient(#ffd545 var(--charge,0%),#273f62 var(--charge,0%));mask:radial-gradient(farthest-side,transparent calc(100% - 4px),#000 calc(100% - 3px));pointer-events:none}
+.ultimate-stick-symbol{position:absolute;bottom:7px;color:#ffe38c;pointer-events:none}
+.stick,.stick *{touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
