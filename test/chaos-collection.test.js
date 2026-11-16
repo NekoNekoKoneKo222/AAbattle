@@ -112,3 +112,26 @@ test('card crafting and awakenings validate inventory, shards and required maste
   assert.equal(crafted.shards,150*8-90);
   await assert.rejects(store.awakenCard('alice','avada'),/Lv.5/);
 });
+
+test('real matches level card mastery and unlock a persistent awakening without touching inventory',async()=>{
+  const store=createChaosCollection(),user='alice';
+  await store.adminGrant(user,{cardId:'grant',count:20});
+  await store.convert(user,'grant','all');
+  for(let i=0;i<8;i++){
+    await store.settle({
+      room:{mode:'casual',code:'LEVEL'+i},
+      game:{id:'level-'+i,winner:'b',reason:'投了'},
+      teams:{b:[{id:user,username:user}],w:[{id:'bob',username:'bob'}]},
+      replay:[{actor:user,action:{kind:'card',cardId:'grant'}}]
+    });
+  }
+  const before=await store.profile(user);
+  assert.equal(before.mastery.grant,320);
+  assert.ok(before.shards>=120);
+  assert.equal(before.cards.grant,2);
+  const after=await store.awakenCard(user,'grant');
+  assert.ok(after.awakened.includes('grant'));
+  assert.equal(after.shards,before.shards-120);
+  assert.equal(after.cards.grant,2);
+  await assert.rejects(store.awakenCard(user,'grant'),/覚醒済み/);
+});
