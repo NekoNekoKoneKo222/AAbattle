@@ -32,9 +32,9 @@ export type Economy={
   coins:number;sun_power:number;diamonds:number;
   levels:Record<string,number>;skins:Record<string,string[]>;
   drops:{sun:number;glitch:number};
-  tutorial_done:boolean;beginner_claimed:boolean;
+  tutorial_done:boolean;beginner_claimed:boolean;beginner_reward:{character:string;rarity:string}|null;
   total_matches:number;last_drop_day:string;daily_drops:number;
 };
 export function defaultEconomy():Economy{
-  return {coins:250,sun_power:140,diamonds:0,levels:{},skins:{},drops:{sun:1,glitch:0},tutorial_done:false,beginner_claimed:false,total_matches:0,last_drop_day:'',daily_drops:0};
+  return {coins:250,sun_power:140,diamonds:0,levels:{},skins:{},drops:{sun:1,glitch:0},tutorial_done:false,beginner_claimed:false,beginner_reward:null,total_matches:0,last_drop_day:'',daily_drops:0};
 }

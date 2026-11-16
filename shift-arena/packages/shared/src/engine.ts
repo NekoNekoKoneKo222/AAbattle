@@ -1,17 +1,17 @@
 import { characterById, mapById, type MapDefinition, type Wall, type Zone } from './data.js';
-import { loadoutOptions, validLoadout, type CharacterId } from './progression.js';
+import { loadoutOptions, validLoadout, type CharacterId, type GearId } from './progression.js';
 import { powerMultiplier } from './economy.js';
 export type Mode='core'|'deathmatch'|'duel'|'survival'|'payload'|'ffa';
 export type Difficulty='easy'|'normal'|'hard'|'expert';
 export type ShiftKind='wall'|'heal'|'speed'|'trap'|'cover'|'jump';
 export interface ShiftTerminal { x:number;z:number;radius:number;owner:0|1|null;progress:[number,number];candidates:[ShiftKind,ShiftKind];votes:Record<string,ShiftKind>;selected:ShiftKind|null;cycle:number; }
-export interface Input { mx:number; mz:number; ax:number; az:number; attack:boolean; ultimate:boolean; skill:boolean; }
-export const neutral:Input={mx:0,mz:0,ax:1,az:0,attack:false,ultimate:false,skill:false};
-export interface Fighter { id:string; name:string; character:string; team:number; bot:boolean; dummy?:'static'|'moving'|'attacking'|'invincible'; modelOwner?:string; skinChoice?:'skin'|'master_skin'|'sun_skin'|null; skillChoice:string; passiveChoice:string; powerLevel:number; bonusAttack:number; evasion:number; burn:number; x:number; z:number; vx:number; vz:number; ax:number; az:number; hp:number; ammo:number; reloadAt:number; attackAt:number; skillAt:number; ultimate:number; koAt:number; invulnerable:number; shield:number; slow:number; invisible:number; rapid:number; speedBoost:number; defense:number; hitChain:number; lastCombat:number; kills:number; damage:number; healed:number; received:number; objective:number; }
-export interface Projectile { id:number; owner:string; team:number; x:number; z:number; vx:number; vz:number; damage:number; radius:number; life:number; splash:number; pierce:number; lob:boolean; status?:'slow'; }
+export interface Input { mx:number; mz:number; ax:number; az:number; attack:boolean; ultimate:boolean; skill:boolean; overdrive?:boolean; aimDistance?:number; }
+export const neutral:Input={mx:0,mz:0,ax:1,az:0,attack:false,ultimate:false,skill:false,overdrive:false,aimDistance:1};
+export interface Fighter { id:string; name:string; character:string; team:number; bot:boolean; dummy?:'static'|'moving'|'attacking'|'invincible'; modelOwner?:string; skinChoice?:'skin'|'master_skin'|'sun_skin'|null; skillChoice:string; passiveChoice:string; powerLevel:number; gear1:GearId|null;gear2:GearId|null;overdriveCharge:number;overdriveTime:number;bonusAttack:number; evasion:number; burn:number; x:number; z:number; vx:number; vz:number; ax:number; az:number; hp:number; ammo:number; reloadAt:number; attackAt:number; skillAt:number; ultimate:number; koAt:number; invulnerable:number; shield:number; slow:number; invisible:number; rapid:number; speedBoost:number; defense:number; hitChain:number; lastCombat:number; kills:number; damage:number; healed:number; received:number; objective:number; }
+export interface Projectile { id:number; owner:string; team:number; x:number; z:number; vx:number; vz:number; damage:number; radius:number; life:number; splash:number; pierce:number; lob:boolean; flightTime?:number; launchX?:number; launchZ?:number; landX?:number; landZ?:number; status?:'slow'; }
 export interface Effect { id:number; kind:string; x:number; z:number; radius:number; life:number; team:number; owner?:string; damage?:number; }
 export interface GameState { tick:number; time:number; mode:Mode; difficulty:Difficulty; training?:boolean; trainingStats?:{hits:number;attacks:number;lastDamage:number;recentDamage:{tick:number;value:number}[]}; map:MapDefinition; players:Fighter[]; bullets:Projectile[]; effects:Effect[]; score:[number,number]; winner:number|null; overtime:boolean; shiftEnabled:boolean; shiftWarning:boolean; shiftCount:number; terminal:ShiftTerminal; payload:number; payloadRound:number; payloadRecord:[number,number]; safeRadius:number; nextId:number; events:{kind:string;x:number;z:number;value?:number;team?:number;owner?:string}[]; }
-export interface Slot { id:string; name:string; character:string; team:number; bot:boolean; dummy?:Fighter['dummy']; modelOwner?:string; skinChoice?:Fighter['skinChoice']; loadout?:{skill:string;passive:string}; powerLevel?:number; }
+export interface Slot { id:string; name:string; character:string; team:number; bot:boolean; dummy?:Fighter['dummy']; modelOwner?:string; skinChoice?:Fighter['skinChoice']; loadout?:{skill:string;passive:string;gear1?:GearId|null;gear2?:GearId|null}; powerLevel?:number; }
 const DT=1/30;
 const clamp=(n:number,a:number,b:number)=>Math.max(a,Math.min(b,n));
 const length=(x:number,z:number)=>Math.hypot(x,z);
@@ -33,7 +33,7 @@ function spawn(index:number,team:number,map:MapDefinition):[number,number]{
   }
   return map.spawn[team===1?1:0][index%3];
 }
-function makeFighter(slot:Slot,index:number,map:MapDefinition):Fighter{const [x,z]=spawn(index,slot.team,map),c=characterById(slot.character),choice=slot.loadout,options=loadoutOptions[c.id as CharacterId];const valid=choice&&validLoadout(c.id,choice.skill,choice.passive);return {id:slot.id,name:slot.name.slice(0,24),character:c.id,team:slot.team,bot:slot.bot,dummy:slot.dummy,modelOwner:slot.modelOwner,skinChoice:slot.skinChoice,skillChoice:valid?choice.skill:options.skills[0].id,passiveChoice:valid?choice.passive:options.passives[0].id,powerLevel:Math.max(1,Math.min(11,Math.floor(slot.powerLevel||1))),bonusAttack:0,evasion:0,burn:0,x,z,vx:0,vz:0,ax:slot.team===1?-1:1,az:0,hp:Math.round(c.maxHp*powerMultiplier(slot.powerLevel||1)),ammo:c.ammo,reloadAt:0,attackAt:0,skillAt:0,ultimate:0,koAt:0,invulnerable:1,shield:0,slow:0,invisible:0,rapid:0,speedBoost:0,defense:0,hitChain:0,lastCombat:0,kills:0,damage:0,healed:0,received:0,objective:0};}
+function makeFighter(slot:Slot,index:number,map:MapDefinition):Fighter{const [x,z]=spawn(index,slot.team,map),c=characterById(slot.character),choice=slot.loadout,options=loadoutOptions[c.id as CharacterId];const valid=choice&&validLoadout(c.id,choice.skill,choice.passive);return {id:slot.id,name:slot.name.slice(0,24),character:c.id,team:slot.team,bot:slot.bot,dummy:slot.dummy,modelOwner:slot.modelOwner,skinChoice:slot.skinChoice,skillChoice:valid?choice.skill:options.skills[0].id,passiveChoice:(slot.powerLevel||1)>=9?(valid?choice.passive:options.passives[0].id):'',powerLevel:Math.max(1,Math.min(11,Math.floor(slot.powerLevel||1))),gear1:(slot.powerLevel||1)>=8?choice?.gear1||null:null,gear2:(slot.powerLevel||1)>=10?choice?.gear2||null:null,overdriveCharge:0,overdriveTime:0,bonusAttack:0,evasion:0,burn:0,x,z,vx:0,vz:0,ax:slot.team===1?-1:1,az:0,hp:Math.round(c.maxHp*powerMultiplier(slot.powerLevel||1)),ammo:c.ammo,reloadAt:0,attackAt:0,skillAt:0,ultimate:0,koAt:0,invulnerable:1,shield:0,slow:0,invisible:0,rapid:0,speedBoost:0,defense:0,hitChain:0,lastCombat:0,kills:0,damage:0,healed:0,received:0,objective:0};}
 export function createGame(options:{mode?:Mode;map?:string;difficulty?:Difficulty;shift?:boolean;slots?:Slot[];size?:number;training?:boolean}={}):GameState{
   const mode=options.mode||'core';
   const size=mode==='duel'?1:mode==='survival'||mode==='ffa'?5:options.size===5?5:3;
@@ -52,13 +52,35 @@ function updateTerminal(g:GameState){if(!g.shiftEnabled)return;const t=g.termina
 function event(g:GameState,kind:string,x:number,z:number,value?:number,team?:number,owner?:string){if(g.events.length<30)g.events.push({kind,x,z,value,team,owner});}
 export const fighterMaxHp=(p:Fighter)=>Math.round(characterById(p.character).maxHp*powerMultiplier(p.powerLevel||1));
 function heal(g:GameState,p:Fighter,amount:number,source?:Fighter){if(p.hp<=0)return;const before=p.hp;p.hp=Math.min(fighterMaxHp(p),p.hp+amount*(source?.passiveChoice==='heal_boost'?1.3:1));p.healed+=p.hp-before;if(p.hp>before)event(g,'heal',p.x,p.z,p.hp-before,p.team,source?.id);}
-function damage(g:GameState,source:Fighter|undefined,target:Fighter,raw:number,push=0,dx=0,dz=0){if(target.hp<=0||target.invulnerable>0)return;const c=source&&characterById(source.character);let amount=raw*(source?powerMultiplier(source.powerLevel||1):1);if(target.evasion>0&&g.tick%5===0)return;if(target.shield>0){const absorbed=Math.min(target.shield,amount*.75);target.shield-=absorbed;amount-=absorbed;}if(target.defense>0)amount*=.78;if(target.passiveChoice==='ally_guard'&&g.players.some(a=>a.team===target.team&&a.id!==target.id&&a.passiveChoice==='ally_guard'&&distance(a,target)<3))amount*=.88;if(target.passiveChoice==='ice_guard'&&g.map.walls.some(w=>w.kind==='ice'&&distance(w,target)<3))amount*=.8;if(source?.passiveChoice==='status_damage'&&target.slow>0)amount*=1.17;if(source?.passiveChoice==='surprise_damage'&&(source.invisible>0||g.map.zones.some(z=>z.kind==='bush'&&inZone(source,z))))amount*=1.15;if(source?.bonusAttack){amount*=1.3;source.bonusAttack=0;}amount=Math.max(1,Math.round(amount));if(target.dummy!=='invincible')target.hp=Math.max(0,target.hp-amount);target.received+=amount;target.lastCombat=g.tick;target.vx+=dx*push;target.vz+=dz*push;event(g,'hit',target.x,target.z,amount,target.team,source?.id);if(source){source.damage+=amount;source.lastCombat=g.tick;source.ultimate=clamp(source.ultimate+amount/95,0,100);source.hitChain++;if(source.passiveChoice==='combo_speed'&&source.hitChain>=3)source.speedBoost=2;if(source.passiveChoice==='ammo_return'&&source.hitChain%4===0)source.ammo=Math.min(c!.ammo,source.ammo+1);if(source.passiveChoice==='chain_slow'&&source.hitChain>=3)target.slow=2;if(source.passiveChoice==='multi_charge'&&amount>700)source.ultimate=clamp(source.ultimate+6,0,100);if(source.passiveChoice==='burn_blast'&&c?.id==='bom')target.burn=3;}
+function damage(g:GameState,source:Fighter|undefined,target:Fighter,raw:number,push=0,dx=0,dz=0){if(target.hp<=0||target.invulnerable>0)return;const c=source&&characterById(source.character);let amount=raw*(source?powerMultiplier(source.powerLevel||1)*(source.overdriveTime>0?1.20:1)*(source.gear1==='sun_fury'||source.gear2==='sun_fury'?1.05:1):1);if(target.overdriveTime>0)amount*=.84;if(target.gear1==='sun_plating'||target.gear2==='sun_plating')amount*=.95;if(target.evasion>0&&g.tick%5===0)return;if(target.shield>0){const absorbed=Math.min(target.shield,amount*.75);target.shield-=absorbed;amount-=absorbed;}if(target.defense>0)amount*=.78;if(target.passiveChoice==='ally_guard'&&g.players.some(a=>a.team===target.team&&a.id!==target.id&&a.passiveChoice==='ally_guard'&&distance(a,target)<3))amount*=.88;if(target.passiveChoice==='ice_guard'&&g.map.walls.some(w=>w.kind==='ice'&&distance(w,target)<3))amount*=.8;if(source?.passiveChoice==='status_damage'&&target.slow>0)amount*=1.17;if(source?.passiveChoice==='surprise_damage'&&(source.invisible>0||g.map.zones.some(z=>z.kind==='bush'&&inZone(source,z))))amount*=1.15;if(source?.bonusAttack){amount*=1.3;source.bonusAttack=0;}amount=Math.max(1,Math.round(amount));if(target.dummy!=='invincible')target.hp=Math.max(0,target.hp-amount);target.received+=amount;target.lastCombat=g.tick;target.vx+=dx*push;target.vz+=dz*push;event(g,'hit',target.x,target.z,amount,target.team,source?.id);if(source){source.damage+=amount;source.lastCombat=g.tick;source.ultimate=clamp(source.ultimate+amount/95*(source.gear1==='sun_charge'||source.gear2==='sun_charge'?1.07:1),0,100);if(source.powerLevel>=11&&source.overdriveTime<=0)source.overdriveCharge=clamp(source.overdriveCharge+amount/110,0,100);source.hitChain++;if(source.passiveChoice==='combo_speed'&&source.hitChain>=3)source.speedBoost=2;if(source.passiveChoice==='ammo_return'&&source.hitChain%4===0)source.ammo=Math.min(c!.ammo,source.ammo+1);if(source.passiveChoice==='chain_slow'&&source.hitChain>=3)target.slow=2;if(source.passiveChoice==='multi_charge'&&amount>700)source.ultimate=clamp(source.ultimate+6,0,100);if(source.passiveChoice==='burn_blast'&&c?.id==='bom')target.burn=3;}
   if(target.hp===0){target.koAt=g.tick;target.invulnerable=0;event(g,'ko',target.x,target.z,undefined,target.team);if(source){source.kills++;if(c?.id==='jin')source.skillAt=Math.max(g.tick,source.skillAt-90);if(g.mode==='deathmatch'||g.mode==='duel')g.score[source.team as 0|1]++;if(g.mode==='ffa'&&source.kills>=10)g.winner=source.team;}if(g.mode==='survival'){const alive=g.players.filter(p=>p.hp>0);if(alive.length<=1)g.winner=alive[0]?.team??0;}}
   else if(target.passiveChoice==='guard_after_hit')target.defense=1.8;
 }
-function fire(g:GameState,p:Fighter,ax:number,az:number){const c=characterById(p.character),a=c.attack;if(g.tick<p.attackAt||p.ammo<a.ammoCost||p.hp<=0)return;const [dx,dz]=norm(ax,az);p.ax=dx;p.az=dz;p.ammo-=a.ammoCost;p.attackAt=g.tick+Math.round(a.cooldown*(p.rapid>0?.48:1)*30);p.reloadAt=Math.max(p.reloadAt,g.tick+Math.round(c.reload*30));p.lastCombat=g.tick;p.invulnerable=0;event(g,'attack',p.x,p.z,undefined,p.team,p.id);
+function fire(g:GameState,p:Fighter,ax:number,az:number,aimDistance=1){const c=characterById(p.character),a=c.attack;if(g.tick<p.attackAt||p.ammo<a.ammoCost||p.hp<=0)return;const [dx,dz]=norm(ax,az);p.ax=dx;p.az=dz;p.ammo-=a.ammoCost;p.attackAt=g.tick+Math.round(a.cooldown*(p.rapid>0?.48:1)*30);p.reloadAt=Math.max(p.reloadAt,g.tick+Math.round(c.reload*30));p.lastCombat=g.tick;p.invulnerable=0;event(g,'attack',p.x,p.z,undefined,p.team,p.id);
   if(a.kind==='melee'){for(const target of g.players){if(target.team===p.team||target.hp<=0)continue;const rx=target.x-p.x,rz=target.z-p.z,d=length(rx,rz);if(d<a.range&&rx*dx+rz*dz>d*.45&&lineClear(g.map,p,target))damage(g,p,target,a.damage,2,dx,dz);}return;}
-  for(let i=0;i<a.projectileCount&&g.bullets.length<120;i++){const off=(i-(a.projectileCount-1)/2)*a.spread,[vx,vz]=[Math.cos(Math.atan2(dz,dx)+off),Math.sin(Math.atan2(dz,dx)+off)];g.bullets.push({id:g.nextId++,owner:p.id,team:p.team,x:p.x+dx*.55,z:p.z+dz*.55,vx:vx*a.projectileSpeed,vz:vz*a.projectileSpeed,damage:a.damage,radius:a.kind==='lob'?.35:.2,life:a.range/a.projectileSpeed,splash:a.splashRadius,pierce:a.pierce,lob:a.kind==='lob',status:c.id==='frost'?'slow':undefined});}
+  if(a.kind==='lob'){
+    // Server validates the landing distance. A short stick drag means a close throw,
+    // and a full drag means maximum range. Projectiles fly OVER walls.
+    const requested=clamp(aimDistance,.12,1)*a.range;
+    const landX=clamp(p.x+dx*requested,.6,g.map.width-.6);
+    const landZ=clamp(p.z+dz*requested,.6,g.map.height-.6);
+    const actual=Math.hypot(landX-p.x,landZ-p.z);
+    const flightTime=clamp(.35+actual/12,.38,1.35);
+    g.bullets.push({id:g.nextId++,owner:p.id,team:p.team,x:p.x,z:p.z,
+      vx:(landX-p.x)/flightTime,vz:(landZ-p.z)/flightTime,
+      damage:a.damage,radius:.32,life:flightTime,flightTime,
+      launchX:p.x,launchZ:p.z,landX,landZ,
+      splash:a.splashRadius,pierce:0,lob:true,status:c.id==='frost'?'slow':undefined});
+    return;
+  }
+  for(let i=0;i<a.projectileCount&&g.bullets.length<120;i++){
+    const off=(i-(a.projectileCount-1)/2)*a.spread;
+    const [vx,vz]=[Math.cos(Math.atan2(dz,dx)+off),Math.sin(Math.atan2(dz,dx)+off)];
+    g.bullets.push({id:g.nextId++,owner:p.id,team:p.team,x:p.x+dx*.55,z:p.z+dz*.55,
+      vx:vx*a.projectileSpeed,vz:vz*a.projectileSpeed,
+      damage:a.damage,radius:.2,life:a.range/a.projectileSpeed,
+      splash:a.splashRadius,pierce:a.pierce,lob:false,status:c.id==='frost'?'slow':undefined});
+  }
 }
 function addEffect(g:GameState,kind:string,p:Fighter,x:number,z:number,radius:number,life:number,damageValue=0){if(g.effects.length>=45)return;g.effects.push({id:g.nextId++,kind,x,z,radius,life,team:p.team,owner:p.id,damage:damageValue});event(g,kind,x,z,undefined,p.team);}
 function ultimate(g:GameState,p:Fighter,ax:number,az:number){if(p.ultimate<100||p.hp<=0)return;const c=characterById(p.character),[dx,dz]=norm(ax,az);p.ultimate=0;p.invulnerable=0;event(g,'ultimate',p.x,p.z,undefined,p.team,p.id);switch(c.ultimate.kind){
@@ -71,7 +93,7 @@ function ultimate(g:GameState,p:Fighter,ax:number,az:number){if(p.ultimate<100||
   case 'clones':for(let i=0;i<3;i++)addEffect(g,'clone',p,p.x+Math.cos(i*2.1)*1.4,p.z+Math.sin(i*2.1)*1.4,.7,6,220);break;
   case 'icewall':{const x=clamp(p.x+dx*3,1,g.map.width-1),z=clamp(p.z+dz*3,1,g.map.height-1);g.map.walls.push({id:`ice-${g.nextId++}`,x,z,w:Math.abs(dx)>.7?1:3,h:Math.abs(dx)>.7?3:1,hp:1800,kind:'ice'});relocateBlocked(g);break;}
 }}
-function skill(g:GameState,p:Fighter,ax:number,az:number){const c=characterById(p.character),chosen=loadoutOptions[c.id as CharacterId].skills.find(s=>s.id===p.skillChoice)||loadoutOptions[c.id as CharacterId].skills[0];if(p.hp<=0||g.tick<p.skillAt)return;const [dx,dz]=norm(ax,az);p.skillAt=g.tick+Math.round(chosen.cooldown*30);p.invulnerable=0;event(g,'skill',p.x,p.z,undefined,p.team,p.id);if(p.passiveChoice==='evasion')p.evasion=2;switch(chosen.kind){
+function skill(g:GameState,p:Fighter,ax:number,az:number){if(p.powerLevel<7)return;const c=characterById(p.character),chosen=loadoutOptions[c.id as CharacterId].skills.find(s=>s.id===p.skillChoice)||loadoutOptions[c.id as CharacterId].skills[0];if(p.hp<=0||g.tick<p.skillAt)return;const [dx,dz]=norm(ax,az);p.skillAt=g.tick+Math.round(chosen.cooldown*30);p.invulnerable=0;event(g,'skill',p.x,p.z,undefined,p.team,p.id);if(p.passiveChoice==='evasion')p.evasion=2;switch(chosen.kind){
   case 'dash':case 'warp':case 'shadow_step':case 'charge':{const dist=chosen.kind==='warp'?4.7:chosen.kind==='charge'?4:3.4;if(chosen.kind==='shadow_step')addEffect(g,'clone',p,p.x,p.z,.6,4);for(let i=1;i<=10;i++){const x=p.x+dx*dist*i/10,z=p.z+dz*dist*i/10;if(solidAt(g.map,x,z))break;p.x=x;p.z=z;}if(chosen.kind==='charge')for(const t of g.players)if(t.team!==p.team&&distance(p,t)<1.5)damage(g,p,t,650,3,dx,dz);if(p.passiveChoice==='dash_strike')p.bonusAttack=1;break;}
   case 'shield':p.shield=1900;break;
   case 'invisible':p.invisible=4;break;
@@ -84,7 +106,46 @@ function skill(g:GameState,p:Fighter,ax:number,az:number){const c=characterById(
   case 'slowfield':addEffect(g,'slowfield',p,p.x+dx*3,p.z+dz*3,2.4,5);break;
   case 'ice_dash':p.speedBoost=3;break;
 }}
-function updateBullets(g:GameState){g.bullets=g.bullets.filter(b=>{b.life-=DT;b.x+=b.vx*DT;b.z+=b.vz*DT;const wall=g.map.walls.find(w=>wallCollides(b.x,b.z,w,b.radius));if(wall&&!b.lob){if(wall.hp>0){wall.hp-=b.damage;if(wall.hp<=0){g.map.walls=g.map.walls.filter(v=>v!==wall);event(g,'break',wall.x,wall.z);}}return false;}const hits=g.players.filter(p=>p.team!==b.team&&p.hp>0&&distance(p,b)<b.radius+.4);if(hits.length){const owner=g.players.find(p=>p.id===b.owner);for(const p of hits){if(b.splash>0){for(const t of g.players)if(t.team!==b.team&&distance(t,b)<b.splash)damage(g,owner,t,b.damage,1,b.vx/(length(b.vx,b.vz)||1),b.vz/(length(b.vx,b.vz)||1));}else{damage(g,owner,p,b.damage,.8,b.vx/(length(b.vx,b.vz)||1),b.vz/(length(b.vx,b.vz)||1));}if(b.status)p.slow=2;break;}event(g,b.splash?'explosion':'impact',b.x,b.z,b.damage,b.team);if(b.pierce>0){b.pierce--;return true;}return false;}if(b.life<=0||b.x<0||b.z<0||b.x>g.map.width||b.z>g.map.height){if(b.lob&&b.splash>0){const owner=g.players.find(p=>p.id===b.owner);for(const t of g.players)if(t.team!==b.team&&distance(t,b)<b.splash)damage(g,owner,t,b.damage);event(g,'explosion',b.x,b.z,b.damage,b.team);}return false;}return true;});}
+function updateBullets(g:GameState){
+  g.bullets=g.bullets.filter(b=>{
+    b.life-=DT;
+    if(b.lob){
+      const total=b.flightTime||1,progress=clamp(1-b.life/total,0,1);
+      b.x=(b.launchX||0)+((b.landX||0)-(b.launchX||0))*progress;
+      b.z=(b.launchZ||0)+((b.landZ||0)-(b.launchZ||0))*progress;
+      if(b.life>0)return true;
+      // Throwing attacks do not collide with intermediate players or low walls.
+      b.x=b.landX??b.x;b.z=b.landZ??b.z;
+      const owner=g.players.find(p=>p.id===b.owner);
+      const enemies=g.players.filter(p=>p.team!==b.team&&p.hp>0);
+      if(b.splash>0){
+        for(const enemy of enemies)if(distance(enemy,b)<b.splash)
+          damage(g,owner,enemy,b.damage,1,(enemy.x-b.x)/b.splash,(enemy.z-b.z)/b.splash);
+      }else{
+        const target=enemies.filter(p=>distance(p,b)<b.radius+.5).sort((a,c)=>distance(a,b)-distance(c,b))[0];
+        if(target)damage(g,owner,target,b.damage);
+      }
+      event(g,b.splash>0?'explosion':'impact',b.x,b.z,b.damage,b.team,b.owner);
+      return false;
+    }
+    b.x+=b.vx*DT;b.z+=b.vz*DT;
+    const wall=g.map.walls.find(w=>wallCollides(b.x,b.z,w,b.radius));
+    if(wall){
+      if(wall.hp>0){wall.hp-=b.damage;if(wall.hp<=0){g.map.walls=g.map.walls.filter(v=>v!==wall);event(g,'break',wall.x,wall.z);}}
+      return false;
+    }
+    const enemy=g.players.find(p=>p.team!==b.team&&p.hp>0&&distance(p,b)<b.radius+.4);
+    if(enemy){
+      const owner=g.players.find(p=>p.id===b.owner);
+      damage(g,owner,enemy,b.damage,.8,b.vx/(length(b.vx,b.vz)||1),b.vz/(length(b.vx,b.vz)||1));
+      if(b.status)enemy.slow=2;
+      event(g,'impact',b.x,b.z,b.damage,b.team,b.owner);
+      if(b.pierce>0){b.pierce--;return true;}
+      return false;
+    }
+    return b.life>0&&b.x>0&&b.z>0&&b.x<g.map.width&&b.z<g.map.height;
+  });
+}
 function updateEffects(g:GameState){for(const e of g.effects){e.life-=DT;const owner=g.players.find(p=>p.id===e.owner);if(e.kind==='drone'&&owner){e.x=owner.x;e.z=owner.z;if(g.tick%30===0)for(const p of g.players)if(p.team===e.team&&distance(p,e)<e.radius)heal(g,p,110);}if(e.kind==='slowfield')for(const p of g.players)if(p.team!==e.team&&p.hp>0&&distance(p,e)<e.radius)p.slow=.5;if(e.kind==='mine'&&e.life<17.5&&g.players.some(p=>p.team!==e.team&&p.hp>0&&distance(p,e)<e.radius)){for(const p of g.players)if(p.team!==e.team&&distance(p,e)<e.radius)damage(g,owner,p,e.damage||600);e.life=0;event(g,'explosion',e.x,e.z);}if(e.kind==='bomb'&&e.life<=0){for(const p of g.players)if(p.team!==e.team&&distance(p,e)<e.radius)damage(g,owner,p,e.damage||1500,4,(p.x-e.x)/e.radius,(p.z-e.z)/e.radius);event(g,'explosion',e.x,e.z);}}
   g.effects=g.effects.filter(e=>e.life>0);
 }
@@ -103,12 +164,15 @@ function scoreMode(g:GameState){if(g.mode==='core'){const inCore=[0,0];for(const
   if(g.mode==='survival'){const initial=Math.hypot(g.map.width/2,g.map.height/2)+2;const progress=clamp((150-g.time)/150,0,1);g.safeRadius=Math.max(3,initial-(initial-3)*progress);if(g.tick%30===0)for(const p of g.players)if(p.hp>0&&distance(p,{x:g.map.goal[0],z:g.map.goal[1]})>g.safeRadius)damage(g,undefined,p,Math.round(150+progress*850));}
   if(g.time<=0&&g.winner===null){if(g.mode==='payload')finishPayloadRound(g);else if(g.mode==='survival'){const alive=g.players.filter(p=>p.hp>0).sort((a,b)=>b.hp-a.hp);g.winner=alive[0]?.team??0;}else if(g.mode==='ffa'){const ranked=[...g.players].sort((a,b)=>b.kills-a.kills||b.damage-a.damage);g.winner=ranked[0]?.team??2;}else if(g.score[0]===g.score[1]&&!g.overtime){g.overtime=true;g.time=20;event(g,'overtime',g.map.goal[0],g.map.goal[1]);}else g.winner=g.score[0]>=g.score[1]?0:1;}}
 function finishPayloadRound(g:GameState){g.payloadRecord[g.payloadRound as 0|1]=g.payload;if(g.payloadRound===0){g.payloadRound=1;g.payload=0;g.time=180;for(const p of g.players){p.hp=fighterMaxHp(p);[p.x,p.z]=spawn(0,p.team,g.map);}}else g.winner=g.payloadRecord[0]>=g.payloadRecord[1]?0:1;}
-function move(g:GameState,p:Fighter,input:Input){if(p.hp<=0)return;const c=characterById(p.character),[dx,dz]=length(input.mx,input.mz)>1?norm(input.mx,input.mz):[input.mx,input.mz];const speed=c.moveSpeed*(p.slow>0?.58:1)*(p.speedBoost>0?1.22:1)*(g.map.zones.some(z=>z.kind==='speed'&&inZone(p,z))?1.25:1);p.vx=dx*speed+p.vx*.12;p.vz=dz*speed+p.vz*.12;const nx=p.x+p.vx*DT,nz=p.z+p.vz*DT;if(!solidAt(g.map,nx,p.z))p.x=nx;if(!solidAt(g.map,p.x,nz))p.z=nz;const [ax,az]=norm(input.ax,input.az);if(length(input.ax,input.az)>.1){p.ax=ax;p.az=az;}if(input.attack)fire(g,p,p.ax,p.az);if(input.ultimate)ultimate(g,p,p.ax,p.az);if(input.skill)skill(g,p,p.ax,p.az);
-  if(p.ammo<c.ammo&&g.tick>=p.reloadAt){p.ammo++;p.reloadAt=g.tick+Math.round(c.reload*30);}if(g.tick-p.lastCombat>120&&g.tick%30===0){const hasMina=g.players.some(a=>a.team===p.team&&a.hp>0&&a.passiveChoice==='regen_aura'&&distance(a,p)<4);heal(g,p,Math.round(c.maxHp*(hasMina?.035:.025)));}for(const z of g.map.zones)if(inZone(p,z)){if(z.kind==='heal'&&g.tick%30===0)heal(g,p,150);if(z.kind==='danger'&&g.tick%30===0)damage(g,undefined,p,250);if(z.kind==='conveyor')p.x=clamp(p.x+(p.team===0?.03:-.03),.5,g.map.width-.5);}if(p.burn>0&&g.tick%30===0)damage(g,undefined,p,90);p.invulnerable=Math.max(0,p.invulnerable-DT);p.slow=Math.max(0,p.slow-DT);p.invisible=Math.max(0,p.invisible-DT);p.rapid=Math.max(0,p.rapid-DT);p.speedBoost=Math.max(0,p.speedBoost-DT);p.defense=Math.max(0,p.defense-DT);p.evasion=Math.max(0,p.evasion-DT);p.burn=Math.max(0,p.burn-DT);}
+function move(g:GameState,p:Fighter,input:Input){if(p.hp<=0)return;const c=characterById(p.character),
+  overdriveReady=p.powerLevel>=11&&p.overdriveCharge>=100&&p.overdriveTime<=0;
+  if(input.overdrive&&overdriveReady){p.overdriveTime=6;p.overdriveCharge=0;event(g,'overdrive',p.x,p.z,undefined,p.team,p.id);}
+  const[dx,dz]=length(input.mx,input.mz)>1?norm(input.mx,input.mz):[input.mx,input.mz];const speed=c.moveSpeed*(p.gear1==='sun_stride'||p.gear2==='sun_stride'?1.05:1)*(p.overdriveTime>0?1.14:1)*(p.slow>0?.58:1)*(p.speedBoost>0?1.22:1)*(g.map.zones.some(z=>z.kind==='speed'&&inZone(p,z))?1.25:1);p.vx=dx*speed+p.vx*.12;p.vz=dz*speed+p.vz*.12;const nx=p.x+p.vx*DT,nz=p.z+p.vz*DT;if(!solidAt(g.map,nx,p.z))p.x=nx;if(!solidAt(g.map,p.x,nz))p.z=nz;const [ax,az]=norm(input.ax,input.az);if(length(input.ax,input.az)>.1){p.ax=ax;p.az=az;}if(input.attack)fire(g,p,p.ax,p.az,input.aimDistance);if(input.ultimate)ultimate(g,p,p.ax,p.az);if(input.skill)skill(g,p,p.ax,p.az);
+  if(p.ammo<c.ammo&&g.tick>=p.reloadAt){p.ammo++;p.reloadAt=g.tick+Math.round(c.reload*30);}if(g.tick-p.lastCombat>120&&g.tick%30===0){const hasMina=g.players.some(a=>a.team===p.team&&a.hp>0&&a.passiveChoice==='regen_aura'&&distance(a,p)<4);heal(g,p,Math.round(c.maxHp*(hasMina?.035:.025)));}for(const z of g.map.zones)if(inZone(p,z)){if(z.kind==='heal'&&g.tick%30===0)heal(g,p,150);if(z.kind==='danger'&&g.tick%30===0)damage(g,undefined,p,250);if(z.kind==='conveyor')p.x=clamp(p.x+(p.team===0?.03:-.03),.5,g.map.width-.5);}if(p.burn>0&&g.tick%30===0)damage(g,undefined,p,90);p.invulnerable=Math.max(0,p.invulnerable-DT);p.slow=Math.max(0,p.slow-DT);p.invisible=Math.max(0,p.invisible-DT);p.rapid=Math.max(0,p.rapid-DT);p.speedBoost=Math.max(0,p.speedBoost-DT);p.defense=Math.max(0,p.defense-DT);p.evasion=Math.max(0,p.evasion-DT);p.burn=Math.max(0,p.burn-DT);p.overdriveTime=Math.max(0,p.overdriveTime-DT);}
 export function stepGame(g:GameState,inputs:Record<string,Input>={}){if(g.winner!==null&&!g.training)return g;g.tick++;g.time=g.training?180:Math.max(0,g.time-DT);g.events=[];if(g.shiftEnabled&&g.tick>=30*27&&g.tick%900===810){g.shiftWarning=true;event(g,'shift-warning',g.map.goal[0],g.map.goal[1]);}if(g.shiftEnabled&&g.tick>=900&&g.tick%900===0)shift(g);updateTerminal(g);
   for(const p of g.players){if(p.hp<=0){if(g.mode!=='survival'&&g.tick-p.koAt>=90){const c=characterById(p.character);[p.x,p.z]=nearestFree(g,...spawn(g.players.indexOf(p),p.team,g.map));p.hp=fighterMaxHp(p);p.ammo=c.ammo;p.invulnerable=1;p.koAt=0;event(g,'respawn',p.x,p.z,undefined,p.team);}continue;}const input=p.dummy==='static'||p.dummy==='invincible'?neutral:p.dummy==='moving'?{...neutral,mx:Math.sin(g.tick/35),mz:Math.cos(g.tick/35)}:p.bot?botInput(g,p):sanitizeInput(inputs[p.id]);move(g,p,input);}
   updateBullets(g);updateEffects(g);if(!g.training)scoreMode(g);else if(g.trainingStats){const own=g.players.find(p=>!p.bot&&p.team===0);for(const e of g.events)if(e.owner===own?.id){if(e.kind==='attack')g.trainingStats.attacks++;if(e.kind==='hit'){g.trainingStats.hits++;g.trainingStats.lastDamage=e.value||0;g.trainingStats.recentDamage.push({tick:g.tick,value:e.value||0});}}g.trainingStats.recentDamage=g.trainingStats.recentDamage.filter(e=>g.tick-e.tick<30);}return g;}
-export function sanitizeInput(input:unknown):Input{const i=(input&&typeof input==='object'?input:{}) as Record<string,unknown>;const number=(v:unknown)=>typeof v==='number'&&Number.isFinite(v)?clamp(v,-1,1):0;const [mx,mz]=length(number(i.mx),number(i.mz))>1?norm(number(i.mx),number(i.mz)):[number(i.mx),number(i.mz)];return {mx,mz,ax:number(i.ax),az:number(i.az),attack:i.attack===true,ultimate:i.ultimate===true,skill:i.skill===true};}
+export function sanitizeInput(input:unknown):Input{const i=(input&&typeof input==='object'?input:{}) as Record<string,unknown>;const number=(v:unknown)=>typeof v==='number'&&Number.isFinite(v)?clamp(v,-1,1):0;const [mx,mz]=length(number(i.mx),number(i.mz))>1?norm(number(i.mx),number(i.mz)):[number(i.mx),number(i.mz)];return {mx,mz,ax:number(i.ax),az:number(i.az),attack:i.attack===true,ultimate:i.ultimate===true,skill:i.skill===true,overdrive:i.overdrive===true,aimDistance:typeof i.aimDistance==='number'&&Number.isFinite(i.aimDistance)?clamp(i.aimDistance,.12,1):1};}
 /** Cache bot routes for several ticks so large-map navigation stays responsive. */
 const navCache=new WeakMap<GameState,Map<string,{tick:number;targetX:number;targetZ:number;dx:number;dz:number}>>();
 function navDirection(g:GameState,p:Fighter,target:{x:number;z:number}):[number,number]{

@@ -96,21 +96,18 @@ test('party invites, same-team membership, capacity and retention', () => {
 });
 
 
-test('solar tutorial and beginner hero may be claimed only once',async()=>{
-  const store=new ShiftStore(),alice=user('SunLearner');
-  await assert.rejects(store.beginnerCharacter(alice,'jin'),/チュートリアル/);
-  const initial=await store.getProfile(alice);
-  assert.equal(initial.economy.beginner_claimed,false);
+test('new player must win verified battle before one-time randomized character grant',async()=>{
+  const store=new ShiftStore(),alice=user('BeginnerWinner');
+  await assert.rejects(store.grantBeginnerBattleWin(alice),/チュートリアル/);
   await store.completeTutorial(alice);
-  const once=await store.getProfile(alice);
-  assert.equal(once.economy.coins,initial.economy.coins+100);
-  await store.completeTutorial(alice);
-  const twice=await store.getProfile(alice);
-  assert.equal(twice.economy.coins,once.economy.coins);
-  const claimed=await Promise.allSettled([store.beginnerCharacter(alice,'jin'),store.beginnerCharacter(alice,'gald')]);
-  assert.equal(claimed.filter(x=>x.status==='fulfilled').length,1);
+  const first=await store.grantBeginnerBattleWin(alice);
+  assert.equal(first.profile.economy.beginner_claimed,true);
+  assert.ok(['SPARK','BRIGHT','FLARE','NOVA','THE_SUN'].includes(first.reward.rarity));
+  assert.equal(first.profile.owned_characters.length,2);
+  const again=await store.grantBeginnerBattleWin(alice);
+  assert.equal(again.alreadyClaimed,true);
   assert.equal((await store.getProfile(alice)).owned_characters.length,2);
-  await assert.rejects(store.beginnerCharacter(alice,'bom'),/受け取り済み/);
+  assert.equal(again.reward.character,first.reward.character);
 });
 test('sun power and coins are charged atomically for level upgrades',async()=>{
   const store=new ShiftStore(),alice=user('PowerLearner');
@@ -190,4 +187,17 @@ test('runtime profile startup and power upgrade work without ALTER TABLE privile
   assert.equal(persisted.economy.coins, 215);
   assert.equal(persisted.loadouts.__shift_solar_economy_v1, undefined);
   assert.ok(statements.every(sql => !/ALTER\s+TABLE/i.test(sql)));
+});
+
+test('solar gear equipment requires Lv8 and Lv10 and rejects duplicate gear',async()=>{
+  const store=new ShiftStore(),player=user('ProgressionGear');
+  await store.getProfile(player);
+  await assert.rejects(store.setLoadout(player,'rei','dash','combo_speed','sun_stride',null),/レベル/);
+  await store.withProfile(player,p=>{p.economy.levels.rei=8;});
+  await store.setLoadout(player,'rei','dash','combo_speed','sun_stride',null);
+  await assert.rejects(store.setLoadout(player,'rei','dash','combo_speed','sun_stride','sun_plating'),/レベル/);
+  await store.withProfile(player,p=>{p.economy.levels.rei=10;});
+  await assert.rejects(store.setLoadout(player,'rei','dash','combo_speed','sun_stride','sun_stride'),/同じギア/);
+  await store.setLoadout(player,'rei','dash','combo_speed','sun_stride','sun_plating');
+  assert.deepEqual((await store.getProfile(player)).loadouts.rei,{skill:'dash',passive:'combo_speed',gear1:'sun_stride',gear2:'sun_plating'});
 });

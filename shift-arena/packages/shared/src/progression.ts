@@ -1,15 +1,39 @@
+export const rarityInfo={
+  STARTER:{name:'スターター',color:'#8696A9',weight:0},
+  SPARK:{name:'スパーク',color:'#46D078',weight:45},
+  BRIGHT:{name:'ブライト',color:'#369FF0',weight:30},
+  FLARE:{name:'フレア',color:'#AA65EF',weight:15},
+  NOVA:{name:'ノヴァ',color:'#F04E61',weight:8},
+  THE_SUN:{name:'ザ・サン',color:'#F5C341',weight:2}
+} as const;
+export type HeroRarity=keyof typeof rarityInfo;
+export const beginnerRarityList=['SPARK','BRIGHT','FLARE','NOVA','THE_SUN'] as const;
+export const gearOptions=[
+  {id:'sun_stride',name:'ソーラーステップ',description:'移動速度が5%上昇'},
+  {id:'sun_plating',name:'サンプレート',description:'受けるダメージが5%減少'},
+  {id:'sun_fury',name:'フレアブースト',description:'与えるダメージが5%増加'},
+  {id:'sun_charge',name:'チャージコア',description:'必殺ゲージの増加量が7%上昇'}
+] as const;
+export type GearId=typeof gearOptions[number]['id'];
+export const levelUnlocks=[
+  {level:7,name:'サンアーツ',description:'戦闘中に使用できる特殊アクションを解放'},
+  {level:8,name:'ソーラーギアⅠ',description:'ギアを1つ装備できる'},
+  {level:9,name:'コアパワー',description:'キャラ固有の常時発動特性を解放'},
+  {level:10,name:'ソーラーギアⅡ',description:'2つ目のギア装備枠を解放'},
+  {level:11,name:'サンオーバードライブ',description:'ゲージをためて強化状態を発動'}
+] as const;
 export const characterRoad = {
   rei: { rarity: 'STARTER', cost: 0 },
-  gald: { rarity: 'STANDARD', cost: 200 },
-  mina: { rarity: 'STANDARD', cost: 200 },
-  jin: { rarity: 'ADVANCED', cost: 600 },
-  bom: { rarity: 'ADVANCED', cost: 600 },
-  frost: { rarity: 'ADVANCED', cost: 600 },
-  chrono: { rarity: 'EXPERT', cost: 1200 },
-  noise: { rarity: 'EXPERT', cost: 1200 },
+  gald: { rarity: 'SPARK', cost: 200 },
+  mina: { rarity: 'SPARK', cost: 200 },
+  jin: { rarity: 'BRIGHT', cost: 600 },
+  bom: { rarity: 'BRIGHT', cost: 600 },
+  frost: { rarity: 'FLARE', cost: 900 },
+  chrono: { rarity: 'NOVA', cost: 1200 },
+  noise: { rarity: 'THE_SUN', cost: 1800 },
 } as const;
 export type CharacterId = keyof typeof characterRoad;
-export const roadTiers:CharacterId[][]=[['gald','mina'],['jin','bom','frost'],['chrono','noise']];
+export const roadTiers:CharacterId[][]=[['gald','mina'],['jin','bom'],['frost'],['chrono'],['noise']];
 export const rewardConfig={onlineWin:25,onlineLoss:12,firstWin:40,solo:8,soloDailyLimit:5,minActiveSeconds:45,minParticipation:5} as const;
 export const masteryRewards=[
   {level:5,id:'icon',label:'キャラクターアイコン'},

@@ -1,5 +1,5 @@
 import { randomUUID, randomInt } from 'node:crypto';
-import { characterRoad, loadoutOptions, masteryLevel, masteryRewards, missionDefs, nextRoadTier, rewardConfig, validLoadout, validatePlayerModel, defaultEconomy, powerLevel, upgradeCost, MAX_POWER_LEVEL, beginnerChoices, skinPrice } from '../shift-arena/packages/shared/dist/index.js';
+import { characterRoad, loadoutOptions, masteryLevel, masteryRewards, missionDefs, nextRoadTier, rewardConfig, validLoadout, validatePlayerModel, defaultEconomy, powerLevel, upgradeCost, MAX_POWER_LEVEL, beginnerRarityList, rarityInfo, gearOptions, skinPrice } from '../shift-arena/packages/shared/dist/index.js';
 
 const utcDay = () => new Date().toISOString().slice(0, 10);
 const clone = (value) => structuredClone(value);
@@ -97,10 +97,18 @@ export class ShiftStore {
     p.credits -= cost; p.owned_characters.push(id); p.road_target = nextRoadTier(p.owned_characters)[0] || '';
     return { character: id, profile: publicProfile(p) };
   }); }
-  setLoadout(user, character, skill, passive) { return this.withProfile(user, p => {
+  setLoadout(user, character, skill, passive, gear1, gear2) { return this.withProfile(user, p => {
     if (!p.owned_characters.includes(character)) throw fail('未所持のキャラクターです。', 403);
     if (!validLoadout(character, skill, passive)) throw fail('無効なロードアウトです。');
-    p.loadouts[character] = { skill, passive };
+    const level=powerLevel(p.economy?.levels,character);
+    const current=p.loadouts[character]||{};
+    const first=gear1===undefined?current.gear1:gear1||null;
+    const second=gear2===undefined?current.gear2:gear2||null;
+    const valid=id=>id===null||gearOptions.some(g=>g.id===id);
+    if(!valid(first)||!valid(second))throw fail('無効なソーラーギアです。');
+    if((first&&level<8)||(second&&level<10))throw fail('ギアの装備レベルが不足しています。');
+    if(first&&second&&first===second)throw fail('同じギアは2つ装備できません。');
+    p.loadouts[character]={skill,passive,gear1:first||null,gear2:second||null};
   }); }
   claimMission(user, id) { return this.withProfile(user, p => {
     const mission = missionDefs.find(m => m.id === id);
@@ -133,16 +141,29 @@ export class ShiftStore {
       e.coins+=100;e.sun_power+=80;e.drops.sun++;
     }
   }); }
-  beginnerCharacter(user, character) { return this.withProfile(user, p => {
+  /** Only the authenticated game server calls this after a verified 10-player survival victory. */
+  grantBeginnerBattleWin(user) { return this.withProfile(user, p => {
     const e=p.economy ||= defaultEconomy();
-    if (!e.tutorial_done) throw fail('チュートリアルを完了してください。');
-    if (e.beginner_claimed) throw fail('初心者ボーナスは受け取り済みです。');
-    if (!beginnerChoices.includes(character)) throw fail('このキャラクターは初心者特典の対象外です。');
-    if (p.owned_characters.includes(character)) throw fail('すでに所持しているキャラクターです。');
-    p.owned_characters.push(character);
-    e.beginner_claimed=true;p.selected_character=character;
+    if(!e.tutorial_done) throw fail('チュートリアルを完了してください。');
+    if(e.beginner_claimed) return {alreadyClaimed:true,reward:e.beginner_reward||null,profile:publicProfile(p)};
+    const available=beginnerRarityList.flatMap(rarity=>
+      Object.entries(characterRoad).filter(([id,entry])=>entry.rarity===rarity&&!p.owned_characters.includes(id))
+        .map(([id])=>({character:id,rarity}))
+    );
+    // If a veteran already owns every hero, don't silently consume the one-time prize.
+    if(!available.length) return {alreadyClaimed:false,noCharacters:true,profile:publicProfile(p)};
+    const rarityWeights=beginnerRarityList.map(rarity=>({
+      rarity,weight:rarityInfo[rarity].weight,
+      candidates:available.filter(item=>item.rarity===rarity)
+    })).filter(group=>group.candidates.length>0);
+    const total=rarityWeights.reduce((v,g)=>v+g.weight,0);
+    let roll=randomInt(total);
+    const selected=rarityWeights.find(group=>{roll-=group.weight;return roll<0;})||rarityWeights[rarityWeights.length-1];
+    const reward=selected.candidates[randomInt(selected.candidates.length)];
+    p.owned_characters.push(reward.character);
+    e.beginner_claimed=true;e.beginner_reward=reward;
     p.road_target=nextRoadTier(p.owned_characters)[0]||'';
-    return {character,profile:publicProfile(p)};
+    return {reward,profile:publicProfile(p)};
   }); }
   upgradeHero(user, character) { return this.withProfile(user, p => {
     if (!p.owned_characters.includes(character)) throw fail('未所持キャラクターは強化できません。');

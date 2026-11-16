@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { characters, characterById, createGame, fighterMaxHp, lineClear, powerMultiplier, registerShiftVote, sanitizeInput, solidAt, stepGame, trainingAction, upgradeCost } from './index.js';
+import { characters, characterById, createGame, fighterMaxHp, lineClear, neutral, sanitizeInput, powerMultiplier, registerShiftVote, sanitizeInput, solidAt, stepGame, trainingAction, upgradeCost } from './index.js';
 
 const duel=()=>{const g=createGame({mode:'duel',shift:false,slots:[{id:'a',name:'A',character:'rei',team:0,bot:false},{id:'b',name:'B',character:'gald',team:1,bot:false}]});g.map.walls=[];for(const p of g.players){p.invulnerable=0;p.z=9;p.bot=false;}g.players[0].x=5;g.players[1].x=8;return g;};
 describe('SHIFT ARENA combat',()=>{
@@ -93,5 +93,37 @@ describe('large arena dimensions and traversal',()=>{
     expect(solidAt(g.map,-1,50)).toBe(true);
     expect(solidAt(g.map,51,50)).toBe(true);
     expect(solidAt(g.map,25,101)).toBe(true);
+  });
+});
+
+describe('level gates and adjustable throws',()=>{
+  it('gates arts, passive and double gear to their power milestones',()=>{
+    for(const lvl of [1,7,8,9,10,11]){
+      const g=createGame({mode:'duel',shift:false,slots:[{id:'hero',name:'Hero',character:'rei',team:0,bot:false,powerLevel:lvl,loadout:{skill:'dash',passive:'combo_speed',gear1:'sun_stride',gear2:'sun_plating'}}]});
+      const p=g.players.find(p=>p.id==='hero')!;
+      expect(!!p.gear1).toBe(lvl>=8);
+      expect(!!p.gear2).toBe(lvl>=10);
+      expect(!!p.passiveChoice).toBe(lvl>=9);
+      stepGame(g,{hero:{...neutral,mx:0,mz:0,ax:1,az:0,skill:true}});
+      expect(p.skillAt>g.tick).toBe(lvl>=7);
+    }
+  });
+  it('throws Bom bombs at the selected short or long distance without hitting airborne targets',()=>{
+    const lengths:number[]=[];
+    for(const aimDistance of [.2,.8]){
+      const g=createGame({mode:'duel',shift:false,slots:[{id:'bom',name:'Bom',character:'bom',team:0,bot:false}]});
+      g.map.walls=[];const p=g.players.find(p=>p.id==='bom')!;
+      p.invulnerable=0;p.x=20;p.z=20;
+      stepGame(g,{bom:{...neutral,ax:1,az:0,attack:true,aimDistance}});
+      const b=g.bullets.find(b=>b.owner==='bom')!;
+      expect(b?.lob).toBe(true);lengths.push((b.landX||0)-p.x);
+      for(let i=0;i<3;i++)stepGame(g);
+      expect(g.bullets.some(b=>b.id===b.id)).toBe(true);
+    }
+    expect(lengths[1]).toBeGreaterThan(lengths[0]+3);
+  });
+  it('sanitizes overdrive and ranged targeting from the network',()=>{
+    const input=sanitizeInput({aimDistance:100,overdrive:true,attack:true,ax:1,az:0});
+    expect(input.aimDistance).toBe(1);expect(input.overdrive).toBe(true);
   });
 });

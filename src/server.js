@@ -37,7 +37,7 @@ const wss = new WebSocketServer({ noServer: true, maxPayload: 4096 });
 const shiftArena = attachShiftArena(server, async (cookie) => {
   const user = await currentUser({ headers: { cookie } });
   return user ? { id: user.id, username: user.username } : null;
-}, { profile: (user) => shiftStore.getProfile(user), award: (user, result) => shiftStore.awardMatch(user, result), presence: (id, event) => { if (event === 'connect') shiftParties.connect(id); else if (event === 'disconnect') shiftParties.disconnect(id); else shiftParties.setPlaying(id, event === 'playing'); }, sameParty: (a, b) => shiftParties.sameParty(a, b) });
+}, { profile: (user) => shiftStore.getProfile(user), award: (user, result) => shiftStore.awardMatch(user, result), beginnerWin: (user) => shiftStore.grantBeginnerBattleWin(user), presence: (id, event) => { if (event === 'connect') shiftParties.connect(id); else if (event === 'disconnect') shiftParties.disconnect(id); else shiftParties.setPlaying(id, event === 'playing'); }, sameParty: (a, b) => shiftParties.sameParty(a, b) });
 const glyphInfinity = attachGlyphInfinity((user) => glyphStore.load(user), (user, profile) => glyphStore.save(user, profile), (user) => glyphStore.loadCraft(user), (user, craft) => glyphStore.saveCraft(user, craft), (a,b) => shiftStore.areFriends(a,b));
 const queued = new Map();
 const playing = new Set();
@@ -200,14 +200,13 @@ app.post('/api/shift/model/clear', shiftWrap(async (req, res) => { const user = 
 app.get('/api/shift/model/:userId', shiftWrap(async (req, res) => { if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.userId)) return res.status(400).json({ error: 'IDが無効です。' }); res.json({ model: await shiftStore.getModel(req.params.userId) }); }));
 app.post('/api/shift/presence', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) { shiftParties.heartbeat(user.id); res.json({ ok: true }); } }));
 app.post('/api/shift/tutorial/complete', shiftWrap(async (req,res)=>{const user=await requireUser(req,res);if(user)res.json(await shiftStore.completeTutorial(user));}));
-app.post('/api/shift/beginner/claim', shiftWrap(async (req,res)=>{const user=await requireUser(req,res);if(user)res.json(await shiftStore.beginnerCharacter(user,req.body?.character));}));
 app.post('/api/shift/hero/upgrade', shiftWrap(async (req,res)=>{const user=await requireUser(req,res);if(user)res.json(await shiftStore.upgradeHero(user,req.body?.character));}));
 app.post('/api/shift/skin/buy', shiftWrap(async (req,res)=>{const user=await requireUser(req,res);if(user)res.json(await shiftStore.buySunSkin(user,req.body?.character));}));
 app.post('/api/shift/drop/open', shiftWrap(async (req,res)=>{const user=await requireUser(req,res);if(user)res.json(await shiftStore.openSunDrop(user,req.body?.kind));}));
 app.post('/api/shift/selected', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.setSelected(user, req.body?.character)); }));
 app.post('/api/shift/road/target', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.setTarget(user, req.body?.character)); }));
 app.post('/api/shift/road/unlock', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.unlock(user)); }));
-app.post('/api/shift/loadout', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.setLoadout(user, req.body?.character, req.body?.skill, req.body?.passive)); }));
+app.post('/api/shift/loadout', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.setLoadout(user, req.body?.character, req.body?.skill, req.body?.passive, req.body?.gear1, req.body?.gear2)); }));
 app.post('/api/shift/mission/claim', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.claimMission(user, req.body?.id)); }));
 app.post('/api/shift/mastery/claim', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.claimMastery(user, req.body?.character, req.body?.reward)); }));
 app.post('/api/shift/mastery/equip', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.equipMasterySkin(user, req.body?.character, req.body?.skin ?? null)); }));
