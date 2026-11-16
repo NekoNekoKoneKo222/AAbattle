@@ -199,6 +199,11 @@ app.post('/api/shift/model', shiftWrap(async (req, res) => { const user = await 
 app.post('/api/shift/model/clear', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.clearModel(user)); }));
 app.get('/api/shift/model/:userId', shiftWrap(async (req, res) => { if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.userId)) return res.status(400).json({ error: 'IDが無効です。' }); res.json({ model: await shiftStore.getModel(req.params.userId) }); }));
 app.post('/api/shift/presence', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) { shiftParties.heartbeat(user.id); res.json({ ok: true }); } }));
+app.post('/api/shift/tutorial/complete', shiftWrap(async (req,res)=>{const user=await requireUser(req,res);if(user)res.json(await shiftStore.completeTutorial(user));}));
+app.post('/api/shift/beginner/claim', shiftWrap(async (req,res)=>{const user=await requireUser(req,res);if(user)res.json(await shiftStore.beginnerCharacter(user,req.body?.character));}));
+app.post('/api/shift/hero/upgrade', shiftWrap(async (req,res)=>{const user=await requireUser(req,res);if(user)res.json(await shiftStore.upgradeHero(user,req.body?.character));}));
+app.post('/api/shift/skin/buy', shiftWrap(async (req,res)=>{const user=await requireUser(req,res);if(user)res.json(await shiftStore.buySunSkin(user,req.body?.character));}));
+app.post('/api/shift/drop/open', shiftWrap(async (req,res)=>{const user=await requireUser(req,res);if(user)res.json(await shiftStore.openSunDrop(user,req.body?.kind));}));
 app.post('/api/shift/selected', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.setSelected(user, req.body?.character)); }));
 app.post('/api/shift/road/target', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.setTarget(user, req.body?.character)); }));
 app.post('/api/shift/road/unlock', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.unlock(user)); }));
