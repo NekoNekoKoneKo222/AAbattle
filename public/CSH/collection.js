@@ -28,7 +28,7 @@ export function initCollection({api,catalog,skins,packTargets,getDeckBuilder}){
       const title=document.createElement('strong');title.textContent=card.name+' · Lv.'+level+(awakened?' ★覚醒済み':'');
       const detail=document.createElement('small');detail.textContent=next===null?'MAX · '+xp+' XP':xp+' / '+next+' XP';
       const meter=document.createElement('progress');meter.max=next===null?Math.max(1,xp):Math.max(1,next);meter.value=xp;
-      info.append(title,detail,meter);row.append(info);
+      const effect=document.createElement('small');effect.textContent='覚醒能力: '+(card.awakeningEffect||'初回の使用時にCP返還');info.append(title,detail,meter,effect);row.append(info);
       if(!awakened){
         const btn=document.createElement('button');btn.type='button';btn.textContent='覚醒 '+(profile.awakeningShardCost||120)+'欠片';
         btn.disabled=busy||level<(profile.awakeningRequiredLevel||5)||profile.shards<(profile.awakeningShardCost||120);
