@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { Client } from '../shift-arena/apps/client/node_modules/@colyseus/sdk/build/index.mjs';
-import { attachShiftArena, classifyRewardSource } from '../shift-arena/apps/server/dist/index.js';
+import { attachShiftArena, classifyRewardSource, compactState } from '../shift-arena/apps/server/dist/index.js';
+import {createGame} from '../shift-arena/packages/shared/dist/index.js';
 
 test('online rewards require authenticated players on opposing teams',()=>{
   const blue={accountId:'blue',team:0,connected:true};
@@ -61,4 +62,18 @@ test('free-for-all fills ten unique slots and keeps online inputs authoritative'
   assert.equal(new Set(game.players.map(p=>p.team)).size,10);
   assert.equal(game.map.width,100);
   assert.equal(game.map.height,100);
+});
+
+test('compact network snapshots omit static map but preserve live combat state',()=>{
+  const g=createGame({mode:'survival',shift:false});
+  const full=compactState(g,true);
+  const snapshot=compactState(g);
+  assert.equal(full.map.width,100);
+  assert.equal(snapshot.map,undefined);
+  assert.equal(snapshot.players.length,10);
+  assert.equal(snapshot.tick,0);
+  assert.equal(snapshot.bullets.length,0);
+  const original=Buffer.byteLength(JSON.stringify(full),'utf8');
+  const compressed=Buffer.byteLength(JSON.stringify(snapshot),'utf8');
+  assert.ok(compressed<original*.65,'snapshot payload '+compressed+' vs '+original);
 });

@@ -22,6 +22,12 @@ const safeMode=(value:unknown):Mode=>modes.includes(value as Mode)?value as Mode
 const safeMap=(value:unknown)=>typeof value==='string'&&['park','factory','canyon'].includes(value)?value:'park';
 const pinLabels:Record<string,string>={enemy:'敵発見！',gather:'ここに集合！',attack:'攻撃しよう！',retreat:'撤退！',help:'助けて！',ultimate:'必殺技準備完了！'};
 const chatLabels:Record<string,string>={nice:'ナイス！',thanks:'ありがとう！',sorry:'ごめん！',hello:'よろしく！',roger:'了解！'};
+/** Send the static arena at match start and on changes, not in every 15Hz update. */
+export function compactState(game:GameState,includeMap=false){
+  if(includeMap)return game;
+  const {map: _map, ...active} = game;
+  return active;
+}
 export function classifyRewardSource(source:string,participants:{accountId?:string;team:number;connected:boolean}[]){if(source!=='online')return source;const teams=new Set(participants.filter(p=>p.accountId&&p.connected).map(p=>p.team));return teams.size>=2?'online':'solo';}
 
 export class ShiftRoom extends Room {
@@ -36,7 +42,7 @@ export class ShiftRoom extends Room {
   private inputRate=new Map<string,{second:number;count:number}>();
   private signalRate=new Map<string,number[]>();
   private resultSent=false;
-  private matchId='';
+  private matchId='';private previousArenaSignature='';
   private source='private';
   private beginnerChallenge=false;
   private rewardSource='private';
@@ -65,7 +71,15 @@ export class ShiftRoom extends Room {
       for(const [id,command] of Object.entries(this.playerInputs))
         if(now-(this.lastInputAt.get(id)||0)>260)
           this.playerInputs[id]={...command,mx:0,mz:0,attack:false,ultimate:false,skill:false,autoAim:false,autoUltimate:false,overdrive:false};
-      stepGame(this.game,this.playerInputs);for(const e of this.game.events){if(!['hit','ultimate','terminal'].includes(e.kind))continue;const metric=e.owner?this.metrics.get(e.owner):null;if(metric)metric[e.kind==='hit'?'hits':e.kind==='terminal'?'terminal':'ultimates']++;}if(this.game.tick%2===0)this.broadcast('state',this.game);if(this.game.winner!==null&&!this.resultSent){this.resultSent=true;this.broadcast('result',this.game);for(const guest of this.guests.values())if(guest.accountId)services?.presence?.(guest.accountId,'idle');void this.awardResults();}},1000/30);
+      stepGame(this.game,this.playerInputs);for(const e of this.game.events){if(!['hit','ultimate','terminal'].includes(e.kind))continue;const metric=e.owner?this.metrics.get(e.owner):null;if(metric)metric[e.kind==='hit'?'hits':e.kind==='terminal'?'terminal':'ultimates']++;}if(this.game.tick%2===0){
+        // Reliable WebSocket delivery; the client caches the last full map.
+        // Send on structural changes and every 3 seconds for resync safety.
+        const geometry=this.game.map.walls.map(w=>w.id).join(',')+'|'
+          +this.game.map.zones.map(z=>z.id||z.kind+':'+z.x+':'+z.z).join(',');
+        const includeMap=this.game.tick%90===0||geometry!==this.previousArenaSignature;
+        this.previousArenaSignature=geometry;
+        this.broadcast('state',compactState(this.game,includeMap));
+      }if(this.game.winner!==null&&!this.resultSent){this.resultSent=true;this.broadcast('result',this.game);for(const guest of this.guests.values())if(guest.accountId)services?.presence?.(guest.accountId,'idle');void this.awardResults();}},1000/30);
     if(options.quick===true)this.clock.setTimeout(()=>{if(!this.game&&this.clients.length>0)this.startGame();},6000);
   }
   async onJoin(client:Client,options:Record<string,unknown>,auth?:{account:Account}){
@@ -78,7 +92,7 @@ export class ShiftRoom extends Room {
   private lobbyData(){return {code:this.roomId,beginner:this.beginnerChallenge,host:this.clients[0]?.sessionId||null,mode:this.mode,map:this.map,players:[...this.guests.values()].map(({sessionId,name,character,team,ready,connected,accountId})=>({sessionId,name,character,team,ready,connected,accountId}))};}
   private lobby(){this.broadcast('lobby',this.lobbyData());}
   onDispose(){activeRooms=Math.max(0,activeRooms-1);for(const guest of this.guests.values())if(guest.accountId){activeAccounts.delete(guest.accountId);services?.presence?.(guest.accountId,'disconnect');}}
-  private startGame(){const slots:Slot[]=[...this.guests.values()].map(g=>({id:g.sessionId,name:g.name,character:g.character,team:g.team,bot:!g.connected,loadout:g.loadouts[g.character],skinChoice:g.skins[g.character],powerLevel:powerLevel(g.levels,g.character),modelOwner:g.accountId}));this.rewardSource=classifyRewardSource(this.source,[...this.guests.values()]);this.game=createGame({mode:this.mode,map:this.map,difficulty:this.difficulty,shift:this.shiftEnabled,size:this.maxClients===10&&this.mode==='deathmatch'?5:3,slots});this.matchId=randomUUID();this.metrics=new Map(slots.map(s=>[s.id,{hits:0,ultimates:0,terminal:0}]));for(const g of this.guests.values()){g.inputCount=0;if(g.accountId)services?.presence?.(g.accountId,'playing');}this.playerInputs={};this.resultSent=false;this.lock();this.broadcast('started',this.game);}
+  private startGame(){const slots:Slot[]=[...this.guests.values()].map(g=>({id:g.sessionId,name:g.name,character:g.character,team:g.team,bot:!g.connected,loadout:g.loadouts[g.character],skinChoice:g.skins[g.character],powerLevel:powerLevel(g.levels,g.character),modelOwner:g.accountId}));this.rewardSource=classifyRewardSource(this.source,[...this.guests.values()]);this.game=createGame({mode:this.mode,map:this.map,difficulty:this.difficulty,shift:this.shiftEnabled,size:this.maxClients===10&&this.mode==='deathmatch'?5:3,slots});this.matchId=randomUUID();this.metrics=new Map(slots.map(s=>[s.id,{hits:0,ultimates:0,terminal:0}]));for(const g of this.guests.values()){g.inputCount=0;if(g.accountId)services?.presence?.(g.accountId,'playing');}this.playerInputs={};this.previousArenaSignature='';this.resultSent=false;this.lock();this.broadcast('started',this.game);}
   private async awardResults(){
     if(!this.game||!services)return;
     const game=this.game;
