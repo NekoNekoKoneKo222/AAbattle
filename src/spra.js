@@ -2,6 +2,8 @@ import { randomUUID, randomBytes } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createInkSurface, INK_SCALE } from './spra-ink.js';
 import { SPRA_WEAPONS } from '../public/spra/weapons.js';
+import { SPRA_SPECIALS } from '../public/spra/specials.js';
+import { wallAt, isBlocked, wallCrossLanding, connectedInkLanding } from './spra-navigation.js';
 export { SPRA_WEAPONS };
 
 export const SPRA_WIDTH = 160;
@@ -34,7 +36,7 @@ const validTile = (x, y) => x >= 0 && y >= 0 && x < SPRA_WIDTH && y < SPRA_HEIGH
 function makeRoom(code) {
   return {
     code, host: null, state: 'lobby', ink: createInkSurface(SPRA_WIDTH, SPRA_HEIGHT, WALLS),
-    players: new Map(), effects: [], bombs: [], nextBomb: 0, round:0, elapsed: 0,
+    players: new Map(), effects: [], bombs: [], specials: [], wallInk: new Uint8Array(WALLS.length), nextBomb: 0, nextSpecial: 0, round:0, elapsed: 0,
     winner: -1, updatedAt: Date.now(), broadcastAt: 0, practice: false
   };
 }
@@ -43,9 +45,12 @@ function makePlayer(id, name, team, ws = null, bot = false) {
   return {
     id, name, team, ws, bot, x: team === 0 ? 9 : SPRA_WIDTH - 9,
     y: SPRA_HEIGHT / 2 + (Math.random() - 0.5) * 28,
-    aim: team === 0 ? 0 : Math.PI, hp: 100, ink: SPRA_INK_MAX, weapon: 'shooter',
+    aim: team === 0 ? 0 : Math.PI, hp: 100, ink: SPRA_INK_MAX, weapon: 'shooter', special: 'tornado', specialCharge: 0,
     input: { x: 0, y: 0, fire: false, swim: false },
-    cooldown: 0, bombCd: 0, charge: 0, deadFor: 0, invuln: 0,
+    cooldown: 0, bombCd: 0, charge: 0, wasFiring: false,
+    dodgeCd: 0, dodgeFor: 0, drillFor: 0, rollHitCd: 0,
+    wallCd: 0, jumpCd: 0, jump: null, flightFor: 0,
+    shieldFor: 0, shieldHp: 0, stealth: false, deadFor: 0, invuln: 0,
     ko: 0, deaths: 0, connectedAt: Date.now(), inputsAt: 0, inputCount: 0
   };
 }
@@ -60,14 +65,26 @@ function spawn(p) {
   p.aim = p.team === 0 ? 0 : Math.PI;
   p.hp = 100; p.ink = SPRA_INK_MAX; p.deadFor = 0; p.invuln = 1.5;
   p.cooldown = 0; p.bombCd = 0; p.swimming=false;
+  p.charge=0; p.wasFiring=false; p.flightFor=0;
+  p.shieldFor=0; p.shieldHp=0; p.dodgeCd=0; p.dodgeFor=0;
+  p.drillFor=0; p.rollHitCd=0; p.wallCd=0;
+  p.jumpCd=0; p.jump=null; p.stealth=false;
 }
 function inflict(room, target, damage, by) {
-  if (target.deadFor > 0 || target.invuln > 0 || target.team === by.team) return;
-  target.hp = Math.max(0, target.hp - damage);
+  if (target.deadFor > 0 || target.invuln > 0 || target.team === by.team || target.jump) return;
+  let incoming=Math.max(0,damage);
+  if(target.shieldFor>0&&target.shieldHp>0) {
+    const blocked=Math.min(target.shieldHp,incoming);
+    target.shieldHp-=blocked; incoming-=blocked;
+    if(target.shieldHp<=0)target.shieldFor=0;
+  }
+  if(incoming<=0)return;
+  target.hp = Math.max(0, target.hp - incoming);
   if (target.hp === 0) {
     target.deadFor = 3;
     target.deaths++;
     by.ko++;
+    by.specialCharge=clamp(by.specialCharge+14,0,100);
     room.effects.push({ type: 'ko', x: target.x, y: target.y, team: by.team });
     splash(room, target.x, target.y, 1.7, by.team);
   }
@@ -239,9 +256,17 @@ function roomSafeSwim(p) { return Boolean(p.swimming); }
 function pack(p) {
   return { id: p.id, name: p.name, team: p.team, x: +p.x.toFixed(2), y: +p.y.toFixed(2),
     aim: +p.aim.toFixed(2), hp: p.hp, ink: Math.floor(p.ink),
-    weapon: p.weapon, ko: p.ko, deaths: p.deaths, dead: p.deadFor > 0,
+    weapon: p.weapon, special: p.special, specialCharge: Math.floor(p.specialCharge),
+    ko: p.ko, deaths: p.deaths, dead: p.deadFor > 0,
     bombCd: +p.bombCd.toFixed(1), maxInk: SPRA_INK_MAX,
-    swim: p.input.swim && roomSafeSwim(p), bot: p.bot };
+    swim: p.input.swim && roomSafeSwim(p), bot: p.bot,
+    shield: Math.round(p.shieldHp), flight: +(p.flightFor||0).toFixed(1),
+    dodgeCd: +(p.dodgeCd||0).toFixed(1),
+    wallCd: +(p.wallCd||0).toFixed(1),
+    jumpCd: +(p.jumpCd||0).toFixed(1),
+    charge: +(p.charge||0).toFixed(2),
+    drill: p.drillFor>0,
+    jumping: p.jump ? {t:+p.jump.progress.toFixed(2),duration:p.jump.duration,from:p.jump.from,to:p.jump.to} : null };
 }
 function send(ws, object) {
   if (ws?.readyState === WebSocket.OPEN) {
@@ -281,12 +306,14 @@ function snapshot(room) {
     scores: score(room), players: [...room.players.values()].map(pack),
     changes: room.ink.flush(), paintScale: INK_SCALE, effects: room.effects.splice(0, 30),
     winner: room.winner, colors: COLORS,
+    wallsInk: [...room.wallInk],
+    specials: room.specials.map(o=>({id:o.id,kind:o.kind,team:o.team,x:+o.x.toFixed(2),y:+o.y.toFixed(2),time:+o.time.toFixed(1)})),
     bombs: room.bombs.map(b => ({id:b.id,x:+b.x.toFixed(2),y:+b.y.toFixed(2),z:+b.z.toFixed(2),team:b.team})) };
 }
 function reset(room) {
   room.state = 'lobby'; room.elapsed = 0; room.winner = -1;
-  room.ink.clear(); room.bombs=[];
-  for (const p of room.players.values()) { spawn(p); p.ko = 0; p.deaths = 0; p.invuln = 0; }
+  room.ink.clear(); room.bombs=[]; room.specials=[]; room.wallInk.fill(0);
+  for (const p of room.players.values()) { spawn(p); p.ko = 0; p.deaths = 0; p.invuln = 0; p.specialCharge=0; }
 }
 function addBot(room) {
   if (room.players.size >= MAX_HUMANS) return;
