@@ -37,7 +37,7 @@ const validTile = (x, y) => x >= 0 && y >= 0 && x < SPRA_WIDTH && y < SPRA_HEIGH
 function makeRoom(code) {
   return {
     code, host: null, state: 'lobby', ink: createInkSurface(SPRA_WIDTH, SPRA_HEIGHT, WALLS),
-    players: new Map(), effects: [], bombs: [], specials: [], wallInk: new Uint8Array(WALLS.length), nextBomb: 0, nextSpecial: 0, round:0, elapsed: 0,
+    players: new Map(), effects: [], bombs: [], gumShots: [], specials: [], wallInk: new Uint8Array(WALLS.length), nextBomb: 0, nextSpecial: 0, round:0, elapsed: 0,
     winner: -1, mode: 'turf', rankSaved: false, updatedAt: Date.now(), broadcastAt: 0, practice: false
   };
 }
@@ -50,7 +50,7 @@ function makePlayer(id, name, team, ws = null, bot = false) {
     input: { x: 0, y: 0, fire: false, swim: false },
     cooldown: 0, bombCd: 0, charge: 0, wasFiring: false,
     dodgeCd: 0, dodgeFor: 0, drillFor: 0, rollHitCd: 0,
-    wallCd: 0, jumpCd: 0, jump: null, flightFor: 0,
+    wallCd: 0, jumpCd: 0, jump: null, flightFor: 0, gumShotsFired:0, slowFor:0,
     shieldFor: 0, shieldHp: 0, stealth: false, deadFor: 0, invuln: 0,
     ko: 0, deaths: 0, cosmetics: {hat:0,shirt:0,shoes:0,skin:0}, connectedAt: Date.now(), inputsAt: 0, inputCount: 0
   };
@@ -66,7 +66,7 @@ function spawn(p) {
   p.aim = p.team === 0 ? 0 : Math.PI;
   p.hp = 100; p.ink = SPRA_INK_MAX; p.deadFor = 0; p.invuln = 1.5;
   p.cooldown = 0; p.bombCd = 0; p.swimming=false;
-  p.charge=0; p.wasFiring=false; p.flightFor=0;
+  p.charge=0; p.wasFiring=false; p.flightFor=0; p.slowFor=0;
   p.shieldFor=0; p.shieldHp=0; p.dodgeCd=0; p.dodgeFor=0;
   p.drillFor=0; p.rollHitCd=0; p.wallCd=0;
   p.jumpCd=0; p.jump=null; p.stealth=false;
@@ -108,6 +108,18 @@ function shoot(room,p,charge=1) {
   p.ink-=gun.cost;
   const before=room.ink.counts[p.team];
   const seed=Math.round(room.elapsed*1000)+p.id.charCodeAt(0)*37;
+  if(type==='cosmic'){
+    if(room.gumShots.length>=64)return;
+    const power=clamp(charge,0,1);
+    const angle=p.aim;
+    const speed=24-4*power;
+    room.gumShots.push({id:++room.nextSpecial,owner:p.id,team:p.team,
+      x:p.x+Math.cos(angle)*.9,y:p.y+Math.sin(angle)*.9,
+      vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,
+      radius:.38+power*.72,power,bounces:0,time:2.5,hit:new Set()});
+    room.effects.push({type:'gum_launch',team:p.team,x:p.x,y:p.y,charge:power});
+    return;
+  }
   if(type==='drill'){
     // Holding fire starts a short burrowing rush. Its physical collision and
     // ground-paint trail are resolved in move(), not client-side.
@@ -242,6 +254,15 @@ function activateSpecial(room,p){
       ally.shieldFor=8;ally.shieldHp=80;
     }
     room.effects.push({type:'shield',x:p.x,y:p.y,team:p.team});
+  }else if(p.special==='final_frontier'){
+    // A 6s chain: LAUNCH -> STAR RAIN -> MOON CRASH.
+    const distance=19;
+    const x=clamp(p.specialTarget?.x??p.x+direction.x*distance,4,SPRA_WIDTH-4);
+    const y=clamp(p.specialTarget?.y??p.y+direction.y*distance,4,SPRA_HEIGHT-4);
+    p.flightFor=6.3;
+    room.specials.push({id:++room.nextSpecial,kind:'frontier',owner:p.id,team:p.team,
+      x:p.x,y:p.y,time:6.3,elapsed:0,phase:'launch',interval:0,
+      targetX:x,targetY:y,radius:0});
   }else if(p.special==='mega_bomb'){
     throwBomb(room,p,true);
   }else if(p.special==='tornado'){
@@ -272,6 +293,58 @@ function activateSpecial(room,p){
     }
   }
   room.effects.push({type:'special',kind:p.special,x:p.x,y:p.y,team:p.team});
+  return true;
+}
+// The gum bullet bounces at most twice and leaves a circular paint burst on termination.
+function resolveGum(room,g,enemyHit=false){
+  const owner=room.players.get(g.owner);
+  if(!owner)return;
+  splash(room,g.x,g.y,1.15+g.power*2.15,g.team,0,room.elapsed*1000,'bomb');
+  if(enemyHit){
+    // Direct-hit damage was applied on collision; the final ink pop is paint-only.
+  }
+  room.effects.push({type:'gum_pop',x:g.x,y:g.y,team:g.team,
+    radius:1.15+g.power*2.15});
+}
+function updateGumShots(room,dt){
+  for(let i=room.gumShots.length-1;i>=0;i--){
+    const g=room.gumShots[i];
+    g.time-=dt;
+    const oldX=g.x,oldY=g.y;
+    let nextX=oldX+g.vx*dt,nextY=oldY+g.vy*dt;
+    let bounceX=isBlocked(WALLS,SPRA_WIDTH,SPRA_HEIGHT,nextX,oldY,g.radius*.7);
+    let bounceY=isBlocked(WALLS,SPRA_WIDTH,SPRA_HEIGHT,oldX,nextY,g.radius*.7);
+    const corner=isBlocked(WALLS,SPRA_WIDTH,SPRA_HEIGHT,nextX,nextY,g.radius*.7);
+    if(corner&&!bounceX&&!bounceY){bounceX=true;bounceY=true;}
+    if(bounceX){g.vx=-g.vx;g.bounces++;nextX=oldX;}
+    if(bounceY){g.vy=-g.vy;g.bounces++;nextY=oldY;}
+    g.x=clamp(nextX,1.4,SPRA_WIDTH-1.4);
+    g.y=clamp(nextY,1.4,SPRA_HEIGHT-1.4);
+    const owner=room.players.get(g.owner);
+    let collision=false;
+    for(const enemy of room.players.values()){
+      if(enemy.team===g.team||enemy.deadFor>0||g.hit.has(enemy.id))continue;
+      if(Math.hypot(enemy.x-g.x,enemy.y-g.y)<.72+g.radius){
+        g.hit.add(enemy.id);
+        if(owner)inflict(room,enemy,18,owner);
+        collision=true;break;
+      }
+    }
+    if(collision||g.bounces>2||g.time<=0){
+      resolveGum(room,g,collision);
+      room.gumShots.splice(i,1);
+    }
+  }
+}
+// Q: unstable balloon spends 75% of the 300-unit ink tank (225).
+function unstableBalloon(room,p){
+  if(p.deadFor>0||p.jump||p.bombCd>0||p.ink<SPRA_INK_MAX*.75||
+      room.specials.length>=32)return false;
+  p.ink-=SPRA_INK_MAX*.75;p.bombCd=12;
+  let x=p.x+Math.cos(p.aim)*4,y=p.y+Math.sin(p.aim)*4;
+  if(isBlocked(WALLS,SPRA_WIDTH,SPRA_HEIGHT,x,y,.7)){x=p.x;y=p.y;}
+  room.specials.push({id:++room.nextSpecial,kind:'gravity_balloon',
+    owner:p.id,team:p.team,x,y,time:3,elapsed:0,phase:'inflate',radius:.4,interval:0});
   return true;
 }
 function updateSpecials(room,dt){
@@ -511,7 +584,7 @@ function pack(p) {
     ko: p.ko, deaths: p.deaths, dead: p.deadFor > 0,
     bombCd: +p.bombCd.toFixed(1), maxInk: SPRA_INK_MAX,
     swim: p.input.swim && roomSafeSwim(p), bot: p.bot,
-    shield: Math.round(p.shieldHp), flight: +(p.flightFor||0).toFixed(1),
+    shield: Math.round(p.shieldHp), flight: +(p.flightFor||0).toFixed(1), slow:+(p.slowFor||0).toFixed(1),
     dodgeCd: +(p.dodgeCd||0).toFixed(1),
     wallCd: +(p.wallCd||0).toFixed(1),
     jumpCd: +(p.jumpCd||0).toFixed(1),
@@ -558,12 +631,16 @@ function snapshot(room) {
     changes: room.ink.flush(), paintScale: INK_SCALE, effects: room.effects.splice(0, 30),
     winner: room.winner, colors: COLORS,
     wallsInk: [...room.wallInk],
-    specials: room.specials.map(o=>({id:o.id,kind:o.kind,team:o.team,x:+o.x.toFixed(2),y:+o.y.toFixed(2),time:+o.time.toFixed(1)})),
+    specials: room.specials.map(o=>({id:o.id,kind:o.kind,team:o.team,
+       x:+o.x.toFixed(2),y:+o.y.toFixed(2),time:+o.time.toFixed(1),
+       phase:o.phase||'',radius:+(o.radius||0).toFixed(2),targetX:o.targetX||0,targetY:o.targetY||0})),
+    gumShots:room.gumShots.map(o=>({id:o.id,team:o.team,x:+o.x.toFixed(2),y:+o.y.toFixed(2),
+      radius:+o.radius.toFixed(2),bounces:o.bounces})),
     bombs: room.bombs.map(b => ({id:b.id,x:+b.x.toFixed(2),y:+b.y.toFixed(2),z:+b.z.toFixed(2),team:b.team})) };
 }
 function reset(room) {
   room.state = 'lobby'; room.elapsed = 0; room.winner = -1; room.rankSaved=false;
-  room.ink.clear(); room.bombs=[]; room.specials=[]; room.wallInk.fill(0);
+  room.ink.clear(); room.bombs=[]; room.gumShots=[]; room.specials=[]; room.wallInk.fill(0);
   for (const p of room.players.values()) { spawn(p); p.ko = 0; p.deaths = 0; p.invuln = 0; p.specialCharge=0; }
 }
 function addBot(room) {
@@ -654,7 +731,15 @@ export function createSpra({pool=null}={}) {
         player.input.fire = msg.fire === true;
         player.input.swim = msg.swim === true;
         if (Number.isFinite(msg.aim)) player.aim = clamp(msg.aim, -Math.PI * 2, Math.PI * 2);
-        if (msg.bomb === true) bomb(room, player);
+        if (msg.bomb === true) {
+          if(SPRA_WEAPONS[player.weapon]?.type==='cosmic') unstableBalloon(room,player);
+          else bomb(room,player);
+        }
+        if(msg.specialTarget && typeof msg.specialTarget==='object' &&
+            Number.isFinite(msg.specialTarget.x)&&Number.isFinite(msg.specialTarget.y)){
+          player.specialTarget={x:clamp(msg.specialTarget.x,1,SPRA_WIDTH-1),
+            y:clamp(msg.specialTarget.y,1,SPRA_HEIGHT-1)};
+        }
         if (msg.special === true) activateSpecial(room,player);
         if (msg.dodge === true && player.dodgeCd<=0 && player.deadFor<=0 &&
           SPRA_WEAPONS[player.weapon]?.type==='shooter' && player.ink>=18){
@@ -671,6 +756,8 @@ export function createSpra({pool=null}={}) {
           broadcast(room,snapshot(room));
         }
       } else if (msg.type === 'special' && room.state !== 'playing' && Object.hasOwn(SPRA_SPECIALS,msg.special)){
+        if(SPRA_WEAPONS[player.weapon]?.type==='cosmic' && msg.special!=='final_frontier')return;
+        if(SPRA_WEAPONS[player.weapon]?.type!=='cosmic' && msg.special==='final_frontier')return;
         player.special=msg.special;
         broadcast(room,snapshot(room));
       } else if (msg.type === 'mode' && player.id === room.host && room.state==='lobby') {
@@ -680,6 +767,8 @@ export function createSpra({pool=null}={}) {
         }
       } else if (msg.type === 'weapon' && room.state !== 'playing' && Object.hasOwn(SPRA_WEAPONS, msg.weapon)) {
         player.weapon = msg.weapon;
+        if(SPRA_WEAPONS[msg.weapon]?.type==='cosmic')player.special='final_frontier';
+        else if(player.special==='final_frontier')player.special='tornado';
         broadcast(room, snapshot(room));
       } else if (msg.type === 'team' && room.state === 'lobby') {
         const team = Number(msg.team);
@@ -719,6 +808,7 @@ export function createSpra({pool=null}={}) {
       room.elapsed += STEP;
       for (const p of room.players.values()) move(room, p, STEP);
       updateBombs(room,STEP);
+      updateGumShots(room,STEP);
       updateSpecials(room,STEP);
       const kills=[0,0];
       for(const p of room.players.values())kills[p.team]+=p.ko;
