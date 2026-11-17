@@ -84,7 +84,7 @@ test('boss room uses the server copy of the game state and rejects unauthorized 
   await assert.rejects(boss.act(room.code,{id:'bob'},revision,{kind:'resign'}),/参加中のボス部屋/);
   await assert.rejects(boss.act(room.code,alice,revision-1,{kind:'resign'}),/盤面が更新/);
   await assert.rejects(boss.act(room.code,alice,revision,{kind:'invalid'}),/未対応/);
-  await assert.rejects(boss.leave(room.code,alice),/対局中/);
+  assert.throws(()=>boss.leave(room.code,alice),/対局中/);
   const lost=await boss.act(room.code,alice,revision,{kind:'resign'});
   assert.equal(lost.status,'lost');
   assert.equal((await collection.profile('alice')).boss.clears.guardian||0,0);
