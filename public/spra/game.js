@@ -181,6 +181,28 @@ function drawRoomWeapons(){
   list.append(b);
  }
 }
+function drawRoomSpecials(){
+ const list=$('specialSelect');
+ if(!list)return;
+ list.replaceChildren();
+ const cosmic=SPRA_WEAPONS[selectedWeapon]?.type==='cosmic';
+ for(const special of Object.values(SPRA_SPECIALS)){
+  if(cosmic ? special.id!=='final_frontier' : special.id==='final_frontier')continue;
+  const b=document.createElement('button');
+  b.className='spra-special-option'+(selectedSpecial===special.id?' chosen':'');
+  b.append(textItem(special.icon+' '+special.label),textItem(special.description,'special-description'));
+  b.addEventListener('click',()=>{
+    selectedSpecial=special.id;
+    localStorage.setItem('spra_special_v3',selectedSpecial);
+    send({type:'special',special:selectedSpecial});
+    drawRoomSpecials();
+  });
+  list.append(b);
+ }
+}
+$('roomMode').addEventListener('change',()=>{
+ if(isHost)send({type:'mode',mode:$('roomMode').value});
+});
 saveBag();drawShop();drawRoomWeapons();drawRoomSpecials();
 if(queryRoom&&/^[a-z0-9]{6}$/i.test(queryRoom))sceneTo('reception');else sceneTo('city');
 
@@ -189,7 +211,8 @@ function updateConnection(online){
  $('connection').classList.toggle('online',online);
  $('connection').lastChild.textContent=online?' ONLINE':' OFFLINE';
 }
-function join(code=''){
+function join(code='',training=false){
+ trainingRequested=Boolean(training);
  if(ws&&[WebSocket.OPEN,WebSocket.CONNECTING].includes(ws.readyState))return toast('すでに接続しています');
  const name=nickname.value.trim().slice(0,18)||'PLAYER';
  localStorage.setItem('spra_name',name);
@@ -197,7 +220,9 @@ function join(code=''){
  const proto=location.protocol==='https:'?'wss:':'ws:';
  const socket=new WebSocket(proto+'//'+location.host+'/spra/ws');
  ws=socket;
- socket.onopen=()=>{updateConnection(true);send({type:'join',name,code});};
+ socket.onopen=()=>{updateConnection(true);send({type:'join',name,code,
+    mode:training?'training':$('matchMode').value,
+    cosmetics:facilities.getAppearance()});};
  socket.onerror=()=>toast('サーバーに接続できませんでした');
  socket.onclose=()=>{
   if(socket!==ws)return;
@@ -289,7 +314,12 @@ function receive(msg){
   $('roomInput').value=roomCode;
   history.replaceState(null,'','/spra/?room='+roomCode);
   send({type:'weapon',weapon:selectedWeapon});
+  send({type:'special',special:selectedSpecial});
   sceneTo('room');
+  if(trainingRequested){
+    trainingRequested=false;
+    send({type:'start'});
+  }
   toast('部屋に参加しました');
   return;
  }
@@ -301,10 +331,11 @@ function receive(msg){
  }
  if(msg.type==='state'){
   if(!myId)return;
-  phase=msg.phase;round=msg.round||0;remaining=msg.remaining;
+  phase=msg.phase;round=msg.round||0;remaining=msg.remaining;mode=msg.mode||'turf';
   scores=Array.isArray(msg.scores)?msg.scores:[0,0];
   winner=msg.winner;isHost=msg.host===myId;
   players=msg.players||[];bombs=msg.bombs||[];
+  gumShots=msg.gumShots||[];specialObjects=msg.specials||[];wallColors=msg.wallsInk||[];
   // Recover gracefully when this client fell behind on ink packets.
   if(typeof msg.fullPaint==='string')decodePaint(msg.fullPaint);
   else readChanges(msg.changes);
@@ -319,6 +350,10 @@ function updateUI(){
  if(scene!==(active?'battle':'room'))sceneTo(active?'battle':'room');
  if(!active){
   playerRoster(0);playerRoster(1);
+  $('roomMode').value=mode;
+  $('roomMode').disabled=!isHost;
+  $('roomModeText').textContent='モード：'+
+     (mode==='ko'?'KOバトル（20KO先取）':mode==='training'?'CPUトレーニング':'ナワバリバトル');
   $('startBtn').disabled=!isHost;
   $('botBtn').disabled=!isHost||players.length>=8;
   $('hostNote').textContent=isHost?
@@ -332,7 +367,15 @@ function updateUI(){
   $('myHp').textContent=me.hp;
   $('myInk').textContent=me.ink+'/'+(me.maxInk||INK_MAX);
   $('myKo').textContent=me.ko;
-  $('myBomb').textContent=me.bombCd>0?Math.ceil(me.bombCd)+'s':'READY';
+  $('myBomb').textContent=me.bombCd>0?Math.ceil(me.bombCd)+'s':
+     (SPRA_WEAPONS[me.weapon]?.type==='cosmic'?'風船 / INK 225':'READY');
+  $('specialFill').style.width=Math.max(0,Math.min(100,me.specialCharge||0))+'%';
+  $('specialValue').textContent=String(me.specialCharge||0)+'%';
+  $('specialName').textContent=(SPRA_SPECIALS[me.special]?.label||'スペシャル')+
+    (me.specialCharge>=100?' / READY':'');
+  $('inkStatus').textContent=me.swim?'潜伏中 / HP+INK回復':
+      SPRA_WEAPONS[me.weapon]?.type==='cosmic'&&me.charge>0?
+      'ガム風船チャージ '+Math.round(me.charge*100)+'%':'INK TANK';
   const pct=Math.max(0,Math.min(100,(me.ink/(me.maxInk||INK_MAX))*100));
   $('inkFill').style.width=pct+'%';
   $('inkCounter').textContent=me.ink+' / '+(me.maxInk||INK_MAX);
