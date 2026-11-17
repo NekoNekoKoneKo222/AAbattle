@@ -19,11 +19,33 @@
     <main>
       <section class="intro">
         <div class="eyebrow"><span class="pulse"></span> MULTIPLAYER / TURF WAR</div>
-        <h1>色で、<em>奪い合え。</em></h1>
-        <p>青か、オレンジか。3分間でエリアを染め上げる。<br>部屋コードを共有して、最大8人でインクバトル。</p>
+        <h1>街から、<em>塗り合え。</em></h1>
+        <p>ドット絵の街を探索して、武器屋で新しいブキを手に入れよう。<br>バトル受付から超大型マップの最大4対4インクPvPに参加！</p>
       </section>
 
-      <section id="joinCard" class="lobby-card panel">
+      <section id="citySection" class="city-section">
+        <div class="city-top"><div><span class="pixel-kicker">SPRA / PIXEL CITY</span><h2>カラフルシティ</h2></div><div class="city-wallet">SHELL COINS <b id="cityCoins">1200</b> ◎</div></div>
+        <div class="city-frame"><canvas id="cityCanvas" width="800" height="480" aria-label="探索できるドット絵の街"></canvas>
+          <div class="city-corner">WASD / 方向キー：移動　E：話す・入る</div>
+          <div class="city-touch">
+            <div class="city-dpad"><button data-city-control="up" aria-label="上">▲</button><div><button data-city-control="left" aria-label="左">◀</button><button data-city-control="down" aria-label="下">▼</button><button data-city-control="right" aria-label="右">▶</button></div></div>
+            <button id="cityInteract" class="city-interact">E<br>話す</button>
+          </div>
+        </div>
+        <div class="city-tools"><button id="openShop" class="btn secondary">▤ 武器屋に行く</button><button id="openMatch" class="btn primary">▣ バトル受付へ</button><span>街中を歩いて建物の入り口で E を押せます</span></div>
+      </section>
+
+      <section id="shopOverlay" class="shop-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="shopTitle">
+        <div class="shop-panel">
+          <div class="shop-head"><div><span class="pixel-kicker">COLOR GARAGE / WEAPON SHOP</span><h2 id="shopTitle">ガラクの武器屋</h2><p>オリキャラ「ガラク」が店番中。ブキを買って装備しよう！</p></div><button id="closeShop" class="shop-close" aria-label="閉じる">✕</button></div>
+          <div class="shop-top"><span>所持コイン <strong id="shopCoins">1200</strong> ◎</span><span id="shopCurrent">装備中：スプラッシュ・Mk1</span></div>
+          <div id="shopCategories" class="shop-categories"></div>
+          <div id="shopItems" class="shop-items"></div>
+          <p class="smallnote">所持コインと購入したブキはこのブラウザ内に保存されます。バトルでコイン獲得！</p>
+        </div>
+      </section>
+
+      <section id="joinCard" class="lobby-card panel hidden">
         <div class="card-heading"><span class="index">01</span><div><h2>アリーナに参加</h2><p>名前を決めて、部屋を作るかコードで参加。</p></div></div>
         <div class="join-fields">
           <label>プレイヤー名<input id="nickname" maxlength="18" autocomplete="nickname" placeholder="PLAYER" value=""></label>
@@ -33,7 +55,8 @@
           <button id="createBtn" class="btn primary"><span>新しい部屋を作成</span><b>＋</b></button>
           <button id="joinBtn" class="btn secondary">コードで参加 <span>→</span></button>
         </div>
-        <div class="smallnote">アカウント登録なしで遊べます。ルームの対戦データは一時的に保存されます。</div>
+        <div class="smallnote">人数不足の場合は試合開始時にCPUで最大4対4まで自動補充します。</div>
+        <button id="joinBackCity" class="pixel-back">◀ 街に戻る</button>
       </section>
 
       <section id="roomCard" class="room-card panel hidden" aria-live="polite">
@@ -47,14 +70,12 @@
           <div class="team-box orange"><h3><span class="color-dot"></span> ORANGE TEAM</h3><div id="orangeRoster" class="roster"></div><button id="orangeBtn" class="mini-btn">このチームに入る</button></div>
         </div>
         <div class="weapon-area"><h3>SELECT WEAPON</h3>
-          <div class="weapon-list">
-            <button class="weapon selected" data-weapon="shooter"><span class="weapon-icon">⌁</span><b>シューター</b><small>連射・万能</small></button>
-            <button class="weapon" data-weapon="roller"><span class="weapon-icon">▰</span><b>ローラー</b><small>近距離・塗り</small></button>
-            <button class="weapon" data-weapon="blaster"><span class="weapon-icon">✸</span><b>ブラスター</b><small>爆風・高威力</small></button>
-          </div>
+          <div id="roomWeaponList" class="weapon-list"></div>
+          <button id="roomShopBtn" class="pixel-back">▤ ブキを変更・購入</button>
         </div>
         <div class="action-row"><button id="startBtn" class="btn primary">試合開始 <span>▶</span></button><button id="botBtn" class="btn secondary">CPUを追加 ＋</button></div>
         <p id="hostNote" class="smallnote">ホストが試合を開始するまで待機してください。</p>
+        <button id="roomBackCity" class="pixel-back">◀ 部屋を抜けて街に戻る</button>
       </section>
 
       <section id="arenaPanel" class="arena-panel hidden">
@@ -64,16 +85,18 @@
           <div class="score orange-score"><b>ORANGE</b><strong id="orangeScore">0.0%</strong><div class="scorebar"><span id="orangeBar"></span></div></div>
         </div>
         <div id="arenaFrame" class="arena-frame">
-          <canvas id="gameCanvas" width="1620" height="1020" aria-label="インクバトルの対戦フィールド"></canvas>
+          <canvas id="gameCanvas" width="960" height="600" aria-label="超大型ドット絵バトルフィールド"></canvas>
+          <div class="battle-minimap"><div>FULL MAP / 160×100</div><canvas id="miniMap" width="320" height="200" aria-label="塗り状況と位置のミニマップ"></canvas></div>
+          <div id="inkHud" class="ink-hud"><div class="ink-hud-title"><span id="inkStatus">INK TANK</span><strong id="inkCounter">300 / 300</strong></div><div class="ink-track"><span id="inkFill"></span></div><div id="inkRecovery" class="ink-recovery">自陣インクに潜ると高速回復！</div></div>
           <div class="corner-label top-left">SPRA FIELD <span>/ 01</span></div>
           <div class="corner-label bottom-right">TURF WAR <span>● LIVE</span></div>
           <div id="mobileControls" class="mobile-controls">
             <div id="joystick" class="joystick"><div id="thumb" class="thumb"></div></div>
             <div class="touch-actions"><button id="swimTouch" class="touch-key">潜る<br>SWIM</button><button id="bombTouch" class="touch-key">ボム<br>Q</button><button id="fireTouch" class="touch-key shoot">SHOT</button></div>
           </div>
-          <div id="result" class="result hidden"><div class="result-card"><span class="eyebrow">BATTLE FINISHED</span><h2 id="resultTitle">RESULT</h2><div id="resultScores"></div><button id="backLobbyBtn" class="btn primary">次の試合へ →</button><p id="resultHint" class="smallnote">ホストが次の部屋を準備できます。</p></div></div>
+          <div id="result" class="result hidden"><div class="result-card"><span class="eyebrow">BATTLE FINISHED</span><h2 id="resultTitle">RESULT</h2><div id="resultScores"></div><button id="backLobbyBtn" class="btn primary">次の試合へ →</button><button id="leaveToCity" class="btn secondary">街へ戻る</button><p id="resultHint" class="smallnote">ホストが次の部屋を準備できます。</p></div></div>
         </div>
-        <div class="game-foot"><div class="stats"><span class="stats-name" id="myTeam">BLUE TEAM</span><span>HP <b id="myHp">100</b></span><span>INK <b id="myInk">100</b></span><span>KO <b id="myKo">0</b></span><span>ボム <b id="myBomb">READY</b></span></div><div class="control-hint">WASD 移動　/　マウス 照準　/　クリック 射撃　/　Shift 潜伏　/　Q ボム</div></div>
+        <div class="game-foot"><div class="stats"><span class="stats-name" id="myTeam">BLUE TEAM</span><span>HP <b id="myHp">100</b></span><span>INK <b id="myInk">300</b></span><span>KO <b id="myKo">0</b></span><span>ボム <b id="myBomb">READY</b></span></div><div class="control-hint">WASD 移動 / マウス 照準 / クリック 射撃 / Shift 自分のインクに潜伏＋ゲージ回復 / Q ボム投擲</div></div>
       </section>
 
       <section class="howto">
