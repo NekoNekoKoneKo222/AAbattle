@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { ShiftStore } from '../src/shift-store.js';
+import { ShiftStore, isShiftAdminUser } from '../src/shift-store.js';
 import { ShiftPartyManager } from '../src/shift-party.js';
-import { defaultPlayerModel } from '../shift-arena/packages/shared/dist/index.js';
+import { defaultPlayerModel, characterRoad, roadRerollCost } from '../shift-arena/packages/shared/dist/index.js';
 
 const user = (name) => ({ id: randomUUID(), username: name });
 test('custom model is stored per account and validated on the server', async () => {
@@ -200,4 +200,68 @@ test('solar gear equipment requires Lv8 and Lv10 and rejects duplicate gear',asy
   await assert.rejects(store.setLoadout(player,'rei','dash','combo_speed','sun_stride','sun_stride'),/同じギア/);
   await store.setLoadout(player,'rei','dash','combo_speed','sun_stride','sun_plating');
   assert.deepEqual((await store.getProfile(player)).loadouts.rei,{skill:'dash',passive:'combo_speed',gear1:'sun_stride',gear2:'sun_plating'});
+});
+
+
+test('character road consumes CREDITS only, with rarity-scaled reroll pricing',async()=>{
+  const store=new ShiftStore(),player=user('reroller');
+  await store.getProfile(player);
+  await assert.rejects(store.rerollRoad(player),/クレジットが不足/);
+  const before=await store.getProfile(player),original=before.road_target;
+  const price=roadRerollCost(characterRoad[original].rarity);
+  await store.withProfile(player,p=>{p.credits=1000;});
+  const rolled=await store.rerollRoad(player);
+  assert.equal(rolled.cost,price);
+  assert.notEqual(rolled.character,original);
+  assert.equal(rolled.profile.credits,1000-price);
+  assert.ok(!rolled.profile.owned_characters.includes(rolled.character));
+  assert.ok(rolled.profile.road_tier.includes(rolled.character));
+  assert.ok(characterRoad[rolled.character]);
+  await store.setTarget(player,rolled.character);
+  const value=await store.getProfile(player);
+  assert.equal(value.road_target,rolled.character);
+  // A successful reroll does not unlock or upgrade anything.
+  assert.deepEqual(value.owned_characters,['rei']);
+  assert.equal(Object.hasOwn(value.economy,'cash'),false);
+});
+
+test('rarity costs rise monotonically without introducing a new currency',()=>{
+  const list=['SPARK','BRIGHT','FLARE','NOVA','THE_SUN'];
+  const amounts=list.map(rarity=>roadRerollCost(rarity));
+  assert.deepEqual(amounts,[20,40,80,160,320]);
+  for(let i=1;i<amounts.length;i++)assert.ok(amounts[i]>amounts[i-1]);
+});
+
+test('admin item grants require authenticated administrator identity and validate every amount',async()=>{
+  const store=new ShiftStore();
+  const admin={...user('nekonekokoneko'),username_key:'nekonekokoneko'};
+  const forged={...user('nekonekokoneko'),username_key:'otheruser'};
+  const target={...user('targetplayer'),username_key:'targetplayer'};
+  await store.getProfile(target);
+  assert.equal(isShiftAdminUser(admin),true);
+  assert.equal(isShiftAdminUser(forged),false);
+  await assert.rejects(store.adminGrant(forged,target,'coins',1000),/管理者権限/);
+  await assert.rejects(store.adminGrant(admin,target,'unknown',1000),/不正なアイテム/);
+  await assert.rejects(store.adminGrant(admin,target,'coins',-1),/数量/);
+  await assert.rejects(store.adminGrant(admin,target,'coins',1.2),/数量/);
+  await assert.rejects(store.adminGrant(admin,target,'coins',1e10),/数量/);
+  await store.adminGrant(admin,target,'coins',1000);
+  await store.adminGrant(admin,target,'credits',500);
+  await store.adminGrant(admin,target,'sun_power',200);
+  await store.adminGrant(admin,target,'diamonds',10);
+  await store.adminGrant(admin,target,'sun',2);
+  await store.adminGrant(admin,target,'glitch',3);
+  let p=await store.getProfile(target);
+  assert.equal(p.economy.coins,1250);
+  assert.equal(p.credits,500);
+  assert.equal(p.economy.sun_power,340);
+  assert.equal(p.economy.diamonds,10);
+  assert.equal(p.economy.drops.sun,3);
+  assert.equal(p.economy.drops.glitch,3);
+  await store.adminGrant(admin,target,'hero',1,'gald');
+  await store.adminGrant(admin,target,'sun_skin',1,'gald');
+  p=await store.getProfile(target);
+  assert.ok(p.owned_characters.includes('gald'));
+  assert.ok(p.economy.skins.gald.includes('sun_skin'));
+  await assert.rejects(store.adminGrant(admin,target,'hero',1,'gald'),/所持/);
 });

@@ -8,8 +8,8 @@ export const rarityInfo={
 } as const;
 export type HeroRarity=keyof typeof rarityInfo;
 /** Cost to replace the current character-road offer; rare offers cost more to reroll. */
-export const roadCashCosts={STARTER:10,SPARK:20,BRIGHT:40,FLARE:80,NOVA:160,THE_SUN:320} as const;
-export function roadRerollCost(rarity:HeroRarity){return roadCashCosts[rarity];}
+export const roadCreditCosts={STARTER:10,SPARK:20,BRIGHT:40,FLARE:80,NOVA:160,THE_SUN:320} as const;
+export function roadRerollCost(rarity:HeroRarity){return roadCreditCosts[rarity];}
 export const beginnerRarityList=['SPARK','BRIGHT','FLARE','NOVA','THE_SUN'] as const;
 export const gearOptions=[
   {id:'sun_stride',name:'ソーラーステップ',description:'移動速度が5%上昇'},
