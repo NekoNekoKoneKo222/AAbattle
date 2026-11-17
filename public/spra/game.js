@@ -109,6 +109,14 @@ function disconnectToCity(){
  toast('カラフルシティに戻りました');
 }
 $('openMatch').addEventListener('click',openReception);
+for(const b of document.querySelectorAll('[data-town-facility]')){
+ b.addEventListener('click',()=>{
+   const id=b.dataset.townFacility;
+   if(id==='shop')openShop();
+   else if(id==='battle')openReception();
+   else facilities.open(id);
+ });
+}
 $('openShop').addEventListener('click',openShop);
 $('shopTryBtn').addEventListener('click',()=>{closeShop();facilities.open('shop');});
 $('joinBackCity').addEventListener('click',()=>sceneTo('city'));
