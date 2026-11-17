@@ -1,6 +1,6 @@
 // Server-authoritative organic ink surface for the SPRA top-down arena.
-// Eight coverage samples per world unit give smooth-edged turf and accurate scoring.
-export const INK_SCALE = 8;
+// Four coverage samples per world unit give smooth-edged turf and accurate scoring.
+export const INK_SCALE = 4;
 
 export function createInkSurface(width, height, walls = []) {
   const pixelWidth = width * INK_SCALE;

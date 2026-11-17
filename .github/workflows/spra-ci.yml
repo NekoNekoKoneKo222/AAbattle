@@ -40,6 +40,8 @@ jobs:
           node --check src/spra.js
           node --check src/spra-ink.js
           node --check public/spra/game.js
+          node --check public/spra/city.js
+          node --check public/spra/weapons.js
           node --check src/server.js
       - name: SPRA PvP tests
         run: node --test test/spra.test.js
