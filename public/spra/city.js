@@ -7,7 +7,7 @@ const clamp=(x,lo,hi)=>Math.max(lo,Math.min(hi,x));
 const buildings=[
  {x:45,y:26,w:26,h:24,color:'#263c65',roof:'#68d6ee',sign:'WEAPON',doorX:58,doorY:51,kind:'shop'},
  {x:99,y:23,w:30,h:27,color:'#43345d',roof:'#ffb454',sign:'BATTLE',doorX:113,doorY:51,kind:'battle'},
- {x:19,y:24,w:17,h:22,color:'#24464e',roof:'#55d6ad',sign:'ARCADE',doorX:28,doorY:47},
+ {x:19,y:24,w:17,h:22,color:'#24464e',roof:'#55d6ad',sign:'FURNITURE',doorX:28,doorY:47,kind:'furniture'},
  {x:138,y:30,w:23,h:21,color:'#473655',roof:'#ce86ef',sign:'FASHION',doorX:151,doorY:52,kind:'fashion'},
  {x:27,y:85,w:25,h:23,color:'#284658',roof:'#3ff2df',sign:'WORKSHOP',doorX:39,doorY:109,kind:'workshop'},
  {x:112,y:86,w:33,h:27,color:'#31415c',roof:'#e8a859',sign:'MY ROOM',doorX:128,doorY:114,kind:'room'},
