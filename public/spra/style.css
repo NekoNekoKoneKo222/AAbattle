@@ -137,3 +137,104 @@ body{background-image:repeating-linear-gradient(0deg,#0e20320a 0px,#0e20320a 3px
  .touch-key.shoot{width:58px;height:60px;font-size:12px}
  .touch-actions{right:3%;bottom:2%}
 }
+
+
+/* SPRA V3 tactical battles and eight fully interactive pixel city facilities */
+.facility-overlay{position:fixed;inset:0;display:grid;place-items:center;z-index:40;
+ background:#041021e8;padding:15px}
+.facility-panel{width:min(910px,100%);max-height:92vh;overflow:auto;
+ background:#102b3f;border:5px solid #d3ff6f;box-shadow:10px 10px 0 #030914;padding:20px}
+.facility-header{display:flex;justify-content:space-between;gap:16px;
+ align-items:flex-start;border-bottom:3px solid #476077;padding-bottom:15px}
+.facility-heading h2{font-size:clamp(20px,3vw,32px);margin:6px 0;letter-spacing:-.8px}
+.facility-close{background:#19394c;border:3px solid #b7d1de;color:#eafaff;
+ padding:11px 14px;font-weight:900;font-family:inherit;cursor:pointer}
+.facility-status{padding:10px 0;color:#f0ff9d;font-size:12px;font-weight:900}
+.facility-body{display:grid;gap:16px}
+.facility-section{border:2px solid #36576b;background:#0b2031;padding:15px}
+.facility-section h3{margin:0 0 9px;font-size:16px;color:#f1ffac}
+.facility-description{font-size:12px;color:#aac9d8;line-height:1.7}
+.facility-action{background:#d8ff64;border:3px solid #f1ffb5;padding:12px 16px;
+ color:#102c28;font-weight:1000;font-size:13px;margin-top:12px}
+.facility-action:hover{background:#f0ffb5}
+.facility-item-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.facility-item{display:flex;flex-direction:column;align-items:start;gap:8px;
+ padding:11px;background:#143246;color:#effcff;border:2px solid #42677e;
+ text-align:left;min-height:100px}
+.facility-item.equipped,.furniture-item.equipped{background:#254130;border-color:#d9ff72}
+.facility-item small{color:#d6ff8c}
+.facility-swatch{display:block;width:28px;height:28px;border:2px solid #edf6f3;
+ box-shadow:3px 3px 0 #031522}
+.fashion-preview{display:flex;align-items:center;gap:32px;min-height:165px;
+ padding:13px;background:#1b3b4e;border:3px dashed #60899a}
+.fashion-preview>span{max-width:370px;line-height:1.8;font-size:13px}
+.fashion-pixel-preview{position:relative;width:92px;height:135px;flex:none}
+.fashion-pixel-preview span{position:absolute;display:block}
+.avatar-hat{width:42px;height:15px;background:var(--hat);left:25px;top:12px;box-shadow:6px -5px 0 var(--hat)}
+.avatar-face{width:34px;height:27px;background:#efbb9a;left:29px;top:26px;
+ box-shadow:9px 7px 0 #091523}
+.avatar-torso{width:50px;height:50px;background:var(--shirt);left:20px;top:54px}
+.avatar-left-shoe{width:20px;height:20px;background:var(--shoes);left:20px;top:108px}
+.avatar-right-shoe{width:20px;height:20px;background:var(--shoes);left:51px;top:108px}
+.furniture-list{display:flex;flex-wrap:wrap;gap:7px}
+.furniture-item{display:flex;flex-direction:column;gap:5px;align-items:center;
+ width:115px;min-height:98px;border:2px solid #4e7180;background:#193248;color:white;padding:8px}
+.furniture-icon{font-size:28px;color:#deff95}
+.furniture-item small{color:#d9ff86}
+.room-grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));
+ gap:4px;background:#16394a;border:5px solid #426a80;padding:12px;max-width:640px}
+.room-cell{border:2px solid #385869;background:#2d5362;aspect-ratio:1/1;
+ color:#dfff81;font-size:clamp(16px,3vw,27px);font-weight:900;padding:0}
+.room-cell.filled{border-color:#b1d27c;background:#314642}
+.arcade-score{font-size:22px;color:#e3ff85;font-weight:900;margin:12px 0}
+.arcade-board{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;max-width:500px}
+.arcade-cell{aspect-ratio:1;background:#1b3146;border:3px solid #517c91;
+ font-size:28px;color:#52728c}
+.arcade-cell.active{color:#ddff72;background:#475a4b;border-color:#f2ffbe}
+.ranking-list{display:grid;gap:7px}
+.ranking-row{display:flex;justify-content:space-between;gap:15px;align-items:center;
+ padding:11px;background:#18394b;border:2px solid #365c70}
+.ranking-row:first-child{background:#51471f;border-color:#e9c268}
+.ranking-row strong{font-size:12px}
+.ranking-row span{font-size:11px;color:#d9ffb2}
+.spra-mode-label{display:flex;flex-direction:column;align-items:flex-start;
+ gap:8px;color:#d3eaf6;font-size:12px;font-weight:900;margin-top:15px}
+.spra-mode-select{background:#112b40;color:#e0f8fe;border:2px solid #7aa1af;
+ padding:10px 12px;max-width:100%;font:inherit;font-size:12px}
+.spra-gear-section{border-top:3px solid #36566e;padding-top:13px;margin-top:18px}
+.spra-gear-section h3{font-size:13px;color:#d8ff8c}
+.spra-special-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px}
+.spra-special-option{border:2px solid #43667d;background:#142f42;
+ color:#f2fdff;font:inherit;text-align:left;min-height:60px;
+ display:flex;flex-direction:column;gap:7px;padding:10px;font-weight:900;font-size:11px}
+.spra-special-option.chosen{border-color:#e6ff80;background:#304338}
+.special-description{color:#9db7c8;font-size:9px;font-weight:500;line-height:1.5}
+.spra-mode-description{display:block;padding-top:12px;padding-bottom:7px;
+ font-size:11px;color:#b7d6e1}
+.spra-special-hud{position:absolute;z-index:4;left:12px;top:142px;width:min(38%,315px);
+ background:#091b32dd;border:3px solid #d2ff7b;
+ display:grid;grid-template-columns:1fr auto;gap:6px;padding:10px;
+ pointer-events:none;font-weight:900;font-size:11px;color:#f5fbd7}
+.special-progress{grid-column:1/-1;height:16px;background:#20354a;border:2px solid #c2e788}
+.special-progress span{height:100%;background:repeating-linear-gradient(90deg,
+ #e7d067 0,#e7d067 12px,#fff5b1 12px,#fff5b1 15px);display:block;width:0;transition:width .2s}
+.special-hint{grid-column:1/-1;font-size:9px;color:#92b9cd}
+.spra-special-touch{background:#c8aeef;color:#132643;border-color:#f2d8ff}
+.battle-minimap{pointer-events:auto;cursor:pointer}
+#miniMap{pointer-events:auto;cursor:crosshair;touch-action:manipulation}
+.touch-actions{display:flex;flex-wrap:wrap;max-width:calc(100% - 105px);justify-content:flex-end}
+@media(pointer:coarse){.touch-actions{pointer-events:auto}}
+@media(max-width:650px){
+ .facility-panel{padding:10px;border-width:3px}
+ .facility-item-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .facility-item{padding:8px;min-height:86px}
+ .ranking-row{flex-wrap:wrap}
+ .fashion-preview{gap:15px}
+ .spra-special-hud{left:5px;top:64px;width:45%;border-width:2px;
+ padding:5px;gap:2px;font-size:8px}
+ .special-progress{height:10px}
+ .special-hint{font-size:6px}
+ .touch-actions{max-width:calc(100% - 70px);gap:3px}
+ .touch-key{width:38px;height:39px;font-size:7px}
+ .touch-key.shoot{width:56px;height:54px}
+}
