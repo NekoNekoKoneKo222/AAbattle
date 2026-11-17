@@ -320,7 +320,14 @@ function updateGumShots(room,dt){
     if(bounceY){g.vy=-g.vy;g.bounces++;nextY=oldY;}
     g.x=clamp(nextX,1.4,SPRA_WIDTH-1.4);
     g.y=clamp(nextY,1.4,SPRA_HEIGHT-1.4);
+    // Aster Gum actively paints the entire travelled path, including rebound
+    // segments. Charge increases the footprint, not only its final explosion.
     const owner=room.players.get(g.owner);
+    if(bounceX||bounceY)coatWall(room,oldX+g.vx*dt,oldY+g.vy*dt,g.team);
+    const paintedBefore=room.ink.counts[g.team];
+    room.ink.trail(oldX,oldY,g.x,g.y,.22+g.power*.25,
+      g.team,g.id*23+Math.floor(room.elapsed*20),true);
+    if(owner)awardPaint(room,owner,paintedBefore);
     let collision=false;
     for(const enemy of room.players.values()){
       if(enemy.team===g.team||enemy.deadFor>0||g.hit.has(enemy.id))continue;
