@@ -21,7 +21,31 @@ const chatItems=[['nice','ナイス！'],['thanks','ありがとう！'],['sorry
 const modeNames:Record<Mode,string>={core:'コア争奪戦',deathmatch:'チームデスマッチ',duel:'デュエル',survival:'サバイバル',payload:'ペイロード',ffa:'10人個人戦'};
 const arenaSizeLabel=(mode:Mode,teamSize=3)=>((mode==='core'||mode==='deathmatch'||mode==='payload')&&teamSize===3?'50 × 100':'100 × 100');
 const roleNames={balanced:'バランス',tank:'タンク',assassin:'アサシン',support:'サポート',area:'範囲攻撃',control:'コントロール',trick:'トリッキー',sniper:'遠距離'};
-function tone(kind:string,volume:number){if(volume<=0)return;try{const ctx=new AudioContext(),o=ctx.createOscillator(),gain=ctx.createGain();o.type=kind==='ko'?'sawtooth':'sine';o.frequency.setValueAtTime(kind==='hit'?190:kind==='ultimate'?430:kind==='win'?620:330,ctx.currentTime);o.frequency.exponentialRampToValueAtTime(kind==='ko'?70:kind==='win'?930:130,ctx.currentTime+.16);gain.gain.setValueAtTime(.045*volume,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.2);o.connect(gain).connect(ctx.destination);o.start();o.stop(ctx.currentTime+.2);o.onended=()=>ctx.close();}catch{/* audio is optional */}}
+// A new AudioContext per projectile hit overloaded Safari/WebKit during touch combat.
+let combatAudio:AudioContext|null=null;
+const lastCombatTone=new Map<string,number>();
+function tone(kind:string,volume:number){
+  if(volume<=0)return;
+  const now=performance.now();
+  const previous=lastCombatTone.get(kind)||0;
+  const delay=kind==='hit'?90:kind==='ultimate'?80:55;
+  if(now-previous<delay)return;
+  lastCombatTone.set(kind,now);
+  try{
+    if(!combatAudio||combatAudio.state==='closed')combatAudio=new AudioContext();
+    const ctx=combatAudio;
+    if(ctx.state==='suspended')void ctx.resume().catch(()=>{});
+    const o=ctx.createOscillator(),gain=ctx.createGain();
+    o.type=kind==='ko'?'sawtooth':'sine';
+    o.frequency.setValueAtTime(kind==='hit'?190:kind==='ultimate'?430:kind==='win'?620:330,ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(kind==='ko'?70:kind==='win'?930:130,ctx.currentTime+.16);
+    gain.gain.setValueAtTime(.045*volume,ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.2);
+    o.connect(gain).connect(ctx.destination);
+    o.start();o.stop(ctx.currentTime+.2);
+    o.onended=()=>{o.disconnect();gain.disconnect();};
+  }catch{/* audio is optional */}
+}
 function TouchStick({label,onMove,size=112,fire=false}:{
   label:string;onMove:(x:number,z:number,active:boolean,strength:number,tap:boolean,cancelled:boolean)=>void;size?:number;fire?:boolean
 }){
@@ -30,9 +54,13 @@ function TouchStick({label,onMove,size=112,fire=false}:{
   const origin=useRef<[number,number]>([0,0]);
   const last=useRef<[number,number,number]>([0,0,0]);
   const maxTravel=useRef(0);
-  const [point,setPoint]=useState<[number,number]>([0,0]);
+  // DOM transform rather than a React state update on EVERY touchmove.
+  // Two-finger movement + attack previously caused a constant reconciliation storm.
+  const knob=useRef<HTMLSpanElement>(null);
+  const bounds=useRef<DOMRect|null>(null);
+  const shown=useRef<[number,number]>([0,0]);
   function update(e:React.PointerEvent<HTMLDivElement>){
-    const rect=ref.current?.getBoundingClientRect();if(!rect)return;
+    const rect=bounds.current;if(!rect)return;
     const x=(e.clientX-rect.left-rect.width/2)/(rect.width/2);
     const z=(e.clientY-rect.top-rect.height/2)/(rect.height/2);
     const magnitude=Math.hypot(x,z);
@@ -43,19 +71,25 @@ function TouchStick({label,onMove,size=112,fire=false}:{
     const nx=x*scale,nz=z*scale;
     last.current=[nx,nz,normalized];
     maxTravel.current=Math.max(maxTravel.current,Math.hypot(e.clientX-origin.current[0],e.clientY-origin.current[1]));
-    setPoint([nx,nz]);onMove(nx,nz,true,last.current[2],false,false);
+    if(Math.abs(nx-shown.current[0])>.007||Math.abs(nz-shown.current[1])>.007){
+      shown.current=[nx,nz];
+      if(knob.current)knob.current.style.transform='translate3d('+(nx*31)+'px,'+(nz*31)+'px,0)';
+    }
+    onMove(nx,nz,true,last.current[2],false,false);
   }
   function release(cancelled:boolean){
     if(active.current===null)return;
-    active.current=null;
+    active.current=null;bounds.current=null;
     const [x,z,strength]=last.current,wasTap=maxTravel.current<15;
-    setPoint([0,0]);
+    shown.current=[0,0];
+    if(knob.current)knob.current.style.transform='translate3d(0,0,0)';
     if(!fire)onMove(0,0,false,0,false,cancelled);
     else onMove(x,z,false,strength,wasTap,cancelled);
   }
   return <div ref={ref} className={'stick '+(fire?'attack-stick':'')}
     style={{width:size,height:size,touchAction:'none'}}
     onPointerDown={e=>{if(active.current!==null)return;e.preventDefault();active.current=e.pointerId;
+      bounds.current=e.currentTarget.getBoundingClientRect();
       origin.current=[e.clientX,e.clientY];maxTravel.current=0;last.current=[0,0,0];
       e.currentTarget.setPointerCapture(e.pointerId);update(e);}}
     onPointerMove={e=>{if(active.current===e.pointerId){e.preventDefault();update(e);}}}
@@ -63,7 +97,7 @@ function TouchStick({label,onMove,size=112,fire=false}:{
     onPointerCancel={e=>{if(active.current===e.pointerId){e.preventDefault();release(true);}}}
     onLostPointerCapture={()=>release(true)}>
     <span className="stick-label">{label}</span>
-    <span className="stick-knob" style={{transform:'translate('+(point[0]*31)+'px,'+(point[1]*31)+'px)'}}/>
+    <span ref={knob} className="stick-knob" style={{transform:'translate3d(0,0,0)',willChange:'transform'}}/>
   </div>;
 }
 

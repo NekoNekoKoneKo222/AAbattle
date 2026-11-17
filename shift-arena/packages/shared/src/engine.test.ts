@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { characters, characterById, createGame, fighterMaxHp, findAutoAimTarget, lineClear, neutral, powerMultiplier, registerShiftVote, sanitizeInput, solidAt, stepGame, trainingAction, upgradeCost } from './index.js';
+import { aimWallDistance, characters, characterById, createGame, fighterMaxHp, findAutoAimTarget, lineClear, neutral, powerMultiplier, registerShiftVote, sanitizeInput, solidAt, stepGame, trainingAction, upgradeCost } from './index.js';
 
 const duel=()=>{const g=createGame({mode:'duel',shift:false,slots:[{id:'a',name:'A',character:'rei',team:0,bot:false},{id:'b',name:'B',character:'gald',team:1,bot:false}]});g.map.walls=[];for(const p of g.players){p.invulnerable=0;p.z=9;p.bot=false;}g.players[0].x=5;g.players[1].x=8;return g;};
 describe('SHIFT ARENA combat',()=>{
@@ -261,5 +261,28 @@ describe('large-arena simulation performance primitives',()=>{
     const elapsed=performance.now()-started;
     expect(game.tick).toBe(300);
     expect(elapsed).toBeLessThan(10000);
+  });
+});
+
+
+describe('touch aiming performance',()=>{
+  it('returns the nearest wall hit in one pass even on a large arena',()=>{
+    const map=createGame({mode:'survival'}).map;
+    map.walls=[
+      {id:'far',x:24,z:30,w:2,h:2,hp:0,kind:'wall'},
+      {id:'near',x:14,z:30,w:2,h:2,hp:0,kind:'wall'},
+      {id:'behind',x:6,z:30,w:2,h:2,hp:0,kind:'wall'},
+    ];
+    const distance=aimWallDistance(map,10,30,1,0,20);
+    expect(distance).toBeGreaterThan(2.6);
+    expect(distance).toBeLessThan(3);
+    expect(aimWallDistance(map,10,26,1,0,20)).toBe(20);
+  });
+  it('clips angled guides and handles vertical aim',()=>{
+    const map=createGame({mode:'duel'}).map;
+    map.walls=[{id:'wall',x:12,z:12,w:1,h:1,hp:0,kind:'wall'}];
+    expect(aimWallDistance(map,10,10,Math.SQRT1_2,Math.SQRT1_2,12)).toBeLessThan(3);
+    expect(aimWallDistance(map,12,5,0,1,12)).toBeGreaterThan(5);
+    expect(aimWallDistance(map,5,12,0,1,12)).toBe(12);
   });
 });

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { characterById, fighterMaxHp, solidAt, validatePlayerModel, type Fighter, type GameState, type PlayerModel } from '@shift/shared';
+import { aimWallDistance, characterById, fighterMaxHp, validatePlayerModel, type Fighter, type GameState, type PlayerModel } from '@shift/shared';
 import { createModelRig, poseModelRig, disposeModelRig, type ModelRig } from './model-rig';
 import { createVoxelHero, poseVoxelHero, disposeVoxelHero } from './voxel-heroes';
 export type Quality='auto'|'low'|'medium'|'high';
@@ -40,7 +40,7 @@ function fighterMesh(p:Fighter,model:PlayerModel|null,lightweight=false){
 }
 export class ArenaRenderer {
   isTouchDevice(){return this.appleTouch;}
-  readonly canvas:HTMLCanvasElement; private renderer:THREE.WebGLRenderer; private scene=new THREE.Scene(); private camera=new THREE.OrthographicCamera(-8,8,5,-5,.1,100); private ground=new THREE.Group(); private signalGroup=new THREE.Group(); private signalMeshes=new Map<string,THREE.Group>(); private terminalRing:THREE.Mesh|null=null; private actors=new Map<string,THREE.Group>(); private modelDocs=new Map<string,PlayerModel|null>(); private modelLoading=new Set<string>(); private bullets=new Map<number,THREE.Mesh>(); private effects=new Map<number,THREE.Mesh>(); private ray=new THREE.Raycaster(); private plane=new THREE.Plane(new THREE.Vector3(0,1,0),0); private target=new THREE.Vector3(); private frame=0; private quality:Quality; private aimLine:THREE.Line; private aimTip:THREE.Mesh; private nameplateLayer:HTMLDivElement;private nameplates=new Map<string,Nameplate>();
+  readonly canvas:HTMLCanvasElement; private renderer:THREE.WebGLRenderer; private scene=new THREE.Scene(); private camera=new THREE.OrthographicCamera(-8,8,5,-5,.1,100); private ground=new THREE.Group(); private signalGroup=new THREE.Group(); private signalMeshes=new Map<string,THREE.Group>(); private terminalRing:THREE.Mesh|null=null; private actors=new Map<string,THREE.Group>(); private modelDocs=new Map<string,PlayerModel|null>(); private modelLoading=new Set<string>(); private bullets=new Map<number,THREE.Mesh>(); private effects=new Map<number,THREE.Mesh>(); private ray=new THREE.Raycaster(); private plane=new THREE.Plane(new THREE.Vector3(0,1,0),0); private target=new THREE.Vector3(); private frame=0; private quality:Quality; private aimLine:THREE.Line; private aimTip:THREE.Mesh; private nameplateLayer:HTMLDivElement;private nameplates=new Map<string,Nameplate>();private projectPoint=new THREE.Vector3();
   private readonly appleTouch=isAppleTouchBrowser();private crowdMode=false;
   private readonly crowdDetail=new Map<string,boolean>();
   targetFrameMs(){return this.crowdMode?(this.appleTouch?33:26):(this.appleTouch?30:16);}
@@ -233,9 +233,12 @@ this.renderer.setClearColor(0x14243b,1);this.canvas=this.renderer.domElement;thi
       (mesh.material as THREE.Material).dispose();this.effects.delete(id);
     }
     const own=g.players.find(p=>p.id===localId)||g.players[0];if(own){const aspect=this.host.clientWidth/Math.max(1,this.host.clientHeight),visibleX=10.3*aspect,visibleZ=10.5;const x=THREE.MathUtils.clamp(own.x,Math.min(visibleX,g.map.width/2),Math.max(visibleX,g.map.width-visibleX)),z=THREE.MathUtils.clamp(own.z,Math.min(visibleZ,g.map.height/2),Math.max(visibleZ,g.map.height-visibleZ));const focus=new THREE.Vector3(x,0,z);this.camera.position.set(x,22,z+16);this.camera.lookAt(focus);}
+    // Touch devices update DOM nameplates at half graphics framerate.
+    // Combat and models still render at the normal framerate.
+    if(!this.appleTouch||this.frame%2===0){
     // Screen-aligned player names, health text, and three/four ammo blocks.
     this.camera.updateMatrixWorld(true);
-    const seen=new Set<string>();
+    const seen=new Set<string>(),canvasW=this.host.clientWidth,canvasH=this.host.clientHeight;
     for(const p of g.players){
       seen.add(p.id);
       let plate=this.nameplates.get(p.id);
@@ -247,15 +250,14 @@ this.renderer.setClearColor(0x14243b,1);this.canvas=this.renderer.domElement;thi
         const fill=document.createElement('span');fill.className='fighter-nameplate-fill';
         track.appendChild(fill);
         const ammo=document.createElement('div');ammo.className='fighter-nameplate-ammo';
-        root.append(name,hp,track,ammo);this.nameplateLayer.appendChild(root);
+        root.append(name,hp,track,ammo);root.style.left='0';root.style.top='0';this.nameplateLayer.appendChild(root);
         plate={root,name,hp,fill,ammo};this.nameplates.set(p.id,plate);
       }
-      const point=new THREE.Vector3(p.x,2.75,p.z).project(this.camera);
+      const point=this.projectPoint.set(p.x,2.75,p.z).project(this.camera);
       const onscreen=p.hp>0&&point.z>=-1&&point.z<=1&&Math.abs(point.x)<1.12&&Math.abs(point.y)<1.15;
       plate.root.style.display=onscreen?'flex':'none';
       if(!onscreen)continue;
-      plate.root.style.left=((point.x+1)*.5*100).toFixed(2)+'%';
-      plate.root.style.top=((1-point.y)*.5*100).toFixed(2)+'%';
+      plate.root.style.transform='translate3d('+((point.x+1)*.5*canvasW).toFixed(1)+'px,'+((1-point.y)*.5*canvasH).toFixed(1)+'px,0) translate(-50%,-100%)';
       plate.root.classList.toggle('local',p.id===localId);
       plate.root.classList.toggle('allied',p.team===own?.team&&p.id!==localId);
       plate.name.textContent=p.name;
@@ -270,6 +272,7 @@ this.renderer.setClearColor(0x14243b,1);this.canvas=this.renderer.domElement;thi
     for(const [id,plate] of this.nameplates){
       if(!seen.has(id)){plate.root.remove();this.nameplates.delete(id);}
     }
+    }
     // Visual-only shot direction preview; authoritative hits are still server-validated.
     if(own&&own.hp>0&&aiming){
       const config=characterById(own.character).attack;
@@ -278,10 +281,10 @@ this.renderer.setClearColor(0x14243b,1);this.canvas=this.renderer.domElement;thi
       const selectedRange=config.kind==='lob'?config.range*Math.max(.12,Math.min(1,aimDistance)):config.range;
       let endX=THREE.MathUtils.clamp(own.x+dx*selectedRange,.6,g.map.width-.6),endZ=THREE.MathUtils.clamp(own.z+dz*selectedRange,.6,g.map.height-.6);
       if(config.kind!=='lob'){
-        for(let d=.3;d<=config.range;d+=.14){
-          const x=own.x+dx*d,z=own.z+dz*d;
-          if(solidAt(g.map,x,z,.08)){endX=own.x+dx*Math.max(0,d-.14);endZ=own.z+dz*Math.max(0,d-.14);break;}
-        }
+        // Constant one-pass wall test instead of dozens of checks per frame.
+        const clipped=aimWallDistance(g.map,own.x,own.z,dx,dz,selectedRange);
+        endX=THREE.MathUtils.clamp(own.x+dx*clipped,.6,g.map.width-.6);
+        endZ=THREE.MathUtils.clamp(own.z+dz*clipped,.6,g.map.height-.6);
       }
       const positions=this.aimLine.geometry.getAttribute('position') as THREE.BufferAttribute;
       for(let i=0;i<25;i++){
