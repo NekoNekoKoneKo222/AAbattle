@@ -1,0 +1,22 @@
+name: Validate SHIFT combat performance
+on:
+  push:
+    branches: [shift-combat-performance]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --include=dev
+      - run: npm run build --workspace @shift/shared
+      - run: npm run build --workspace @shift/client
+      - run: npm run build --workspace @shift/server
+      - run: npm run test --workspace @shift/shared
+      - run: node --test test/shift*.test.js
