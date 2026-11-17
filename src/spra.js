@@ -221,8 +221,32 @@ function send(ws, object) {
     try { ws.send(JSON.stringify(object)); } catch {}
   }
 }
+const MAX_SOCKET_BACKLOG = 200 * 1024;
 function broadcast(room, object) {
-  for (const p of room.players.values()) if (p.ws) send(p.ws, object);
+  // Serialize the large ink delta only once per frame, not once for each
+  // member of an eight-player room.
+  const payload = JSON.stringify(object);
+  for (const p of room.players.values()) {
+    const ws = p.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) continue;
+    if (object.type === 'state' && ws.bufferedAmount > MAX_SOCKET_BACKLOG) {
+      // Do not pile up megabytes of obsolete paint events. The next
+      // successfully delivered frame must resynchronize its full paint.
+      ws.spraNeedsPaint = true;
+      continue;
+    }
+    try {
+      if (object.type === 'state' && (ws.spraNeedsPaint || payload.length > 230_000)) {
+        const fullState = { ...object, changes: [], fullPaint: room.ink.snapshot() };
+        ws.send(JSON.stringify(fullState));
+        ws.spraNeedsPaint = false;
+      } else {
+        ws.send(payload);
+      }
+    } catch {
+      if (object.type === 'state') ws.spraNeedsPaint = true;
+    }
+  }
 }
 function snapshot(room) {
   return { type: 'state', code: room.code, host: room.host, round: room.round, phase: room.state,
@@ -364,7 +388,7 @@ export function createSpra() {
         room.state = 'results';
         room.winner = room.ink.counts[0] === room.ink.counts[1] ? -1 : room.ink.counts[0] > room.ink.counts[1] ? 0 : 1;
       }
-      if (now - room.broadcastAt >= 100 || room.state === 'results') {
+      if (now - room.broadcastAt >= 125 || room.state === 'results') {
         room.broadcastAt = now;
         broadcast(room, snapshot(room));
       }
