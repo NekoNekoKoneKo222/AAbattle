@@ -136,6 +136,9 @@ export function createChaosBoss({collection}={}){
       if(room.game.revision!==revision)throw error(409,'盤面が更新されました。');
       if(room.game.turn!=='b')throw error(409,'ボスの行動中です。');
       if(!validAction(action))throw error(400,'未対応の行動です。');
+      if(room.actionPending)throw error(409,'前の行動を処理しています。');
+      room.actionPending=true;
+      try{
       if(action.kind==='resign'){
         finish(room,false,'ボス戦を棄権した');
         return summary(room,user.id);
@@ -163,6 +166,7 @@ export function createChaosBoss({collection}={}){
       }
       if(room.status==='cleared')await rewards(room);
       return summary(room,user.id);
+      }finally{room.actionPending=false;}
     },
     async get(roomCode,user){const room=getRoom(roomCode,user.id);checkDeadline(room);if(room.status==='cleared'&&!room.rewarded)await rewards(room);return summary(room,user.id);},
     leave(roomCode,user){
