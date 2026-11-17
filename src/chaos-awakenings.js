@@ -69,8 +69,8 @@ const destroyNearby=(s,side,anchor,n,restrict,ops)=>{
   }
   return done;
 };
-const specsRun=(s,side,id,action,ops)=>{
-  const rec=AWAKENINGS[id];if(!rec)return false;
+const specsRun=(s,side,id,action,ops,recipe)=>{
+  const rec=recipe||AWAKENINGS[id];if(!rec)return false;
   const anchor=point(s,action),p=s.cards[side],enemy=other(side),otherCards=s.cards[enemy];
   const one=(arr)=>arr.length?arr[0]:undefined;
   let any=false;
@@ -134,3 +134,4 @@ const specsRun=(s,side,id,action,ops)=>{
   return any;
 };
 export function resolveUniqueAwakening(s,side,cardId,action,ops={}){return specsRun(s,side,cardId,action,ops);}
+export function resolveAwakeningRecipe(s,side,cardId,action,ops,recipe){return specsRun(s,side,cardId,action,ops,recipe);}
