@@ -7,6 +7,9 @@ export const rarityInfo={
   THE_SUN:{name:'ザ・サン',color:'#F5C341',weight:2}
 } as const;
 export type HeroRarity=keyof typeof rarityInfo;
+/** Cost to replace the current character-road offer; rare offers cost more to reroll. */
+export const roadCreditCosts={STARTER:10,SPARK:20,BRIGHT:40,FLARE:80,NOVA:160,THE_SUN:320} as const;
+export function roadRerollCost(rarity:HeroRarity){return roadCreditCosts[rarity];}
 export const beginnerRarityList=['SPARK','BRIGHT','FLARE','NOVA','THE_SUN'] as const;
 export const gearOptions=[
   {id:'sun_stride',name:'ソーラーステップ',description:'移動速度が5%上昇'},
@@ -31,9 +34,10 @@ export const characterRoad = {
   frost: { rarity: 'FLARE', cost: 900 },
   chrono: { rarity: 'NOVA', cost: 1200 },
   noise: { rarity: 'THE_SUN', cost: 1800 },
+  houkou: { rarity: 'THE_SUN', cost: 2000 },
 } as const;
 export type CharacterId = keyof typeof characterRoad;
-export const roadTiers:CharacterId[][]=[['gald','mina'],['jin','bom'],['frost'],['chrono'],['noise']];
+export const roadTiers:CharacterId[][]=[['gald','mina'],['jin','bom'],['frost'],['chrono'],['noise','houkou']];
 export const rewardConfig={onlineWin:25,onlineLoss:12,firstWin:40,solo:8,soloDailyLimit:5,minActiveSeconds:45,minParticipation:5} as const;
 export const masteryRewards=[
   {level:5,id:'icon',label:'キャラクターアイコン'},
@@ -67,6 +71,7 @@ export const loadoutOptions:Record<CharacterId,{skills:[{id:string;label:string;
   bom:{skills:[{id:'mine',label:'地雷設置',description:'踏むと爆発する地雷',duration:18,cooldown:11,kind:'mine'},{id:'remote_bomb',label:'遠隔爆破',description:'設置した爆弾を起爆',duration:12,cooldown:11,kind:'remote_bomb'}],passives:[{id:'multi_charge',label:'連鎖充填',description:'複数の敵に当てるとゲージ増加'},{id:'burn_blast',label:'余熱',description:'爆発後に火傷を付与'}]},
   chrono:{skills:[{id:'warp',label:'短距離ワープ',description:'障害物を避けて移動',duration:.2,cooldown:10,kind:'warp'},{id:'slowfield',label:'減速フィールド',description:'範囲内の敵を減速',duration:5,cooldown:13,kind:'slowfield'}],passives:[{id:'status_damage',label:'時差打撃',description:'状態異常中の敵に追加ダメージ'},{id:'assist_cooldown',label:'連携短縮',description:'アシストでスキル待ち時間短縮'}]},
   noise:{skills:[{id:'footsteps',label:'偽の足音',description:'敵を惑わす足音を発生',duration:5,cooldown:9,kind:'footsteps'},{id:'decoy',label:'デコイ',description:'自分に似た囮を生成',duration:5,cooldown:12,kind:'decoy'}],passives:[{id:'surprise_damage',label:'死角射撃',description:'隠れた位置からの攻撃を強化'},{id:'evasion',label:'残響回避',description:'スキル使用後の回避率上昇'}]},
+  houkou:{skills:[{id:'dash',label:'裂空歩',description:'向いている方向へ短距離移動',duration:.3,cooldown:11,kind:'dash'},{id:'front_shield',label:'刃守',description:'シールドでダメージを吸収',duration:3,cooldown:13,kind:'shield'}],passives:[{id:'dash_strike',label:'刃の余韻',description:'スキル移動後の次の一撃を強化'},{id:'guard_after_hit',label:'不屈の構え',description:'被弾後に短時間防御を強化'}]},
   frost:{skills:[{id:'slowfield',label:'鈍足エリア',description:'敵を減速する氷エリア',duration:5,cooldown:12,kind:'slowfield'},{id:'ice_dash',label:'氷上疾走',description:'短時間加速して移動',duration:3,cooldown:10,kind:'ice_dash'}],passives:[{id:'chain_slow',label:'凍結連撃',description:'連続命中で敵を減速'},{id:'ice_guard',label:'氷壁守護',description:'氷壁の近くで防御上昇'}]},
 };
 export function validLoadout(character:string,skill:string,passive:string){const options=loadoutOptions[character as CharacterId];return !!options&&options.skills.some(s=>s.id===skill)&&options.passives.some(p=>p.id===passive);}

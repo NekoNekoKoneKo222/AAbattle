@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aimWallDistance, characters, characterById, createGame, fighterMaxHp, findAutoAimTarget, lineClear, neutral, powerMultiplier, registerShiftVote, sanitizeInput, solidAt, stepGame, trainingAction, upgradeCost } from './index.js';
+import { aimWallDistance, characters, characterById, createGame, HOUKOU_MAX_CHARGE_TICKS, fighterMaxHp, findAutoAimTarget, lineClear, neutral, powerMultiplier, registerShiftVote, sanitizeInput, solidAt, stepGame, trainingAction, upgradeCost } from './index.js';
 
 const duel=()=>{const g=createGame({mode:'duel',shift:false,slots:[{id:'a',name:'A',character:'rei',team:0,bot:false},{id:'b',name:'B',character:'gald',team:1,bot:false}]});g.map.walls=[];for(const p of g.players){p.invulnerable=0;p.z=9;p.bot=false;}g.players[0].x=5;g.players[1].x=8;return g;};
 describe('SHIFT ARENA combat',()=>{
@@ -7,7 +7,7 @@ describe('SHIFT ARENA combat',()=>{
   it('uses ammo, hits opponents, charges ultimate and reloads',()=>{const g=duel(),a=g.players[0],b=g.players[1];stepGame(g,{a:{mx:0,mz:0,ax:1,az:0,attack:true,ultimate:false,skill:false}});expect(a.ammo).toBe(2);for(let i=0;i<15;i++)stepGame(g);expect(b.hp).toBeLessThan(characterById('gald').maxHp);expect(a.ultimate).toBeGreaterThan(0);for(let i=0;i<60;i++)stepGame(g);expect(a.ammo).toBe(3);});
   it('walls block projectiles and line of sight',()=>{const g=duel();g.map.walls=[{id:'barrier',x:6.5,z:9,w:1,h:3,hp:0,kind:'wall'}];expect(lineClear(g.map,g.players[0],g.players[1])).toBe(false);stepGame(g,{a:{mx:0,mz:0,ax:1,az:0,attack:true,ultimate:false,skill:false}});for(let i=0;i<15;i++)stepGame(g);expect(g.players[1].hp).toBe(characterById('gald').maxHp);});
   it('KO increments score and respawns with invulnerability',()=>{const g=duel();g.players[1].hp=200;stepGame(g,{a:{mx:0,mz:0,ax:1,az:0,attack:true,ultimate:false,skill:false}});for(let i=0;i<15;i++)stepGame(g);expect(g.players[1].hp).toBe(0);expect(g.score[0]).toBe(1);for(let i=0;i<91;i++)stepGame(g);expect(g.players[1].hp).toBe(characterById('gald').maxHp);expect(g.players[1].invulnerable).toBeGreaterThan(0);});
-  it('all eight characters have usable skills and ultimates',()=>{expect(characters).toHaveLength(8);for(const c of characters){const g=createGame({mode:'duel',shift:false,slots:[{id:'a',name:'A',character:c.id,team:0,bot:false,powerLevel:7},{id:'b',name:'B',character:'rei',team:1,bot:false}]});g.players.forEach(p=>p.bot=false);g.players[0].ultimate=100;stepGame(g,{a:{mx:0,mz:0,ax:1,az:0,attack:false,ultimate:true,skill:true}});expect(g.players[0].ultimate).toBe(0);expect(g.players[0].skillAt).toBeGreaterThan(g.tick);}});
+  it('all nine characters have usable skills and ultimates',()=>{expect(characters).toHaveLength(9);for(const c of characters){const g=createGame({mode:'duel',shift:false,slots:[{id:'a',name:'A',character:c.id,team:0,bot:false,powerLevel:7},{id:'b',name:'B',character:'rei',team:1,bot:false}]});g.players.forEach(p=>p.bot=false);g.players[0].ultimate=100;stepGame(g,{a:{mx:0,mz:0,ax:1,az:0,attack:false,ultimate:true,skill:true}});expect(g.players[0].ultimate).toBe(0);expect(g.players[0].skillAt).toBeGreaterThan(g.tick);}});
 });
 describe('modes and shifts',()=>{
   it('core does not score when both teams contest',()=>{const g=createGame({mode:'core',shift:false});for(const p of g.players){p.bot=false;p.x=g.map.goal[0];p.z=g.map.goal[1];}for(let i=0;i<30;i++)stepGame(g);expect(g.score).toEqual([0,0]);g.players.filter(p=>p.team===1).forEach(p=>{p.x=32;p.z=g.map.goal[1];});for(let i=0;i<30;i++)stepGame(g);expect(g.score[0]).toBe(1);});
@@ -284,5 +284,56 @@ describe('touch aiming performance',()=>{
     expect(aimWallDistance(map,10,10,Math.SQRT1_2,Math.SQRT1_2,12)).toBeLessThan(3);
     expect(aimWallDistance(map,12,5,0,1,12)).toBeGreaterThan(5);
     expect(aimWallDistance(map,5,12,0,1,12)).toBe(12);
+  });
+});
+
+
+describe('Houkou charged sword and double-edged ultimate',()=>{
+  const create=()=>{
+    const g=createGame({mode:'duel',shift:false,slots:[
+      {id:'h',name:'Houkou',character:'houkou',team:0,bot:false},
+      {id:'t',name:'Target',character:'gald',team:1,bot:false}]});
+    g.map.walls=[];
+    for(const p of g.players){p.bot=false;p.invulnerable=0;}
+    g.players[0].x=20;g.players[0].z=20;g.players[1].x=22;g.players[1].z=20;
+    return g;
+  };
+  it('charges while pressed, never consumes ammo, and waits one second after a slash',()=>{
+    const g=create(),a=g.players[0],b=g.players[1];
+    const hp=b.hp;
+    stepGame(g,{h:{...neutral,ax:1,az:0,attackHeld:true}});
+    expect(b.hp).toBe(hp);
+    stepGame(g,{h:{...neutral,ax:1,az:0,attack:true}});
+    expect(b.hp).toBeLessThan(hp);
+    expect(a.ammo).toBe(0);
+    expect(a.attackAt-g.tick).toBe(30);
+    const next=b.hp;
+    stepGame(g,{h:{...neutral,attack:true}});
+    expect(b.hp).toBe(next);
+  });
+  it('warns with a twenty-degree offset after full charge and deals 150% damage',()=>{
+    const g=create(),a=g.players[0],b=g.players[1];
+    for(let i=0;i<HOUKOU_MAX_CHARGE_TICKS;i++)
+      stepGame(g,{h:{...neutral,ax:1,az:0,attackHeld:true}});
+    expect(a.chargeTicks).toBe(HOUKOU_MAX_CHARGE_TICKS);
+    expect(a.warningAngle).toBeCloseTo(Math.PI/9,4);
+    b.x=a.x+Math.cos(a.warningAngle)*2;
+    b.z=a.z+Math.sin(a.warningAngle)*2;
+    stepGame(g,{h:{...neutral,ax:1,az:0,attack:true}});
+    expect(a.lastChargeFull).toBe(true);
+    expect(fighterMaxHp(b)-b.hp).toBe(Math.round(characterById('houkou').attack.damage*1.5));
+  });
+  it('launches a straight slash with a non-damaging center and dangerous wings',()=>{
+    const g=create(),a=g.players[0],center=g.players[1];
+    center.x=24;center.z=20;
+    const wing={...center,id:'wing',name:'Wing',x:24,z:21.2,shield:0,hp:center.hp};
+    g.players.push(wing);a.ultimate=100;
+    stepGame(g,{h:{...neutral,ax:1,az:0,ultimate:true}});
+    expect(g.bullets.some(b=>b.kind==='houkou-slash')).toBe(true);
+    expect(a.ultimate).toBe(0); // ultimate resets immediately; damage later recharges it
+    for(let i=0;i<15;i++)stepGame(g);
+    expect(center.hp).toBe(fighterMaxHp(center));
+    expect(wing.hp).toBeLessThan(fighterMaxHp(wing));
+    expect(a.ultimate).toBeGreaterThan(0); // successful hits recharge the meter
   });
 });

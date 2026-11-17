@@ -1,6 +1,6 @@
 export type Role = 'balanced'|'tank'|'assassin'|'support'|'area'|'control'|'trick'|'sniper';
 export type AttackKind = 'bolt'|'melee'|'lob'|'spread';
-export type AbilityKind = 'rapid'|'shockwave'|'assassinate'|'healwave'|'megabomb'|'timefield'|'clones'|'icewall'|'dash'|'shield'|'invisible'|'drone'|'mine'|'warp'|'decoy'|'slowfield';
+export type AbilityKind = 'rapid'|'shockwave'|'assassinate'|'healwave'|'megabomb'|'timefield'|'clones'|'icewall'|'houkou_slash'|'dash'|'shield'|'invisible'|'drone'|'mine'|'warp'|'decoy'|'slowfield';
 export interface AttackDefinition { kind: AttackKind; damage: number; range: number; projectileSpeed: number; cooldown: number; ammoCost: number; projectileCount: number; spread: number; pierce: number; splashRadius: number; }
 export interface CharacterDefinition { id: string; name: string; role: Role; maxHp: number; moveSpeed: number; ammo: number; reload: number; color: number; accent: number; attack: AttackDefinition; ultimate: { kind: AbilityKind; label: string; instant?: boolean; baseDamage?: number; fixedDamage?: number; healAmount?: number; description?: string }; skill: { kind: AbilityKind; label: string; cooldown: number }; passive: string; }
 const attack = (kind: AttackKind, damage: number, range: number, speed: number, cooldown: number, count=1, spread=0, splash=0): AttackDefinition => ({ kind, damage, range, projectileSpeed:speed, cooldown, ammoCost:1, projectileCount:count, spread, pierce:0, splashRadius:splash });
@@ -12,7 +12,11 @@ export const characters: CharacterDefinition[] = [
   { id:'bom',name:'ボム',role:'area',maxHp:6200,moveSpeed:4.2,ammo:3,reload:1.65,color:0xc44d39,accent:0xf5c44c,attack:attack('lob',1040,8.4,8,1.00,1,0,1.65),ultimate:{kind:'megabomb',label:'メガボム',baseDamage:1800},skill:{kind:'mine',label:'トラップボム',cooldown:10},passive:'複数巻き込みでゲージ増加' },
   { id:'chrono',name:'クロノ',role:'control',maxHp:5400,moveSpeed:4.7,ammo:4,reload:1.35,color:0x6d4ca0,accent:0xf2c357,attack:attack('bolt',840,8.8,11,.58),ultimate:{kind:'timefield',label:'タイムレンズ',description:'敵の動きを遅くする時空フィールドを設置（効果は固定）'},skill:{kind:'warp',label:'ブリンク',cooldown:9},passive:'状態異常の敵に追加ダメージ' },
   { id:'noise',name:'ノイズ',role:'trick',maxHp:5400,moveSpeed:5.2,ammo:4,reload:1.6,color:0x35c4d7,accent:0xdb59cd,attack:attack('spread',245,6.8,10,.73,5,.7),ultimate:{kind:'clones',label:'エコー分身',instant:true,fixedDamage:220,description:'分身を3体召喚し、各分身が毎秒220の固定ダメージで攻撃'},skill:{kind:'decoy',label:'フェイクステップ',cooldown:9},passive:'視界外からの攻撃強化' },
-  { id:'frost',name:'フロスト',role:'control',maxHp:5900,moveSpeed:4.4,ammo:3,reload:1.35,color:0xa2e5ff,accent:0xffffff,attack:attack('bolt',855,9.2,10,.68),ultimate:{kind:'icewall',label:'氷晶の壁',description:'氷の障害物を生成（効果は固定）'},skill:{kind:'slowfield',label:'フリーズゾーン',cooldown:12},passive:'連続命中で鈍足付与' }
+  { id:'frost',name:'フロスト',role:'control',maxHp:5900,moveSpeed:4.4,ammo:3,reload:1.35,color:0xa2e5ff,accent:0xffffff,attack:attack('bolt',855,9.2,10,.68),ultimate:{kind:'icewall',label:'氷晶の壁',description:'氷の障害物を生成（効果は固定）'},skill:{kind:'slowfield',label:'フリーズゾーン',cooldown:12},passive:'連続命中で鈍足付与' },
+  { id:'houkou',name:'咆哮',role:'assassin',maxHp:7300,moveSpeed:4.75,ammo:0,reload:0,color:0x6b6672,accent:0xece9e5,
+    attack:{...attack('melee',1550,3.6,0,1),ammoCost:0},
+    ultimate:{kind:'houkou_slash',label:'双断斬',baseDamage:1950,description:'直進する双翼の斬撃。中心の隙間に立つと回避できる'},
+    skill:{kind:'dash',label:'裂空歩',cooldown:11},passive:'チャージで回転する斬撃を操る剣士' }
 ];
 export const characterById = (id: string) => characters.find(c=>c.id===id) || characters[0];
 export interface Wall { id:string; x:number; z:number; w:number; h:number; hp:number; kind:'wall'|'crate'|'ice'; }

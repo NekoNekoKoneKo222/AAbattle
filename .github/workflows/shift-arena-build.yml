@@ -34,6 +34,10 @@ jobs:
         run: npm ci --include=dev
       - name: Build shared data
         run: npm run build --workspace @shift/shared
+      - name: Install original Houkou character assets
+        run: |
+          mkdir -p shift-arena/apps/client/public/houkou
+          unzip -o -q shift-arena/assets/houkou-source.zip -d shift-arena/apps/client/public/houkou
       - name: Compile SHIFT ARENA into public/sam
         run: npm run build --workspace @shift/client
       - name: Build online server

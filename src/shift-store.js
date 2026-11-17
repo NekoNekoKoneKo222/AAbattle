@@ -1,5 +1,5 @@
 import { randomUUID, randomInt } from 'node:crypto';
-import { characterRoad, loadoutOptions, masteryLevel, masteryRewards, missionDefs, nextRoadTier, rewardConfig, validLoadout, validatePlayerModel, defaultEconomy, powerLevel, upgradeCost, MAX_POWER_LEVEL, beginnerRarityList, rarityInfo, gearOptions, skinPrice } from '../shift-arena/packages/shared/dist/index.js';
+import { characterRoad, loadoutOptions, masteryLevel, masteryRewards, missionDefs, nextRoadTier, rewardConfig, validLoadout, validatePlayerModel, defaultEconomy, powerLevel, upgradeCost, MAX_POWER_LEVEL, beginnerRarityList, rarityInfo, roadRerollCost, gearOptions, skinPrice } from '../shift-arena/packages/shared/dist/index.js';
 
 const utcDay = () => new Date().toISOString().slice(0, 10);
 const clone = (value) => structuredClone(value);
@@ -8,6 +8,23 @@ const initial = (id, name) => ({ user_id: id, display_name: name, selected_chara
 // The existing loadouts JSONB column is writable by the service account.
 // Keep Sun progression under a reserved key instead of changing table ownership/schema at startup.
 const SOLAR_DATA_KEY = '__shift_solar_economy_v1';
+export function isShiftAdminUser(user){
+  return Boolean(user?.username_key==='nekonekokoneko' &&
+    (!process.env.SHIFT_ADMIN_USER_ID || String(user.id)===process.env.SHIFT_ADMIN_USER_ID));
+}
+/** Same category weights as the first 10-player survival victory. */
+function randomUnownedRoadHero(owned, exclude = null){
+  const options=beginnerRarityList.map(rarity=>({
+    rarity,weight:rarityInfo[rarity].weight,
+    candidates:Object.entries(characterRoad)
+      .filter(([id,entry])=>entry.rarity===rarity&&!owned.includes(id)&&id!==exclude)
+      .map(([id])=>id)
+  })).filter(group=>group.candidates.length);
+  if(!options.length)return null;
+  let roll=randomInt(options.reduce((s,g)=>s+g.weight,0));
+  const chosen=options.find(group=>(roll-=group.weight)<0)||options[options.length-1];
+  return {character:chosen.candidates[randomInt(chosen.candidates.length)],rarity:chosen.rarity};
+}
 const normalize = (row) => {
   const loadouts = row.loadouts && typeof row.loadouts === 'object' && !Array.isArray(row.loadouts) ? { ...row.loadouts } : {};
   // Prefer the writable JSONB key. Also read 007's economy column when present,
@@ -32,7 +49,9 @@ const normalize = (row) => {
 };
 function today(profile) { if (profile.mission_day !== utcDay()) { profile.mission_day = utcDay(); profile.missions = {}; } }
 function mastery(profile, id) { return profile.mastery[id] ||= { xp: 0, stats: { matches: 0, wins: 0, ko: 0, ultimates: 0, objective: 0, hits: 0, terminal: 0 }, claimed: [], equipped_skin: null }; }
-function publicProfile(profile) { today(profile); return { ...clone(profile), road_tier: nextRoadTier(profile.owned_characters), mastery_levels: Object.fromEntries(Object.entries(profile.mastery).map(([id, value]) => [id, masteryLevel(value.xp)])), server_day: utcDay() }; }
+function publicProfile(profile) { today(profile); const tier=nextRoadTier(profile.owned_characters);const offer=profile.road_target;
+  const visible=characterRoad[offer]&&!profile.owned_characters.includes(offer)&&!tier.includes(offer)?[...tier,offer]:tier;
+  return { ...clone(profile), road_tier: visible, mastery_levels: Object.fromEntries(Object.entries(profile.mastery).map(([id, value]) => [id, masteryLevel(value.xp)])), server_day: utcDay() }; }
 
 export class ShiftStore {
   constructor(pool = null) { this.pool = pool; this.memory = new Map(); this.models = new Map(); this.rewards = new Set(); this.locks = new Map(); this.requests = new Map(); this.friends = new Set(); this.blocks = new Set(); }
@@ -87,10 +106,56 @@ export class ShiftStore {
     } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
   }
   getProfile(user) { return this.withProfile(user); }
+  adminGrant(admin, recipient, item, amount, character) {
+    if(!isShiftAdminUser(admin))throw fail('管理者権限がありません。',403);
+    const kinds=['coins','sun_power','diamonds','credits','prestige','sun','glitch','hero','sun_skin'];
+    if(!kinds.includes(item))throw fail('不正なアイテム種類です。');
+    const quantity=item==='hero'||item==='sun_skin'?1:Number(amount);
+    if(!Number.isSafeInteger(quantity)||quantity<1||quantity>1000000)throw fail('数量は1～1,000,000の整数で指定してください。');
+    if((item==='hero'||item==='sun_skin')&&!characterRoad[character])throw fail('キャラクターを選択してください。');
+    return this.withProfile(recipient,p=>{
+      const e=p.economy ||= defaultEconomy();
+      if(item==='hero'){
+        if(p.owned_characters.includes(character))throw fail('対象プレイヤーはすでにこのキャラを所持しています。');
+        p.owned_characters.push(character);
+        if(p.road_target===character)p.road_target=nextRoadTier(p.owned_characters)[0]||'';
+      }else if(item==='sun_skin'){
+        if(!p.owned_characters.includes(character))throw fail('キャラクター未所持です。');
+        const list=e.skins[character] ||= [];
+        if(list.includes('sun_skin'))throw fail('サンスキンは付与済みです。');
+        list.push('sun_skin');
+      }else if(item==='credits'||item==='prestige'){
+        if(p[item]+quantity>1000000000)throw fail('所持数の上限を超えます。');
+        p[item]+=quantity;
+      }else if(item==='sun'||item==='glitch'){
+        if(e.drops[item]+quantity>1000000000)throw fail('所持数の上限を超えます。');
+        e.drops[item]+=quantity;
+      }else{
+        if((e[item]||0)+quantity>1000000000)throw fail('所持数の上限を超えます。');
+        e[item]=(e[item]||0)+quantity;
+      }
+      console.info('SHIFT admin grant',JSON.stringify({adminId:admin.id,targetId:recipient.id,item,amount:quantity,character:item==='hero'||item==='sun_skin'?character:undefined}));
+      return {ok:true,target:recipient.username,item,amount:quantity,profile:publicProfile(p)};
+    });
+  }
   setSelected(user, character) { return this.withProfile(user, p => { if (!p.owned_characters.includes(character)) throw fail('未所持のキャラクターです。', 403); p.selected_character = character; }); }
-  setTarget(user, character) { return this.withProfile(user, p => { if (!nextRoadTier(p.owned_characters).includes(character)) throw fail('現在のキャラロードで選べません。'); p.road_target = character; }); }
+  setTarget(user, character) { return this.withProfile(user, p => { if (!nextRoadTier(p.owned_characters).includes(character) && !(p.road_target===character&&!p.owned_characters.includes(character))) throw fail('現在のキャラロードで選べません。'); p.road_target = character; }); }
+  rerollRoad(user) { return this.withProfile(user, p => {
+    const available=Object.keys(characterRoad).filter(id=>id!=='rei'&&!p.owned_characters.includes(id));
+    if(available.length<=1)throw fail('変更できるキャラクターがありません。');
+    const current=available.includes(p.road_target)?p.road_target:nextRoadTier(p.owned_characters)[0];
+    if(!current)throw fail('すべてのキャラクターを獲得済みです。');
+    const price=roadRerollCost(characterRoad[current].rarity);
+    const e=p.economy ||= defaultEconomy();
+    if(p.credits<price)throw fail('クレジットが不足しています。');
+    const drawn=randomUnownedRoadHero(p.owned_characters,current);
+    if(!drawn)throw fail('変更できるキャラクターがありません。');
+    p.credits-=price;
+    p.road_target=drawn.character;
+    return {character:drawn.character,rarity:drawn.rarity,cost:price,profile:publicProfile(p)};
+  }); }
   unlock(user) { return this.withProfile(user, p => {
-    const tier = nextRoadTier(p.owned_characters); const id = tier.includes(p.road_target) ? p.road_target : tier[0];
+    const tier = nextRoadTier(p.owned_characters); const id = characterRoad[p.road_target]&&!p.owned_characters.includes(p.road_target) ? p.road_target : tier[0];
     if (!id) throw fail('すべてのキャラクターを獲得済みです。');
     const cost = characterRoad[id].cost;
     if (p.credits < cost) throw fail('クレジットが不足しています。');
@@ -152,14 +217,8 @@ export class ShiftStore {
     );
     // If a veteran already owns every hero, don't silently consume the one-time prize.
     if(!available.length) return {alreadyClaimed:false,noCharacters:true,profile:publicProfile(p)};
-    const rarityWeights=beginnerRarityList.map(rarity=>({
-      rarity,weight:rarityInfo[rarity].weight,
-      candidates:available.filter(item=>item.rarity===rarity)
-    })).filter(group=>group.candidates.length>0);
-    const total=rarityWeights.reduce((v,g)=>v+g.weight,0);
-    let roll=randomInt(total);
-    const selected=rarityWeights.find(group=>{roll-=group.weight;return roll<0;})||rarityWeights[rarityWeights.length-1];
-    const reward=selected.candidates[randomInt(selected.candidates.length)];
+    const reward=randomUnownedRoadHero(p.owned_characters);
+    if(!reward)throw fail('報酬候補がありません。');
     p.owned_characters.push(reward.character);
     e.beginner_claimed=true;e.beginner_reward=reward;
     p.road_target=nextRoadTier(p.owned_characters)[0]||'';

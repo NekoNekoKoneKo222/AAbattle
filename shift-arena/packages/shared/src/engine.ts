@@ -5,10 +5,10 @@ export type Mode='core'|'deathmatch'|'duel'|'survival'|'payload'|'ffa';
 export type Difficulty='easy'|'normal'|'hard'|'expert';
 export type ShiftKind='wall'|'heal'|'speed'|'trap'|'cover'|'jump';
 export interface ShiftTerminal { x:number;z:number;radius:number;owner:0|1|null;progress:[number,number];candidates:[ShiftKind,ShiftKind];votes:Record<string,ShiftKind>;selected:ShiftKind|null;cycle:number; }
-export interface Input { mx:number; mz:number; ax:number; az:number; attack:boolean; ultimate:boolean; skill:boolean; autoAim?:boolean;autoUltimate?:boolean;overdrive?:boolean; aimDistance?:number; }
+export interface Input { mx:number; mz:number; ax:number; az:number; attack:boolean; ultimate:boolean; skill:boolean;attackHeld?:boolean; autoAim?:boolean;autoUltimate?:boolean;overdrive?:boolean; aimDistance?:number; }
 export const neutral:Input={mx:0,mz:0,ax:1,az:0,attack:false,ultimate:false,skill:false,overdrive:false,aimDistance:1};
-export interface Fighter { id:string; name:string; character:string; team:number; bot:boolean; dummy?:'static'|'moving'|'attacking'|'invincible'; modelOwner?:string; skinChoice?:'skin'|'master_skin'|'sun_skin'|null; skillChoice:string; passiveChoice:string; powerLevel:number; gear1:GearId|null;gear2:GearId|null;overdriveCharge:number;overdriveTime:number;bonusAttack:number; evasion:number; burn:number; x:number; z:number; vx:number; vz:number; ax:number; az:number; hp:number; ammo:number; reloadAt:number; attackAt:number; skillAt:number; ultimate:number; koAt:number; invulnerable:number; shield:number; slow:number; invisible:number; rapid:number; speedBoost:number; defense:number; hitChain:number; regenChain:number;lastCombat:number; kills:number; damage:number; healed:number; received:number; objective:number; }
-export interface Projectile { id:number; owner:string; team:number; x:number; z:number; vx:number; vz:number; damage:number; radius:number; life:number; splash:number; pierce:number; lob:boolean; flightTime?:number; launchX?:number; launchZ?:number; landX?:number; landZ?:number; status?:'slow'; }
+export interface Fighter { id:string; name:string; character:string; team:number; bot:boolean; dummy?:'static'|'moving'|'attacking'|'invincible'; modelOwner?:string; skinChoice?:'skin'|'master_skin'|'sun_skin'|null; skillChoice:string; passiveChoice:string; powerLevel:number; gear1:GearId|null;gear2:GearId|null;overdriveCharge:number;overdriveTime:number;chargeTicks:number;warningAngle:number;attackAnimAt:number;attackAnimLength:number;lastChargeFull:boolean;ultimateAnimAt:number;bonusAttack:number; evasion:number; burn:number; x:number; z:number; vx:number; vz:number; ax:number; az:number; hp:number; ammo:number; reloadAt:number; attackAt:number; skillAt:number; ultimate:number; koAt:number; invulnerable:number; shield:number; slow:number; invisible:number; rapid:number; speedBoost:number; defense:number; hitChain:number; regenChain:number;lastCombat:number; kills:number; damage:number; healed:number; received:number; objective:number; }
+export interface Projectile { kind?:'houkou-slash';hitIds?:string[]; id:number; owner:string; team:number; x:number; z:number; vx:number; vz:number; damage:number; radius:number; life:number; splash:number; pierce:number; lob:boolean; flightTime?:number; launchX?:number; launchZ?:number; landX?:number; landZ?:number; status?:'slow'; }
 export interface Effect { id:number; kind:string; x:number; z:number; radius:number; life:number; team:number; owner?:string; damage?:number; }
 export interface GameState { tick:number; time:number; mode:Mode; difficulty:Difficulty; training?:boolean; trainingStats?:{hits:number;attacks:number;lastDamage:number;recentDamage:{tick:number;value:number}[]}; map:MapDefinition; players:Fighter[]; bullets:Projectile[]; effects:Effect[]; score:[number,number]; winner:number|null; overtime:boolean; shiftEnabled:boolean; shiftWarning:boolean; shiftCount:number; terminal:ShiftTerminal; payload:number; payloadRound:number; payloadRecord:[number,number]; safeRadius:number; nextId:number; events:{kind:string;x:number;z:number;value?:number;team?:number;owner?:string}[]; }
 export interface Slot { id:string; name:string; character:string; team:number; bot:boolean; dummy?:Fighter['dummy']; modelOwner?:string; skinChoice?:Fighter['skinChoice']; loadout?:{skill:string;passive:string;gear1?:GearId|null;gear2?:GearId|null}; powerLevel?:number; }
@@ -51,7 +51,7 @@ function spawn(index:number,team:number,map:MapDefinition):[number,number]{
   }
   return map.spawn[team===1?1:0][index%3];
 }
-function makeFighter(slot:Slot,index:number,map:MapDefinition):Fighter{const [x,z]=spawn(index,slot.team,map),c=characterById(slot.character),choice=slot.loadout,options=loadoutOptions[c.id as CharacterId];const valid=choice&&validLoadout(c.id,choice.skill,choice.passive);return {id:slot.id,name:slot.name.slice(0,24),character:c.id,team:slot.team,bot:slot.bot,dummy:slot.dummy,modelOwner:slot.modelOwner,skinChoice:slot.skinChoice,skillChoice:valid?choice.skill:options.skills[0].id,passiveChoice:(slot.powerLevel||1)>=9?(valid?choice.passive:options.passives[0].id):'',powerLevel:Math.max(1,Math.min(11,Math.floor(slot.powerLevel||1))),gear1:(slot.powerLevel||1)>=8?choice?.gear1||null:null,gear2:(slot.powerLevel||1)>=10?choice?.gear2||null:null,overdriveCharge:0,overdriveTime:0,bonusAttack:0,evasion:0,burn:0,x,z,vx:0,vz:0,ax:slot.team===1?-1:1,az:0,hp:Math.round(c.maxHp*powerMultiplier(slot.powerLevel||1)),ammo:c.ammo,reloadAt:0,attackAt:0,skillAt:0,ultimate:0,koAt:0,invulnerable:1,shield:0,slow:0,invisible:0,rapid:0,speedBoost:0,defense:0,hitChain:0,regenChain:0,lastCombat:0,kills:0,damage:0,healed:0,received:0,objective:0};}
+function makeFighter(slot:Slot,index:number,map:MapDefinition):Fighter{const [x,z]=spawn(index,slot.team,map),c=characterById(slot.character),choice=slot.loadout,options=loadoutOptions[c.id as CharacterId];const valid=choice&&validLoadout(c.id,choice.skill,choice.passive);return {id:slot.id,name:slot.name.slice(0,24),character:c.id,team:slot.team,bot:slot.bot,dummy:slot.dummy,modelOwner:slot.modelOwner,skinChoice:slot.skinChoice,skillChoice:valid?choice.skill:options.skills[0].id,passiveChoice:(slot.powerLevel||1)>=9?(valid?choice.passive:options.passives[0].id):'',powerLevel:Math.max(1,Math.min(11,Math.floor(slot.powerLevel||1))),gear1:(slot.powerLevel||1)>=8?choice?.gear1||null:null,gear2:(slot.powerLevel||1)>=10?choice?.gear2||null:null,overdriveCharge:0,overdriveTime:0,chargeTicks:0,warningAngle:0,attackAnimAt:-1000,attackAnimLength:.63,lastChargeFull:false,ultimateAnimAt:-1000,bonusAttack:0,evasion:0,burn:0,x,z,vx:0,vz:0,ax:slot.team===1?-1:1,az:0,hp:Math.round(c.maxHp*powerMultiplier(slot.powerLevel||1)),ammo:c.ammo,reloadAt:0,attackAt:0,skillAt:0,ultimate:0,koAt:0,invulnerable:1,shield:0,slow:0,invisible:0,rapid:0,speedBoost:0,defense:0,hitChain:0,regenChain:0,lastCombat:0,kills:0,damage:0,healed:0,received:0,objective:0};}
 export function createGame(options:{mode?:Mode;map?:string;difficulty?:Difficulty;shift?:boolean;slots?:Slot[];size?:number;training?:boolean}={}):GameState{
   const mode=options.mode||'core';
   const size=mode==='duel'?1:mode==='survival'||mode==='ffa'?5:options.size===5?5:3;
@@ -87,6 +87,24 @@ function damage(g:GameState,source:Fighter|undefined,target:Fighter,raw:number,p
   if(target.hp===0){target.koAt=g.tick;target.invulnerable=0;event(g,'ko',target.x,target.z,undefined,target.team);if(source){source.kills++;if(c?.id==='jin')source.skillAt=Math.max(g.tick,source.skillAt-90);if(g.mode==='deathmatch'||g.mode==='duel')g.score[source.team as 0|1]++;if(g.mode==='ffa'&&source.kills>=10)g.winner=source.team;}if(g.mode==='survival'){const alive=g.players.filter(p=>p.hp>0);if(alive.length<=1)g.winner=alive[0]?.team??0;}}
   else if(target.passiveChoice==='guard_after_hit')target.defense=1.8;
 }
+export const HOUKOU_MAX_CHARGE_TICKS=25;
+function fireHoukou(g:GameState,p:Fighter){
+  if(g.tick<p.attackAt||p.hp<=0){p.chargeTicks=0;return;}
+  const a=characterById('houkou').attack,full=p.chargeTicks>=HOUKOU_MAX_CHARGE_TICKS;
+  const angle=full?p.warningAngle:Math.atan2(p.az,p.ax),dx=Math.cos(angle),dz=Math.sin(angle);
+  p.ax=dx;p.az=dz;p.attackAt=g.tick+30;p.lastCombat=g.tick;p.regenChain=0;p.invulnerable=0;
+  p.lastChargeFull=full;p.attackAnimAt=g.tick;
+  p.attackAnimLength=full&&(g.tick+p.id.length)%2===0?.83:.63;
+  event(g,'attack',p.x,p.z,undefined,p.team,p.id);
+  for(const t of g.players){
+    if(t.team===p.team||t.hp<=0)continue;
+    const rx=t.x-p.x,rz=t.z-p.z,forward=rx*dx+rz*dz;
+    if(forward>0&&forward<a.range&&Math.abs(-rx*dz+rz*dx)<(full?.85:1.15)&&lineClear(g.map,p,t))
+      damage(g,p,t,a.damage*(full?1.5:1),2,dx,dz);
+  }
+  if(full)addEffect(g,'houkou-cut',p,p.x+dx*1.7,p.z+dz*1.7,2.5,.20);
+  p.chargeTicks=0;
+}
 function fire(g:GameState,p:Fighter,ax:number,az:number,aimDistance=1){const c=characterById(p.character),a=c.attack;if(g.tick<p.attackAt||p.ammo<a.ammoCost||p.hp<=0)return;const [dx,dz]=norm(ax,az);p.ax=dx;p.az=dz;p.ammo-=a.ammoCost;p.attackAt=g.tick+Math.round(a.cooldown*(p.rapid>0?.48:1)*30);p.reloadAt=Math.max(p.reloadAt,g.tick+Math.round(c.reload*30));p.lastCombat=g.tick;p.regenChain=0;p.invulnerable=0;event(g,'attack',p.x,p.z,undefined,p.team,p.id);
   if(a.kind==='melee'){for(const target of g.players){if(target.team===p.team||target.hp<=0)continue;const rx=target.x-p.x,rz=target.z-p.z,d=length(rx,rz);if(d<a.range&&rx*dx+rz*dz>d*.45&&lineClear(g.map,p,target))damage(g,p,target,a.damage,2,dx,dz);}return;}
   if(a.kind==='lob'){
@@ -114,7 +132,7 @@ function fire(g:GameState,p:Fighter,ax:number,az:number,aimDistance=1){const c=c
   }
 }
 function addEffect(g:GameState,kind:string,p:Fighter,x:number,z:number,radius:number,life:number,damageValue=0){if(g.effects.length>=45)return;g.effects.push({id:g.nextId++,kind,x,z,radius,life,team:p.team,owner:p.id,damage:damageValue});event(g,kind,x,z,undefined,p.team);}
-function ultimate(g:GameState,p:Fighter,ax:number,az:number){if(p.ultimate<100||p.hp<=0)return;const c=characterById(p.character),[dx,dz]=norm(ax,az);p.ultimate=0;p.lastCombat=g.tick;p.regenChain=0;p.invulnerable=0;event(g,'ultimate',p.x,p.z,undefined,p.team,p.id);switch(c.ultimate.kind){
+function ultimate(g:GameState,p:Fighter,ax:number,az:number){if(p.ultimate<100||p.hp<=0)return;const c=characterById(p.character),[dx,dz]=norm(ax,az);p.ultimate=0;p.lastCombat=g.tick;p.regenChain=0;p.invulnerable=0;if(p.character==='houkou')p.ultimateAnimAt=g.tick;event(g,'ultimate',p.x,p.z,undefined,p.team,p.id);switch(c.ultimate.kind){
   case 'rapid':p.rapid=6;break;
   case 'shockwave':for(const t of g.players)if(t.team!==p.team&&distance(p,t)<4.2)damage(g,p,t,c.ultimate.baseDamage??1600,7,(t.x-p.x)/4,(t.z-p.z)/4);addEffect(g,'shockwave',p,p.x,p.z,4.2,.45);break;
   case 'assassinate':{const targets=g.players.filter(t=>t.team!==p.team&&t.hp>0&&distance(t,p)<8&&lineClear(g.map,p,t)).sort((a,b)=>distance(a,p)-distance(b,p));const t=targets[0];if(t){const x=t.x-dx*.8,z=t.z-dz*.8;if(!solidAt(g.map,x,z)){p.x=x;p.z=z;}damage(g,p,t,c.ultimate.baseDamage??1750,3,dx,dz);}break;}
@@ -122,6 +140,14 @@ function ultimate(g:GameState,p:Fighter,ax:number,az:number){if(p.ultimate<100||
   case 'megabomb':addEffect(g,'bomb',p,clamp(p.x+dx*5,1,g.map.width-1),clamp(p.z+dz*5,1,g.map.height-1),3.3,1,c.ultimate.baseDamage??1800);break;
   case 'timefield':addEffect(g,'slowfield',p,clamp(p.x+dx*5,1,g.map.width-1),clamp(p.z+dz*5,1,g.map.height-1),3.5,5);break;
   case 'clones':for(let i=0;i<3;i++)addEffect(g,'clone',p,p.x+Math.cos(i*2.1)*1.4,p.z+Math.sin(i*2.1)*1.4,.7,6,c.ultimate.fixedDamage??220);break;
+  case 'houkou_slash':{
+    const speed=13.5;
+    g.bullets.push({id:g.nextId++,kind:'houkou-slash',owner:p.id,team:p.team,
+      x:p.x+dx*.75,z:p.z+dz*.75,vx:dx*speed,vz:dz*speed,
+      damage:c.ultimate.baseDamage??1950,radius:1.95,life:11/speed,
+      splash:0,pierce:0,lob:false,hitIds:[]});
+    break;
+  }
   case 'icewall':{const x=clamp(p.x+dx*3,1,g.map.width-1),z=clamp(p.z+dz*3,1,g.map.height-1);g.map.walls.push({id:`ice-${g.nextId++}`,x,z,w:Math.abs(dx)>.7?1:3,h:Math.abs(dx)>.7?3:1,hp:1800,kind:'ice'});relocateBlocked(g);break;}
 }}
 function skill(g:GameState,p:Fighter,ax:number,az:number){if(p.powerLevel<7)return;const c=characterById(p.character),chosen=loadoutOptions[c.id as CharacterId].skills.find(s=>s.id===p.skillChoice)||loadoutOptions[c.id as CharacterId].skills[0];if(p.hp<=0||g.tick<p.skillAt)return;const [dx,dz]=norm(ax,az);p.skillAt=g.tick+Math.round(chosen.cooldown*30);p.lastCombat=g.tick;p.regenChain=0;p.invulnerable=0;event(g,'skill',p.x,p.z,undefined,p.team,p.id);if(p.passiveChoice==='evasion')p.evasion=2;switch(chosen.kind){
@@ -160,6 +186,19 @@ function updateBullets(g:GameState){
       return false;
     }
     b.x+=b.vx*DT;b.z+=b.vz*DT;
+    if(b.kind==='houkou-slash'){
+      const len=length(b.vx,b.vz)||1,dx=b.vx/len,dz=b.vz/len;
+      for(const target of g.players){
+        if(target.hp<=0||target.team===b.team||b.hitIds?.includes(target.id))continue;
+        const rx=target.x-b.x,rz=target.z-b.z;
+        const along=rx*dx+rz*dz,lateral=Math.abs(rx*dz-rz*dx);
+        if(along>=-1.05&&along<=1.05&&lateral>=.6&&lateral<=2){
+          damage(g,g.players.find(p=>p.id===b.owner),target,b.damage,1.5,dx,dz);
+          b.hitIds?.push(target.id);
+        }
+      }
+      return b.life>0&&b.x>0&&b.z>0&&b.x<g.map.width&&b.z<g.map.height;
+    }
     const wall=g.map.walls.find(w=>wallCollides(b.x,b.z,w,b.radius));
     if(wall){
       if(wall.hp>0){wall.hp-=b.damage;if(wall.hp<=0){g.map.walls=g.map.walls.filter(v=>v!==wall);event(g,'break',wall.x,wall.z);}}
@@ -220,9 +259,19 @@ export function findAutoAimTarget(g:GameState,p:Fighter,forUltimate=false):[numb
 function move(g:GameState,p:Fighter,input:Input){if(p.hp<=0)return;const c=characterById(p.character),
   overdriveReady=p.powerLevel>=11&&p.overdriveCharge>=100&&p.overdriveTime<=0;
   if(input.overdrive&&overdriveReady){p.overdriveTime=6;p.overdriveCharge=0;event(g,'overdrive',p.x,p.z,undefined,p.team,p.id);}
-  const[dx,dz]=length(input.mx,input.mz)>1?norm(input.mx,input.mz):[input.mx,input.mz];const speed=c.moveSpeed*(p.gear1==='sun_stride'||p.gear2==='sun_stride'?1.05:1)*(p.overdriveTime>0?1.14:1)*(p.slow>0?.58:1)*(p.speedBoost>0?1.22:1)*(g.map.zones.some(z=>z.kind==='speed'&&inZone(p,z))?1.25:1);p.vx=dx*speed;p.vz=dz*speed;const nx=p.x+p.vx*DT,nz=p.z+p.vz*DT;if(!solidAt(g.map,nx,p.z))p.x=nx;if(!solidAt(g.map,p.x,nz))p.z=nz;const [ax,az]=norm(input.ax,input.az);if(length(input.ax,input.az)>.1){p.ax=ax;p.az=az;}if(input.attack){
+  const[dx,dz]=length(input.mx,input.mz)>1?norm(input.mx,input.mz):[input.mx,input.mz];const speed=c.moveSpeed*(p.gear1==='sun_stride'||p.gear2==='sun_stride'?1.05:1)*(p.overdriveTime>0?1.14:1)*(p.slow>0?.58:1)*(p.speedBoost>0?1.22:1)*(g.map.zones.some(z=>z.kind==='speed'&&inZone(p,z))?1.25:1);p.vx=dx*speed;p.vz=dz*speed;const nx=p.x+p.vx*DT,nz=p.z+p.vz*DT;if(!solidAt(g.map,nx,p.z))p.x=nx;if(!solidAt(g.map,p.x,nz))p.z=nz;const [ax,az]=norm(input.ax,input.az);if(length(input.ax,input.az)>.1){p.ax=ax;p.az=az;}if(p.character==='houkou'){
+    if(input.attackHeld&&g.tick>=p.attackAt){
+      p.chargeTicks=Math.min(60,p.chargeTicks+1);
+      if(p.chargeTicks>=HOUKOU_MAX_CHARGE_TICKS){
+        const spin=(p.chargeTicks-HOUKOU_MAX_CHARGE_TICKS)%24/24*Math.PI*2;
+        p.warningAngle=Math.atan2(p.az,p.ax)+Math.PI/9+spin;
+      }
+    }else if(!input.attack)p.chargeTicks=0;
+  }
+  if(input.attack){
     if(input.autoAim){const direction=findAutoAimTarget(g,p);if(direction){p.ax=direction[0];p.az=direction[1];}}
-    fire(g,p,p.ax,p.az,input.autoAim?1:input.aimDistance);
+    if(p.character==='houkou')fireHoukou(g,p);
+    else fire(g,p,p.ax,p.az,input.autoAim?1:input.aimDistance);
   }
   if(input.ultimate){
     if(input.autoUltimate){const direction=findAutoAimTarget(g,p,true);if(direction){p.ax=direction[0];p.az=direction[1];}}
@@ -235,9 +284,9 @@ function move(g:GameState,p:Fighter,input:Input){if(p.hp<=0)return;const c=chara
     p.regenChain=Math.min(5,p.regenChain+1);
   }for(const z of g.map.zones)if(inZone(p,z)){if(z.kind==='heal'&&g.tick%30===0)heal(g,p,150);if(z.kind==='danger'&&g.tick%30===0)damage(g,undefined,p,250);if(z.kind==='conveyor')p.x=clamp(p.x+(p.team===0?.03:-.03),.5,g.map.width-.5);}if(p.burn>0&&g.tick%30===0)damage(g,undefined,p,90);p.invulnerable=Math.max(0,p.invulnerable-DT);p.slow=Math.max(0,p.slow-DT);p.invisible=Math.max(0,p.invisible-DT);p.rapid=Math.max(0,p.rapid-DT);p.speedBoost=Math.max(0,p.speedBoost-DT);p.defense=Math.max(0,p.defense-DT);p.evasion=Math.max(0,p.evasion-DT);p.burn=Math.max(0,p.burn-DT);p.overdriveTime=Math.max(0,p.overdriveTime-DT);}
 export function stepGame(g:GameState,inputs:Record<string,Input>={}){if(g.winner!==null&&!g.training)return g;g.tick++;g.time=g.training?180:Math.max(0,g.time-DT);g.events=[];if(g.shiftEnabled&&g.tick>=30*27&&g.tick%900===810){g.shiftWarning=true;event(g,'shift-warning',g.map.goal[0],g.map.goal[1]);}if(g.shiftEnabled&&g.tick>=900&&g.tick%900===0)shift(g);updateTerminal(g);
-  for(const p of g.players){if(p.hp<=0){if(g.mode!=='survival'&&g.tick-p.koAt>=90){const c=characterById(p.character);[p.x,p.z]=nearestFree(g,...spawn(g.players.indexOf(p),p.team,g.map));p.hp=fighterMaxHp(p);p.ammo=c.ammo;p.invulnerable=1;p.koAt=0;event(g,'respawn',p.x,p.z,undefined,p.team);}continue;}const input=p.dummy==='static'||p.dummy==='invincible'?neutral:p.dummy==='moving'?{...neutral,mx:Math.sin(g.tick/35),mz:Math.cos(g.tick/35)}:p.bot?botInput(g,p):sanitizeInput(inputs[p.id]);move(g,p,input);}
+  for(const p of g.players){if(p.hp<=0){if(g.mode!=='survival'&&g.tick-p.koAt>=90){const c=characterById(p.character);[p.x,p.z]=nearestFree(g,...spawn(g.players.indexOf(p),p.team,g.map));p.hp=fighterMaxHp(p);p.ammo=c.ammo;p.chargeTicks=0;p.invulnerable=1;p.koAt=0;event(g,'respawn',p.x,p.z,undefined,p.team);}continue;}const input=p.dummy==='static'||p.dummy==='invincible'?neutral:p.dummy==='moving'?{...neutral,mx:Math.sin(g.tick/35),mz:Math.cos(g.tick/35)}:p.bot?botInput(g,p):sanitizeInput(inputs[p.id]);move(g,p,input);}
   updateBullets(g);updateEffects(g);if(!g.training)scoreMode(g);else if(g.trainingStats){const own=g.players.find(p=>!p.bot&&p.team===0);for(const e of g.events)if(e.owner===own?.id){if(e.kind==='attack')g.trainingStats.attacks++;if(e.kind==='hit'){g.trainingStats.hits++;g.trainingStats.lastDamage=e.value||0;g.trainingStats.recentDamage.push({tick:g.tick,value:e.value||0});}}g.trainingStats.recentDamage=g.trainingStats.recentDamage.filter(e=>g.tick-e.tick<30);}return g;}
-export function sanitizeInput(input:unknown):Input{const i=(input&&typeof input==='object'?input:{}) as Record<string,unknown>;const number=(v:unknown)=>typeof v==='number'&&Number.isFinite(v)?clamp(v,-1,1):0;const [mx,mz]=length(number(i.mx),number(i.mz))>1?norm(number(i.mx),number(i.mz)):[number(i.mx),number(i.mz)];return {mx,mz,ax:number(i.ax),az:number(i.az),attack:i.attack===true,ultimate:i.ultimate===true,skill:i.skill===true,autoAim:i.autoAim===true,autoUltimate:i.autoUltimate===true,overdrive:i.overdrive===true,aimDistance:typeof i.aimDistance==='number'&&Number.isFinite(i.aimDistance)?clamp(i.aimDistance,.12,1):1};}
+export function sanitizeInput(input:unknown):Input{const i=(input&&typeof input==='object'?input:{}) as Record<string,unknown>;const number=(v:unknown)=>typeof v==='number'&&Number.isFinite(v)?clamp(v,-1,1):0;const [mx,mz]=length(number(i.mx),number(i.mz))>1?norm(number(i.mx),number(i.mz)):[number(i.mx),number(i.mz)];return {mx,mz,ax:number(i.ax),az:number(i.az),attack:i.attack===true,attackHeld:i.attackHeld===true,ultimate:i.ultimate===true,skill:i.skill===true,autoAim:i.autoAim===true,autoUltimate:i.autoUltimate===true,overdrive:i.overdrive===true,aimDistance:typeof i.aimDistance==='number'&&Number.isFinite(i.aimDistance)?clamp(i.aimDistance,.12,1):1};}
 /** Cache bot routes for several ticks so large-map navigation stays responsive. */
 const navCache=new WeakMap<GameState,Map<string,{tick:number;targetX:number;targetZ:number;dx:number;dz:number}>>();
 function navDirection(g:GameState,p:Fighter,target:{x:number;z:number}):[number,number]{
@@ -292,7 +341,9 @@ function navDirection(g:GameState,p:Fighter,target:{x:number;z:number}):[number,
   return result;
 }
 export function botInput(g:GameState,p:Fighter):Input{const c=characterById(p.character),visible=g.players.filter(e=>e.team!==p.team&&e.hp>0&&(e.invisible<=0||distance(p,e)<2.5)&&(!g.map.zones.some(z=>z.kind==='bush'&&inZone(e,z))||distance(p,e)<4));visible.sort((a,b)=>distance(p,a)-distance(p,b));const enemy=visible[0];let target:{x:number;z:number}=enemy||{x:g.map.goal[0],z:g.map.goal[1]};if(g.mode==='core'&&(!enemy||distance(p,enemy)>c.attack.range*.8))target={x:g.map.goal[0],z:g.map.goal[1]};if(g.mode==='payload')target={x:3+(g.map.width-6)*g.payload/100,z:g.map.goal[1]};if(c.role==='support'&&p.hp<fighterMaxHp(p)*.5){const ally=g.players.filter(a=>a.team===p.team&&a.id!==p.id&&a.hp>0).sort((a,b)=>distance(a,p)-distance(b,p))[0];if(ally)target=ally;}if(enemy&&p.hp<fighterMaxHp(p)*.3)target={x:clamp(p.x-(enemy.x-p.x),1,g.map.width-1),z:clamp(p.z-(enemy.z-p.z),1,g.map.height-1)};
-  const [mx,mz]=navDirection(g,p,target),[ax,az]=enemy?norm(enemy.x-p.x,enemy.z-p.z):[p.ax,p.az];const d=enemy?distance(p,enemy):99;const line=enemy&&lineClear(g.map,p,enemy);const level={easy:0,normal:1,hard:2,expert:3}[g.difficulty];const ready=g.tick%(level===0?24:level===1?12:level===2?6:3)===0;const attack=!!enemy&&!!line&&d<c.attack.range&&ready;return {mx:enemy&&d<c.attack.range*.65?0:mx,mz:enemy&&d<c.attack.range*.65?0:mz,ax,az,attack,ultimate:!!enemy&&p.ultimate>=100&&d<7,skill:!!enemy&&g.tick>=p.skillAt&&(p.hp<c.maxHp*.55||d<4)};}
+  const [mx,mz]=navDirection(g,p,target),[ax,az]=enemy?norm(enemy.x-p.x,enemy.z-p.z):[p.ax,p.az];const d=enemy?distance(p,enemy):99;const line=enemy&&lineClear(g.map,p,enemy);const level={easy:0,normal:1,hard:2,expert:3}[g.difficulty];const ready=g.tick%(level===0?24:level===1?12:level===2?6:3)===0;const attack=!!enemy&&!!line&&d<c.attack.range&&ready;
+  const charging=p.character==='houkou'&&!!enemy&&!!line&&d<c.attack.range&&g.tick>=p.attackAt;
+  return {mx:enemy&&d<c.attack.range*.65?0:mx,mz:enemy&&d<c.attack.range*.65?0:mz,ax,az,attack:charging?p.chargeTicks>=HOUKOU_MAX_CHARGE_TICKS:attack,attackHeld:charging&&p.chargeTicks<HOUKOU_MAX_CHARGE_TICKS,ultimate:!!enemy&&p.ultimate>=100&&d<7,skill:!!enemy&&g.tick>=p.skillAt&&(p.hp<c.maxHp*.55||d<4)};}
 
 export type TrainingAction='heal'|'ultimate'|'cooldowns'|'ammo'|'add_cpu'|'remove_cpu'|'add_static'|'add_moving'|'add_attacking'|'add_invincible'|'remove_dummy'|'shift'|'reset';
 export function trainingAction(g:GameState,playerId:string,action:TrainingAction){if(!g.training)return false;const p=g.players.find(v=>v.id===playerId);if(!p)return false;switch(action){

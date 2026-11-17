@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { characterById, characterRoad, characters, loadoutOptions, masteryAchievements, masteryLevel, masteryRewards, masteryThreshold, missionDefs,rarityInfo,gearOptions,powerLevel,type CharacterId } from '@shift/shared';
+import { characterById, characterRoad, characters, loadoutOptions, masteryAchievements, masteryLevel, masteryRewards, masteryThreshold, missionDefs,rarityInfo,roadRerollCost,gearOptions,powerLevel,type CharacterId } from '@shift/shared';
 import { CharacterPreview } from './character-preview';
 
 export interface ShiftProfile {
@@ -13,13 +13,32 @@ const errorText=(error:unknown)=>error instanceof Error?error.message:'通信に
 
 export function RoadPage({profile,request,refresh,onBack,onTry}:{profile:ShiftProfile;request:Request;refresh:()=>Promise<void>;onBack:()=>void;onTry:(id:string)=>void}){
   const [selected,setSelected]=useState(profile.road_target||profile.road_tier[0]||'rei');
-  const [message,setMessage]=useState('');const [unlocked,setUnlocked]=useState<string|null>(null);
+  const [message,setMessage]=useState(''),[rolling,setRolling]=useState(false);const [unlocked,setUnlocked]=useState<string|null>(null);
   useEffect(()=>{if(!profile.road_tier.includes(selected))setSelected(profile.road_target||profile.road_tier[0]||'rei');},[profile.road_target,profile.road_tier.join(',')]);
   const c=characterById(selected),road=characterRoad[selected as CharacterId],complete=profile.road_tier.length===0;
   async function choose(id:string){try{await request('/road/target',{character:id});setSelected(id);await refresh();setMessage('獲得目標を変更しました。');}catch(error){setMessage(errorText(error));}}
   async function unlock(){try{const result=await request<{character:string}>('/road/unlock',{});setUnlocked(result.character);await refresh();setMessage('');}catch(error){setMessage(errorText(error));}}
+  const offerRarity=(characterRoad[profile.road_target as CharacterId]||characterRoad.gald).rarity;
+  const rollCost=roadRerollCost(offerRarity);
+  const candidates=Object.keys(characterRoad).filter(id=>id!=='rei'&&!profile.owned_characters.includes(id));
+  async function reroll(){
+    if(!window.confirm(rollCost+' クレジットでキャラロード候補を再抽選しますか？'))return;
+    setRolling(true);setMessage('');
+    try{
+      const result=await request<{character:string;rarity:string;cost:number}>('/road/reroll',{});
+      setSelected(result.character);await refresh();
+      setMessage(result.cost+' クレジットを消費して '+characterById(result.character).name+' が新しい目標になりました。');
+    }catch(e){setMessage(errorText(e));}finally{setRolling(false);}
+  }
   return <main className="feature-page"><div className="feature-heading"><button onClick={onBack}>← 戻る</button><div><small>CHARACTER ROAD</small><h1>キャラロード</h1></div><strong>クレジット {profile.credits} · 名声 {profile.prestige}</strong></div>
-    {complete?<section className="feature-card"><h2>全キャラクター獲得！</h2><p>これから獲得したクレジットは名声ポイントに変わります。</p></section>:<><p>同じレア度の中から次に獲得するキャラクターを選べます。目標を変更してもクレジットは減りません。</p><div className="road-grid">{profile.road_tier.map(id=>{const item=characterById(id);return <button key={id} className={`road-tile ${selected===id?'selected':''}`} onClick={()=>choose(id)}><span className="preview-token" style={{background:`#${item.color.toString(16)}`}}>◆</span><b>{item.name}</b><small className="rarity-label" style={{color:rarityInfo[characterRoad[id as CharacterId].rarity].color}}>{rarityInfo[characterRoad[id as CharacterId].rarity].name}</small></button>})}</div><section className="feature-card detail-card"><div className="preview-stage"><CharacterPreview id={selected}/></div><div><small style={{color:rarityInfo[road.rarity].color}}>{rarityInfo[road.rarity].name}</small><h2>{c.name}</h2><p>HP {c.maxHp} · 通常攻撃 {c.attack.damage} · 必殺技 {c.ultimate.label}</p><p>特殊スキル {loadoutOptions[c.id as CharacterId].skills[0].label} · パッシブ {loadoutOptions[c.id as CharacterId].passives[0].label}</p><div className="meter road-progress"><i style={{width:`${Math.min(100,profile.credits/road.cost*100)}%`}}/></div><p>{profile.credits} / {road.cost} クレジット</p><div className="feature-actions"><button onClick={()=>onTry(selected)}>トレーニングで試す</button><button className="primary" disabled={profile.credits<road.cost||selected!==profile.road_target} onClick={unlock}>アンロック</button></div></div></section></>}
+    {complete?<section className="feature-card"><h2>全キャラクター獲得！</h2><p>これから獲得したクレジットは名声ポイントに変わります。</p></section>:<><p>同じ段階の候補は無料で変更できます。全ランクから新しいキャラを引くにはクレジットを消費します。</p>
+    <section className="feature-card">
+      <h3>キャラロード候補を再抽選</h3>
+      <p>現在の候補：{rarityInfo[offerRarity].name} / 再抽選費用：<strong>{rollCost} クレジット</strong></p>
+      <div className="rarity-odds">{(Object.entries(rarityInfo) as [keyof typeof rarityInfo,{name:string;color:string;weight:number}][]).filter(([rarity])=>rarity!=='STARTER').map(([rarity,info])=><span key={rarity} style={{color:info.color}}>{info.name} {info.weight}%　</span>)}</div>
+      <small>10人サバイバル初優勝報酬と同じレア度確率を使用します。未所持候補がないレア度は除外して再配分します。現在の候補は出ません。</small>
+      <div className="feature-actions"><button disabled={rolling||candidates.length<2||profile.credits<rollCost} onClick={()=>void reroll()}>{rolling?'抽選中…':rollCost+' クレジットで再抽選'}</button></div>
+    </section><div className="road-grid">{profile.road_tier.map(id=>{const item=characterById(id);return <button key={id} className={`road-tile ${selected===id?'selected':''}`} onClick={()=>choose(id)}><span className="preview-token" style={{background:`#${item.color.toString(16)}`}}>◆</span><b>{item.name}</b><small className="rarity-label" style={{color:rarityInfo[characterRoad[id as CharacterId].rarity].color}}>{rarityInfo[characterRoad[id as CharacterId].rarity].name}</small></button>})}</div><section className="feature-card detail-card"><div className="preview-stage"><CharacterPreview id={selected}/></div><div><small style={{color:rarityInfo[road.rarity].color}}>{rarityInfo[road.rarity].name}</small><h2>{c.name}</h2><p>HP {c.maxHp} · 通常攻撃 {c.attack.damage} · 必殺技 {c.ultimate.label}</p><p>特殊スキル {loadoutOptions[c.id as CharacterId].skills[0].label} · パッシブ {loadoutOptions[c.id as CharacterId].passives[0].label}</p><div className="meter road-progress"><i style={{width:`${Math.min(100,profile.credits/road.cost*100)}%`}}/></div><p>{profile.credits} / {road.cost} クレジット</p><div className="feature-actions"><button onClick={()=>onTry(selected)}>トレーニングで試す</button><button className="primary" disabled={profile.credits<road.cost||selected!==profile.road_target} onClick={unlock}>アンロック</button></div></div></section></>}
     {message&&<p role="status">{message}</p>}{unlocked&&<div className="unlock-overlay"><div className="unlock-gate"><div className="gate-ring"/><div className="unlock-preview"><CharacterPreview id={unlocked}/></div><small style={{color:rarityInfo[characterRoad[unlocked as CharacterId].rarity].color}}>{rarityInfo[characterRoad[unlocked as CharacterId].rarity].name}</small><h2>{characterById(unlocked).name}</h2><strong>新キャラクター獲得！</strong><button onClick={()=>setUnlocked(null)}>閉じる / スキップ</button></div></div>}
   </main>;
 }

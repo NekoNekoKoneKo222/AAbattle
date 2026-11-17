@@ -54,7 +54,7 @@ export function CharacterPreview({id,skin}:{id:string;skin?:'skin'|'master_skin'
     };
     draw();
     return()=>{
-      alive=false;cancelAnimationFrame(frame);observer?.disconnect();
+      alive=false;hero.userData.disposed=true;cancelAnimationFrame(frame);observer?.disconnect();
       scene.traverse(object=>{
         if(object instanceof THREE.Mesh){
           object.geometry.dispose();

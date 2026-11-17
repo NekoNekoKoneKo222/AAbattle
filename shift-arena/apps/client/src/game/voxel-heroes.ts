@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {attachHoukouModel} from './houkou-mesh';
 
 /**
  * Shared, original, Blockbench-inspired low-poly hero visuals.
@@ -67,12 +68,14 @@ export function createVoxelHero(id: string, skin?: Skin, lightweight = false): T
       chrono:[0x6243af,0x7657bf,0x303454,SKIN],
       noise:[0x3a97c5,0x3f9cc8,0x343956,SKIN],
       frost:[0x98bfe8,0xb8d8fc,0x7786b0,SKIN],
+      houkou:[0x666874,0x42474c,0x2c2d35,0xece9e5],
     };
     const [body,sleeves,pants,head]=palette[id]||palette.rei;
     p=shell(group,outfit(body),outfit(sleeves),pants,head,id==='gald'?1.2:1);
     face(group);
     cube(group,[.65,.18,.60],[0,2.08,0],outfit(body),'headgear');
     group.userData.voxelParts=p;
+    if(id==='houkou')attachHoukouModel(group);
     return group;
   }
   switch (id) {
@@ -149,6 +152,12 @@ export function createVoxelHero(id: string, skin?: Skin, lightweight = false): T
       staff(p, 0x8baccd, 0x6ddfff);
       cube(p.rightArm, [.20, .30, .20], [0, .66, .33], 0xc8f9ff, 'ice_spire');
       break;
+    case 'houkou':
+      p=shell(group,outfit(0x34333c),outfit(0x454955),0x1f2029,0xece7e5,1.07);
+      cube(group,[.76,.20,.73],[0,2.12,0],0x24242d,'houkou-hood');
+      face(group);
+      rightHandItem(p,0x353238,0xf1e2e0);
+      break;
     default: // Rei: the starter ranged hero.
       p = shell(group, outfit(0x277ad6), outfit(0x2265b3), 0x333b55, SKIN, 1);
       cube(group, [.79, .26, .72], [0, 2.1, -.01], 0x262c43, 'black_hair');
@@ -161,6 +170,7 @@ export function createVoxelHero(id: string, skin?: Skin, lightweight = false): T
       break;
   }
   group.userData.voxelParts = p;
+  if(id==='houkou')attachHoukouModel(group);
   return group;
 }
 
@@ -179,6 +189,7 @@ export function poseVoxelHero(group: THREE.Group, time: number, speed: number, a
 
 /** Prevent GPU resource leaks when a character changes skin or leaves the match. */
 export function disposeVoxelHero(group: THREE.Group): void {
+  group.userData.disposed=true;
   group.traverse(object => {
     if (!(object instanceof THREE.Mesh)) return;
     object.geometry.dispose();
