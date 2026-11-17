@@ -55,6 +55,12 @@
           <button id="createBtn" class="btn primary"><span>新しい部屋を作成</span><b>＋</b></button>
           <button id="joinBtn" class="btn secondary">コードで参加 <span>→</span></button>
         </div>
+        <label class="spra-mode-label">対戦ルールを選択
+          <select id="matchMode" class="spra-mode-select">
+            <option value="turf">ナワバリバトル（塗り面積）</option>
+            <option value="ko">KOバトル（20KO先取）</option>
+          </select>
+        </label>
         <div class="smallnote">人数不足の場合は試合開始時にCPUで最大4対4まで自動補充します。</div>
         <button id="joinBackCity" class="pixel-back">◀ 街に戻る</button>
       </section>
@@ -73,6 +79,14 @@
           <div id="roomWeaponList" class="weapon-list"></div>
           <button id="roomShopBtn" class="pixel-back">▤ ブキを変更・購入</button>
         </div>
+        <div class="spra-gear-section"><h3>スペシャルウェポン</h3><div id="specialSelect" class="spra-special-list"></div>
+          <span id="roomModeText" class="spra-mode-description">モード：ナワバリバトル</span>
+          <select id="roomMode" class="spra-mode-select" aria-label="対戦ルール">
+            <option value="turf">ナワバリバトル</option>
+            <option value="ko">KOバトル</option>
+            <option value="training">トレーニング</option>
+          </select>
+        </div>
         <div class="action-row"><button id="startBtn" class="btn primary">試合開始 <span>▶</span></button><button id="botBtn" class="btn secondary">CPUを追加 ＋</button></div>
         <p id="hostNote" class="smallnote">ホストが試合を開始するまで待機してください。</p>
         <button id="roomBackCity" class="pixel-back">◀ 部屋を抜けて街に戻る</button>
@@ -87,21 +101,32 @@
         <div id="arenaFrame" class="arena-frame">
           <canvas id="gameCanvas" width="960" height="600" aria-label="超大型ドット絵バトルフィールド"></canvas>
           <div class="battle-minimap"><div>FULL MAP / 160×100</div><canvas id="miniMap" width="320" height="200" aria-label="塗り状況と位置のミニマップ"></canvas></div>
+          <div id="specialHud" class="spra-special-hud"><span id="specialName">SPECIAL</span>
+            <div class="special-progress"><span id="specialFill"></span></div>
+            <strong id="specialValue">0%</strong>
+            <span class="special-hint">Rで発動 / マップタップでスーパージャンプ</span>
+          </div>
           <div id="inkHud" class="ink-hud"><div class="ink-hud-title"><span id="inkStatus">INK TANK</span><strong id="inkCounter">300 / 300</strong></div><div class="ink-track"><span id="inkFill"></span></div><div id="inkRecovery" class="ink-recovery">自陣インクに潜ると高速回復！</div></div>
           <div class="corner-label top-left">SPRA FIELD <span>/ 01</span></div>
           <div class="corner-label bottom-right">TURF WAR <span>● LIVE</span></div>
           <div id="mobileControls" class="mobile-controls">
             <div id="joystick" class="joystick"><div id="thumb" class="thumb"></div></div>
-            <div class="touch-actions"><button id="swimTouch" class="touch-key">潜る<br>SWIM</button><button id="bombTouch" class="touch-key">ボム<br>Q</button><button id="fireTouch" class="touch-key shoot">SHOT</button></div>
+            <div class="touch-actions">
+              <button id="jumpTouch" class="touch-key">ジャンプ<br>MAP</button>
+              <button id="dodgeTouch" class="touch-key">回避<br>E</button>
+              <button id="specialTouch" class="touch-key spra-special-touch">SP<br>R</button>
+              <button id="swimTouch" class="touch-key">潜る<br>SWIM</button>
+              <button id="bombTouch" class="touch-key">サブ<br>Q</button>
+              <button id="fireTouch" class="touch-key shoot">SHOT</button></div>
           </div>
           <div id="result" class="result hidden"><div class="result-card"><span class="eyebrow">BATTLE FINISHED</span><h2 id="resultTitle">RESULT</h2><div id="resultScores"></div><button id="backLobbyBtn" class="btn primary">次の試合へ →</button><button id="leaveToCity" class="btn secondary">街へ戻る</button><p id="resultHint" class="smallnote">ホストが次の部屋を準備できます。</p></div></div>
         </div>
-        <div class="game-foot"><div class="stats"><span class="stats-name" id="myTeam">BLUE TEAM</span><span>HP <b id="myHp">100</b></span><span>INK <b id="myInk">300</b></span><span>KO <b id="myKo">0</b></span><span>ボム <b id="myBomb">READY</b></span></div><div class="control-hint">WASD 移動 / マウス 照準 / クリック 射撃 / Shift 自分のインクに潜伏＋ゲージ回復 / Q ボム投擲</div></div>
+        <div class="game-foot"><div class="stats"><span class="stats-name" id="myTeam">BLUE TEAM</span><span>HP <b id="myHp">100</b></span><span>INK <b id="myInk">300</b></span><span>KO <b id="myKo">0</b></span><span>ボム <b id="myBomb">READY</b></span></div><div class="control-hint">WASD 移動 / 左クリック 射撃（アスターガムは長押し→離す） / Shift 潜伏＋HP回復 / Q サブ / E 回避 / R スペシャル / ミニマップでジャンプ</div></div>
       </section>
 
       <section class="howto">
         <div><span>01 / PAINT</span><h3>インクで塗れ</h3><p>地面をチームカラーに塗り替えよう。広く塗ったチームが勝利。</p></div>
-        <div><span>02 / REFILL</span><h3>自陣で補充</h3><p>自分のインクの上では補充が速い。Shiftで潜るとさらに高速。</p></div>
+        <div><span>02 / REFILL</span><h3>潜伏＆回復</h3><p>自分の色で高速移動。潜伏でHPとインクを回復、敵色の上では減速。</p></div>
         <div><span>03 / WIN</span><h3>連携して制圧</h3><p>相手をKOしたら数秒で復活。前線を押し上げよう。</p></div>
       </section>
     </main>
