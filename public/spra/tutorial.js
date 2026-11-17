@@ -86,10 +86,12 @@ export function createSpraTutorial(canvas,{onComplete=()=>{},onSkip=()=>{}}={}){
   player.aim=angle;
   const dx=Math.cos(angle),dy=Math.sin(angle);
   let end={x:player.x,y:player.y};
+  let targetHit=false;
   for(let dist=.7;dist<21;dist+=.55){
     const x=player.x+dx*dist,y=player.y+dy*dist;
     if(solid(x,y))break;
     end={x,y};
+    if(Math.hypot(x-26,y-15)<1.5)targetHit=true;
   }
   for(let k=0;k<6;k++){
     const t=(k+1)/6;
@@ -97,7 +99,7 @@ export function createSpraTutorial(canvas,{onComplete=()=>{},onSkip=()=>{}}={}){
       player.y+dy*t*Math.min(14,Math.hypot(end.x-player.x,end.y-player.y)),.48);
   }
   paintSpot(end.x,end.y,1.4);
-  if(Math.hypot(end.x-26,end.y-15)<3.4){
+  if(targetHit){
     hitCount++;effects.push({type:'hit',time:clock,x:26,y:15});
   }
   shots.push({x:player.x,y:player.y,tx:end.x,ty:end.y,time:clock});
