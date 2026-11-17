@@ -699,7 +699,7 @@ function snapshot(room) {
   return { type: 'state', code: room.code, host: room.host, round: room.round, mode: room.mode, phase: room.state,
     remaining: Math.max(0, Math.ceil(SPRA_DURATION - room.elapsed)),
     scores: score(room), players: [...room.players.values()].map(pack),
-    changes: room.ink.flush(), paintScale: INK_SCALE, effects: room.effects.splice(0, 30),
+    changes: room.ink.flush(12000), paintScale: INK_SCALE, effects: room.effects.splice(0, 30),
     winner: room.winner, colors: COLORS,
     wallsInk: [...room.wallInk],
     specials: room.specials.map(o=>({id:o.id,kind:o.kind,team:o.team,
