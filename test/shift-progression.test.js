@@ -240,11 +240,11 @@ test('admin item grants require authenticated administrator identity and validat
   await store.getProfile(target);
   assert.equal(isShiftAdminUser(admin),true);
   assert.equal(isShiftAdminUser(forged),false);
-  await assert.rejects(store.adminGrant(forged,target,'coins',1000),/管理者権限/);
-  await assert.rejects(store.adminGrant(admin,target,'unknown',1000),/不正なアイテム/);
-  await assert.rejects(store.adminGrant(admin,target,'coins',-1),/数量/);
-  await assert.rejects(store.adminGrant(admin,target,'coins',1.2),/数量/);
-  await assert.rejects(store.adminGrant(admin,target,'coins',1e10),/数量/);
+  assert.throws(()=>store.adminGrant(forged,target,'coins',1000),/管理者権限/);
+  assert.throws(()=>store.adminGrant(admin,target,'unknown',1000),/不正なアイテム/);
+  assert.throws(()=>store.adminGrant(admin,target,'coins',-1),/数量/);
+  assert.throws(()=>store.adminGrant(admin,target,'coins',1.2),/数量/);
+  assert.throws(()=>store.adminGrant(admin,target,'coins',1e10),/数量/);
   await store.adminGrant(admin,target,'coins',1000);
   await store.adminGrant(admin,target,'credits',500);
   await store.adminGrant(admin,target,'sun_power',200);
