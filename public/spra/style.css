@@ -238,3 +238,9 @@ body{background-image:repeating-linear-gradient(0deg,#0e20320a 0px,#0e20320a 3px
  .touch-key{width:38px;height:39px;font-size:7px}
  .touch-key.shoot{width:56px;height:54px}
 }
+
+.facility-shortcuts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:16px}
+.facility-shortcuts button{background:#163348;border:2px solid #4f8393;color:#e6fff5;padding:11px 7px;font:inherit;font-size:11px;font-weight:900}
+.facility-shortcuts button:hover{background:#2a4d4b;border-color:#d6ff68;color:#f1ffaf}
+@media(max-width:650px){.facility-shortcuts{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .facility-shortcuts button{font-size:9px;padding:8px 4px}}
