@@ -70,10 +70,12 @@ test('Aster Gum: charge -> star projectile -> paint explosion; Q gravity balloon
   const sawProjectile=net.packets.some(p=>p.type==='state'&&p.gumShots?.length);
   assert.ok(sawProjectile);
   await net.waitFor(p=>p.type==='state'&&p.effects?.some(e=>e.type==='gum_pop'),5000);
+  const inkBeforeBubble=net.packets.filter(p=>p.type==='state'&&p.phase==='playing').at(-1)
+    .players.find(p=>p.id===welcome.id).ink;
   net.socket.send(JSON.stringify({type:'input',x:0,y:0,aim:0,fire:false,swim:false,bomb:true}));
   const balloon=await net.waitFor(p=>p.type==='state'&&p.specials?.some(x=>x.kind==='gravity_balloon'),3500);
   const after=balloon.players.find(x=>x.id===welcome.id);
-  assert.ok(after.ink <= SPRA_INK_MAX-225,'bubble consumes exactly 75% of total ink, plus any shot costs');
+  assert.ok(after.ink <= inkBeforeBubble-205,'bubble spends 225 ink, accounting for passive regeneration between snapshots');
   assert.ok(after.bombCd>=10);
   await net.waitFor(p=>p.type==='state'&&p.effects?.some(x=>x.type==='bubble_pop'),5500);
  }finally{await net.close();}
