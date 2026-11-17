@@ -3,6 +3,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { createInkSurface, INK_SCALE } from './spra-ink.js';
 import { SPRA_WEAPONS } from '../public/spra/weapons.js';
 import { SPRA_SPECIALS } from '../public/spra/specials.js';
+import { createSpraLeaderboard } from './spra-leaderboard.js';
 import { wallAt, isBlocked, wallCrossLanding, connectedInkLanding } from './spra-navigation.js';
 export { SPRA_WEAPONS };
 
@@ -37,7 +38,7 @@ function makeRoom(code) {
   return {
     code, host: null, state: 'lobby', ink: createInkSurface(SPRA_WIDTH, SPRA_HEIGHT, WALLS),
     players: new Map(), effects: [], bombs: [], specials: [], wallInk: new Uint8Array(WALLS.length), nextBomb: 0, nextSpecial: 0, round:0, elapsed: 0,
-    winner: -1, mode: 'turf', updatedAt: Date.now(), broadcastAt: 0, practice: false
+    winner: -1, mode: 'turf', rankSaved: false, updatedAt: Date.now(), broadcastAt: 0, practice: false
   };
 }
 
@@ -51,7 +52,7 @@ function makePlayer(id, name, team, ws = null, bot = false) {
     dodgeCd: 0, dodgeFor: 0, drillFor: 0, rollHitCd: 0,
     wallCd: 0, jumpCd: 0, jump: null, flightFor: 0,
     shieldFor: 0, shieldHp: 0, stealth: false, deadFor: 0, invuln: 0,
-    ko: 0, deaths: 0, connectedAt: Date.now(), inputsAt: 0, inputCount: 0
+    ko: 0, deaths: 0, cosmetics: {hat:0,shirt:0,shoes:0,skin:0}, connectedAt: Date.now(), inputsAt: 0, inputCount: 0
   };
 }
 
@@ -506,7 +507,7 @@ function roomSafeSwim(p) { return Boolean(p.swimming); }
 function pack(p) {
   return { id: p.id, name: p.name, team: p.team, x: +p.x.toFixed(2), y: +p.y.toFixed(2),
     aim: +p.aim.toFixed(2), hp: p.hp, ink: Math.floor(p.ink),
-    weapon: p.weapon, special: p.special, specialCharge: Math.floor(p.specialCharge),
+    weapon: p.weapon, cosmetics: p.cosmetics, special: p.special, specialCharge: Math.floor(p.specialCharge),
     ko: p.ko, deaths: p.deaths, dead: p.deadFor > 0,
     bombCd: +p.bombCd.toFixed(1), maxInk: SPRA_INK_MAX,
     swim: p.input.swim && roomSafeSwim(p), bot: p.bot,
@@ -561,7 +562,7 @@ function snapshot(room) {
     bombs: room.bombs.map(b => ({id:b.id,x:+b.x.toFixed(2),y:+b.y.toFixed(2),z:+b.z.toFixed(2),team:b.team})) };
 }
 function reset(room) {
-  room.state = 'lobby'; room.elapsed = 0; room.winner = -1;
+  room.state = 'lobby'; room.elapsed = 0; room.winner = -1; room.rankSaved=false;
   room.ink.clear(); room.bombs=[]; room.specials=[]; room.wallInk.fill(0);
   for (const p of room.players.values()) { spawn(p); p.ko = 0; p.deaths = 0; p.invuln = 0; p.specialCharge=0; }
 }
@@ -580,7 +581,8 @@ function cleanName(value) {
   return String(value || 'PLAYER').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 18) || 'PLAYER';
 }
 
-export function createSpra() {
+export function createSpra({pool=null}={}) {
+  const rankings=createSpraLeaderboard(pool);
   const rooms = new Map();
   const links = new Map();
   const wss = new WebSocketServer({ noServer: true, maxPayload: 4096 });
@@ -622,6 +624,12 @@ export function createSpra() {
         const countOrange = room.players.size - countBlue;
         const team = countBlue <= countOrange ? 0 : 1;
         const player = makePlayer(id, cleanName(msg.name), team, ws);
+        const getCosmetics=input=>{
+          const src=input&&typeof input==='object'?input:{};
+          const n=v=>Number.isInteger(v)&&v>=0&&v<=15?v:0;
+          return {hat:n(src.hat),shirt:n(src.shirt),shoes:n(src.shoes),skin:n(src.skin)};
+        };
+        player.cosmetics=getCosmetics(msg.cosmetics);
         room.players.set(id, player);
         room.host ||= id;
         room.updatedAt = Date.now();
@@ -655,11 +663,18 @@ export function createSpra() {
           room.effects.push({type:'dodge',x:player.x,y:player.y,team:player.team});
         }
         if (msg.jump && typeof msg.jump==='object') attemptSuperJump(room,player,msg.jump);
+      } else if (msg.type==='cosmetics'&&room.state==='lobby'){
+        const value=msg.cosmetics;
+        if(value&&typeof value==='object'){
+          const n=v=>Number.isInteger(v)&&v>=0&&v<=15?v:0;
+          player.cosmetics={hat:n(value.hat),shirt:n(value.shirt),shoes:n(value.shoes),skin:n(value.skin)};
+          broadcast(room,snapshot(room));
+        }
       } else if (msg.type === 'special' && room.state !== 'playing' && Object.hasOwn(SPRA_SPECIALS,msg.special)){
         player.special=msg.special;
         broadcast(room,snapshot(room));
       } else if (msg.type === 'mode' && player.id === room.host && room.state==='lobby') {
-        if (['turf','ko'].includes(msg.mode)) {
+        if (['turf','ko','training'].includes(msg.mode)) {
           room.mode=msg.mode;
           broadcast(room,snapshot(room));
         }
@@ -714,6 +729,10 @@ export function createSpra() {
         if(room.mode==='ko')room.winner=kills[0]===kills[1]?-1:kills[0]>kills[1]?0:1;
         else room.winner=room.ink.counts[0]===room.ink.counts[1]?-1:
           room.ink.counts[0]>room.ink.counts[1]?0:1;
+        if(!room.rankSaved){
+          room.rankSaved=true;
+          void rankings.award([...room.players.values()],room.winner,room.mode);
+        }
       }
       if (now - room.broadcastAt >= 125 || room.state === 'results') {
         room.broadcastAt = now;
@@ -725,6 +744,7 @@ export function createSpra() {
   tick.unref?.();
 
   return {
+    listRankings: limit => rankings.top(limit),
     upgrade(req, socket, head) {
       wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req));
     },
