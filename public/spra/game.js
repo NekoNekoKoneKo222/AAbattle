@@ -21,7 +21,7 @@ let players=[],walls=[],bombs=[],gumShots=[],specialObjects=[],wallColors=[],eff
 let lastFrame=performance.now(),clock=0,cameraX=0,cameraY=0,smooth=new Map(),toastTimer=null;
 let selectedWeapon=localStorage.getItem('spra_equipped_v2')||'shooter';
 let selectedSpecial=localStorage.getItem('spra_special_v3')||'tornado';
-let trainingRequested=false,jumpQueued=null,specialQueued=false,dodgeQueued=false;
+let trainingRequested=false,jumpQueued=null,specialQueued=false,dodgeQueued=false,tapQueued=false;
 let currentSpecialTarget={x:0,y:0};
 const defaultOwned=['shooter','roller','blaster'];
 let owned;
@@ -434,7 +434,7 @@ canvas.addEventListener('pointermove',e=>{
 canvas.addEventListener('pointerdown',e=>{
  if(phase!=='playing')return;
  aimAtPointer(e);
- if(e.button===0){pointer.down=true;if(e.pointerType==='mouse')canvas.setPointerCapture(e.pointerId);}
+ if(e.button===0){pointer.down=true;tapQueued=true;if(e.pointerType==='mouse')canvas.setPointerCapture(e.pointerId);}
 });
 window.addEventListener('pointerup',()=>{pointer.down=false;});
 canvas.addEventListener('pointercancel',()=>{pointer.down=false;});
@@ -453,7 +453,7 @@ stick.addEventListener('pointermove',e=>{if(e.pointerId===touch.stickId)updateSt
 function releaseStick(e){if(e.pointerId!==touch.stickId)return;touch.stickId=null;touch.moveX=touch.moveY=0;thumb.style.transform='translate(-50%,-50%)';}
 stick.addEventListener('pointerup',releaseStick);stick.addEventListener('pointercancel',releaseStick);
 function holdButton(id,name){
- const b=$(id);b.addEventListener('pointerdown',e=>{e.preventDefault();b.setPointerCapture(e.pointerId);touch[name]=true;});
+ const b=$(id);b.addEventListener('pointerdown',e=>{e.preventDefault();b.setPointerCapture(e.pointerId);touch[name]=true;if(name==='fire')tapQueued=true;});
  for(const event of ['pointerup','pointercancel'])b.addEventListener(event,()=>{touch[name]=false;});
 }
 holdButton('fireTouch','fire');holdButton('swimTouch','swim');
@@ -480,11 +480,11 @@ setInterval(()=>{
  const me=players.find(p=>p.id===myId);
  let aim=me?.aim||0;
  if(me&&pointer.active)aim=Math.atan2(pointer.y-me.y,pointer.x-me.x);
- send({type:'input',x,y,aim,fire:pointer.down||touch.fire||keys.has(' '),
+ send({type:'input',x,y,aim,fire:pointer.down||touch.fire||keys.has(' ')||tapQueued,
   swim:keys.has('shift')||touch.swim,bomb:bombQueued,
   dodge:dodgeQueued,special:specialQueued,
   jump:jumpQueued,specialTarget:pointer.active?{x:pointer.x,y:pointer.y}:null});
- bombQueued=false;specialQueued=false;dodgeQueued=false;jumpQueued=null;
+ bombQueued=false;specialQueued=false;dodgeQueued=false;jumpQueued=null;tapQueued=false;
 },65);
 
 function drawBox(x,y,w,h,color){ctx.fillStyle=color;ctx.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h));}
