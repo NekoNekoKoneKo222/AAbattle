@@ -352,7 +352,67 @@ function updateSpecials(room,dt){
     const s=room.specials[i],owner=room.players.get(s.owner);
     if(!owner){room.specials.splice(i,1);continue;}
     s.time-=dt;s.interval-=dt;
-    if(s.kind==='tornado'){
+    if(s.kind==='gravity_balloon'){
+      s.elapsed=(s.elapsed||0)+dt;
+      s.radius=Math.min(4,.45+s.elapsed*1.7);
+      s.phase='inflate';
+      const range=4;
+      for(const target of room.players.values()){
+        if(target.team===s.team||target.deadFor>0||target.jump)continue;
+        const dx=s.x-target.x,dy=s.y-target.y;
+        const distance=Math.hypot(dx,dy);
+        if(distance>range||distance<.15)continue;
+        const pull=dt*(3.8+2.8*(1-distance/range));
+        const nx=target.x+dx/distance*pull,ny=target.y+dy/distance*pull;
+        if(!isBlocked(WALLS,SPRA_WIDTH,SPRA_HEIGHT,nx,target.y,.38))target.x=nx;
+        if(!isBlocked(WALLS,SPRA_WIDTH,SPRA_HEIGHT,target.x,ny,.38))target.y=ny;
+        target.slowFor=Math.max(target.slowFor,.24);
+      }
+      if(s.time<=0){
+        splash(room,s.x,s.y,3.8,s.team,0,room.elapsed*900,'bomb');
+        room.effects.push({type:'bubble_pop',x:s.x,y:s.y,team:s.team,radius:3.8});
+      }
+    }else if(s.kind==='frontier'){
+      s.elapsed=(s.elapsed||0)+dt;
+      if(s.elapsed<1.3){
+        s.phase='launch';
+        s.x=owner.x;s.y=owner.y;
+      }else if(s.elapsed<4.85){
+        s.phase='star_rain';
+        s.x=owner.x;s.y=owner.y;
+        // The aiming cursor can retarget the rain while airborne.
+        if(owner.specialTarget){
+          s.targetX=owner.specialTarget.x;
+          s.targetY=owner.specialTarget.y;
+        }
+        if(s.interval<=0){
+          s.interval=.17;
+          const index=Math.floor(s.elapsed*100);
+          const angle=index*2.39996323;
+          const distance=Math.sqrt((index%31)/31)*5.6;
+          const x=clamp(s.targetX+Math.cos(angle)*distance,2.5,SPRA_WIDTH-2.5);
+          const y=clamp(s.targetY+Math.sin(angle)*distance,2.5,SPRA_HEIGHT-2.5);
+          const size=.75+(index%5)*.18;
+          splash(room,x,y,size,s.team,angle,index,'shooter');
+          room.effects.push({type:'star_rain',x,y,team:s.team,seed:index});
+          for(const target of room.players.values())if(target.team!==s.team&&target.deadFor===0 &&
+             Math.hypot(target.x-x,target.y-y)<size+.4)inflict(room,target,9,owner);
+        }
+      }else{
+        s.phase='moon_crash';
+        s.x=s.targetX;s.y=s.targetY;s.radius=7.2;
+        if(!s.crashed && s.elapsed>=5.2){
+          s.crashed=true;
+          splash(room,s.targetX,s.targetY,7.2,s.team,0,room.elapsed*1000,'bomb');
+          for(const target of room.players.values()){
+            if(target.team===s.team||target.deadFor>0)continue;
+            const d=Math.hypot(target.x-s.targetX,target.y-s.targetY);
+            if(d<=7.2)inflict(room,target,Math.round(80*Math.max(0,1-d/7.2)),owner);
+          }
+          room.effects.push({type:'moon_crash',x:s.targetX,y:s.targetY,team:s.team,radius:7.2});
+        }
+      }
+    }else if(s.kind==='tornado'){
       const nx=s.x+s.vx*dt,ny=s.y+s.vy*dt;
       if(isBlocked(WALLS,SPRA_WIDTH,SPRA_HEIGHT,nx,ny,.5)){
         s.vx*=-.8;s.vy*=-.8;
@@ -486,6 +546,7 @@ function move(room,p,dt){
   p.shieldFor=Math.max(0,p.shieldFor-dt);
   if(!p.shieldFor)p.shieldHp=0;
   p.flightFor=Math.max(0,p.flightFor-dt);
+  p.slowFor=Math.max(0,(p.slowFor||0)-dt);
   if(p.flightFor===0&&isBlocked(WALLS,SPRA_WIDTH,SPRA_HEIGHT,p.x,p.y,.4)&&p.flightSafe){
     p.x=p.flightSafe.x;p.y=p.flightSafe.y;
   }
@@ -513,7 +574,8 @@ function move(room,p,dt){
   if(isRoll)speed=13.4;
   if(isDrill)speed=17.2;
   if(p.dodgeFor>0)speed=19;
-  if(p.flightFor>0)speed=12.5;
+  if(p.flightFor>0)speed=15.5;
+  if(p.slowFor>0)speed*=.53;
   let {x,y}=p.input;
   let magnitude=Math.hypot(x,y);
   if(magnitude>1){x/=magnitude;y/=magnitude;}
@@ -564,15 +626,17 @@ function move(room,p,dt){
   }
   p.rollHitCd=Math.max(0,p.rollHitCd-dt);
   if(p.input.fire) {
-    if(gun.type==='charger'){
+    if(gun.type==='cosmic'){
+      p.charge=clamp(p.charge+dt/1.55,0,1);
+    }else if(gun.type==='charger'){
       p.charge=clamp(p.charge+dt/1.3,0,1);
     }else if(gun.type==='roller'){
       if(p.cooldown<=0){p.cooldown=.42;shoot(room,p);}
     }else shoot(room,p);
     p.wasFiring=true;
   }else{
-    if(p.wasFiring&&gun.type==='charger'&&p.charge>.12&&p.cooldown<=0)
-      shoot(room,p,p.charge);
+    if(p.wasFiring&&(gun.type==='charger'||gun.type==='cosmic')&&p.charge>.015&&p.cooldown<=0)
+      shoot(room,p,Math.max(.12,p.charge));
     p.charge=0;p.wasFiring=false;
   }
 }
