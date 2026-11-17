@@ -67,7 +67,7 @@ export function mountChaosShogi(app,{currentUser,collection,findUser}={}){
           game.awakened={b:(profile.awakened||[]).filter(id=>profile.cards?.[id]>0&&decks.b?.includes(id)),w:[]};
           // The default deck is used when the caller did not submit a custom one.
           if(!decks.b)game.awakened.b=(profile.awakened||[]).filter(id=>profile.cards?.[id]>0&&game.cards.b.deck.concat(game.cards.b.hand).includes(id));
-          game.onlineMode='cpu';
+          game.onlineMode='cpu';game.ultimate={b:(profile.ultimate||[]).filter(id=>game.awakened.b.includes(id)),w:[]};
         }
       }
       games.set(game.id,game);res.status(201).json(view(game));
