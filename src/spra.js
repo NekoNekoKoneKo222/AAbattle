@@ -756,7 +756,9 @@ export function createSpra({pool=null}={}) {
         if (!room) {
           for (let i = 0; i < 20; i++) { code = roomCode(); if (!rooms.has(code)) break; }
           if (rooms.has(code)) return send(ws, { type: 'error', message: '部屋を作成できませんでした。' });
-          room = makeRoom(code); rooms.set(code, room);
+          room = makeRoom(code);
+          if(['turf','ko','training'].includes(msg.mode))room.mode=msg.mode;
+          rooms.set(code, room);
         }
         if (room.players.size >= MAX_HUMANS || room.state === 'playing') return send(ws, { type: 'error', message: '対戦中、または満員の部屋には入れません。' });
         const id = randomUUID();
