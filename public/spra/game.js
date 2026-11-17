@@ -1,6 +1,7 @@
 import { SPRA_WEAPONS, SPRA_CATEGORIES } from './weapons.js';
 import { createCity } from './city.js';
 import { SPRA_SPECIALS } from './specials.js';
+import { drawCosmic } from './cosmic-render.js';
 import { createSpraFacilities, FASHION_COLORS } from './facilities.js';
 
 const $ = id => document.getElementById(id);
@@ -501,12 +502,18 @@ function drawFloor(){
  if(sw>0&&sh>0)ctx.drawImage(paintCanvas,sx,sy,sw,sh,
      sx*TILE/PAINT_SCALE,sy*TILE/PAINT_SCALE,
      sw*TILE/PAINT_SCALE,sh*TILE/PAINT_SCALE);
- for(const b of walls){
+ for(const [wallIndex,b] of walls.entries()){
   worldBox(b.x+.3,b.y+.5,b.w,b.h,'#071522');
   worldBox(b.x,b.y,b.w,b.h,'#3a5069');
   worldBox(b.x+.25,b.y+.25,b.w-.5,b.h-.5,'#506c83');
   worldBox(b.x+.75,b.y+.7,b.w-1.5,.5,'#688f9c');
   for(let i=2;i<b.w;i+=3)worldBox(b.x+i,b.y+b.h-1,.65,.65,'#263d51');
+  if(wallColors[wallIndex]===1||wallColors[wallIndex]===2){
+   const color=COLORS[wallColors[wallIndex]-1];
+   worldBox(b.x+.35,b.y+.2,b.w-.7,.42,color);
+   worldBox(b.x+.2,b.y+.5,.36,b.h-.9,color);
+   worldBox(b.x+b.w-.56,b.y+.5,.36,b.h-.9,color);
+  }
  }
  for(const [team,x] of [9,W-9].entries()){
   worldBox(x-2,H/2-2,4,4,team?'#a95c36':'#21738c');
@@ -569,13 +576,27 @@ function drawAvatar(p,dt,now){
   }
  }else{
   if(mine){drawBox(x-15,y-16,30,31,'#d7ff62');drawBox(x-13,y-14,26,27,'#112c42');}
-  drawBox(x-9,y+2,7,10,'#102534');drawBox(x+3,y+2,7,10,'#102534');
-  drawBox(x-11,y-8,22,16,color);
+  const look=p.cosmetics||{};
+  const shirt=FASHION_COLORS[look.shirt]||color;
+  const hat=FASHION_COLORS[look.hat]||(p.team?'#55295c':'#194961');
+  const shoes=FASHION_COLORS[look.shoes]||'#102534';
+  drawBox(x-9,y+2,7,10,shoes);drawBox(x+3,y+2,7,10,shoes);
+  drawBox(x-11,y-8,22,16,shirt);
   drawBox(x-9,y-18,18,13,'#f5bb9e');
-  drawBox(x-11,y-19,22,7,p.team?'#55295c':'#194961');
+  drawBox(x-11,y-19,22,7,hat);
   drawBox(x-5,y-11,3,3,'#071522');drawBox(x+4,y-11,3,3,'#071522');
   ctx.save();ctx.translate(Math.round(x),Math.round(y));ctx.rotate(s.aim);
-  drawBox(4,-4,15,7,'#132537');drawBox(12,-3,10,5,'#e1ff96');ctx.restore();
+  drawBox(4,-4,15,7,'#132537');
+  drawBox(12,-3,10,5,FASHION_COLORS[look.skin]||'#e1ff96');
+  ctx.restore();
+ }
+ if(p.shield>0){
+  ctx.strokeStyle='#b8e9ff';ctx.lineWidth=3;
+  ctx.strokeRect(Math.round(x)-17,Math.round(y)-20,34,37);
+ }
+ if(p.flight>0){
+  drawBox(x-2,y-30,5,11,'#c4edfa');
+  drawBox(x-10,y-32,21,6,'#ddd5ff');
  }
  // Label and health pip remain pixel-based.
  ctx.textAlign='center';ctx.font='bold 10px monospace';ctx.fillStyle='#f6ffff';
@@ -634,6 +655,8 @@ function render(now){
    if(now-lastErrorAt>7000){console.error('SPRA ink renderer:',err);toast('インク描画を修復中です');lastErrorAt=now;}
    paintDirty=true;
   }
+  drawCosmic(ctx,{specials:specialObjects,shots:gumShots,effects,cameraX,cameraY,
+    tile:TILE,width:canvas.width,height:canvas.height,elapsed:clock,now});
   drawBombs();
   drawEffects(now);
   // Avatars always render after ink and explosive effects.
