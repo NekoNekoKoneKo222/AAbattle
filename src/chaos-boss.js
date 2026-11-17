@@ -66,7 +66,7 @@ export function createChaosBoss({collection}={}){
       if(!state.cards.w.cardPlayed&&(room.bossId!=='rookie'||Math.random()<.2))action=cpuCardAction(state);
       if(action)try{state=applyAction(state,action);continue;}catch{ /* card not legal: use normal legal move */ }
       action=cpuAction(state,BOSS_CATALOG[room.bossId].difficulty);
-      if(!action){finish(room,true,'ボスが指せる手を失った');return;}
+      if(!action){room.game=state;finish(room,true,'ボスが指せる手を失った');return;}
       state=applyAction(state,action);
     }
     room.game=state;
@@ -75,7 +75,7 @@ export function createChaosBoss({collection}={}){
       // while it is technically still the boss turn.
       for(let i=0;i<10&&state.turn==='w'&&state.status==='playing';i++){
         const action=legalActions(state)[0];
-        if(!action){finish(room,true,'ボスが指せる手を失った');return;}
+        if(!action){room.game=state;finish(room,true,'ボスが指せる手を失った');return;}
         state=applyAction(state,action);
       }
       room.game=state;
