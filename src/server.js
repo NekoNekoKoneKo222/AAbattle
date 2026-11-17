@@ -22,6 +22,7 @@ import { GlyphAdminStore, isGlyphAdmin } from './glyph-admin.js';
 import { mountPixelRoutes } from './pixel-routes.js';
 import { mountChaosShogi } from './chaos-routes.js';
 import { createChaosCollection } from './chaos-collection.js';
+import { createSpra } from './spra.js';
 
 const glyphWorldPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'glyph-infinity', 'world.txt');
 
@@ -84,6 +85,7 @@ async function currentUser(req) {
   return token ? store.findSession(digest(token)) : null;
 }
 const pixelMyth = mountPixelRoutes(app, { pool: store.pool || null, currentUser });
+const spra = createSpra();
 function cookie(res, token, maxAge) {
   res.setHeader('Set-Cookie', `aa_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${secure ? '; Secure' : ''}`);
 }
@@ -598,6 +600,7 @@ app.get('/abn', (_req, res) => res.sendFile(path.join(staticRoot, 'abn', 'index.
 app.get('/model', (_req, res) => res.sendFile(path.join(staticRoot, 'sam', 'index.html')));
 app.get(['/draw', '/draw/'], (_req, res) => res.sendFile(path.join(staticRoot, 'draw', 'index.html')));
 app.get(['/CSH', '/CSH/'], (_req, res) => res.sendFile(path.join(staticRoot, 'CSH', 'index.html')));
+app.get(['/spra', '/spra/'], (_req, res) => res.sendFile(path.join(staticRoot, 'spra', 'index.html')));
 app.use(express.static(staticRoot, { index: 'index.html', maxAge: 60000 }));
 app.use((err, _req, res, _next) => {
   res.status(err.status || 400).json({ error: 'リクエストを処理できませんでした。' });
@@ -708,10 +711,11 @@ server.on('upgrade', async (req, socket, head) => {
   try {
     const origin = req.headers.origin;
     const expectedHost = req.headers['x-forwarded-host'] || req.headers.host;
-    if (!origin || new URL(origin).host !== expectedHost || (req.url !== '/ws' && req.url !== '/GF/ws' && req.url !== '/draw/ws' && req.url !== '/CSH/ws' && !req.url?.startsWith('/sam/colyseus/'))) {
+    if (!origin || new URL(origin).host !== expectedHost || (req.url !== '/ws' && req.url !== '/GF/ws' && req.url !== '/draw/ws' && req.url !== '/CSH/ws' && req.url !== '/spra/ws' && !req.url?.startsWith('/sam/colyseus/'))) {
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); socket.destroy(); return;
     }
     if (req.url.startsWith('/sam/colyseus/')) return shiftArena.upgrade(req, socket, head);
+    if (req.url === '/spra/ws') return spra.upgrade(req, socket, head);
     const user = await currentUser(req);
     if (!user) { socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n'); socket.destroy(); return; }
     if (req.url === '/CSH/ws') return chaosOnline.upgrade(req, socket, head, user);
@@ -732,6 +736,7 @@ console.log(`AABattle and SHIFT ARENA listening on ${port}; generation: ${genera
 async function shutdown() {
   wss.clients.forEach((c) => c.close());
   chaosOnline.close();
+  spra.close();
   await shiftArena.shutdown();
   await glyphInfinity.shutdown();
   await store.close();
