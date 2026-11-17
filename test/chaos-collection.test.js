@@ -71,7 +71,8 @@ test('another player card showcase includes only owned cards and equipped cosmet
   const showcase=await store.cardShowcase('alice');
   assert.equal(showcase.cards.grant,2);
   assert.equal(showcase.skins.grant,'default');
-  assert.deepEqual(Object.keys(showcase).sort(),['cards','skins']);
+  assert.deepEqual(Object.keys(showcase).sort(),['cards','skins','title']);
+  assert.equal(showcase.title,'見習い棋士');
   await store.adminGrant('alice',{cardId:'grant',count:1});
   assert.equal((await store.cardShowcase('alice')).cards.grant,3);
 });

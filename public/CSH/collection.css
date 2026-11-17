@@ -26,3 +26,13 @@
 .craft-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px}.craft-tools select{flex:1;min-width:185px}
 .craft-tools span{color:#dbcdf3;font-weight:650}
 @media(max-width:600px){.chaos-progression{padding:12px}.progress-cards{grid-template-columns:1fr}.progress-card{align-items:stretch}.craft-tools{flex-direction:column;align-items:stretch}.craft-tools select{width:100%}}
+ 
+/* Card ultimate awakening II and title selection UI */
+.ultimate-unlock{background:linear-gradient(125deg,#be7a1b,#7841ad)!important;border-color:#fbd17b!important}
+.chaos-titles{margin:22px 0;padding:20px;border:1px solid #7a639f;background:#221c38;border-radius:14px;color:#f0eaff}
+.chaos-titles h3{margin:10px 0}.chaos-titles p{color:#cabce7}
+.title-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:10px}
+.title-card{display:flex;flex-direction:column;gap:7px;padding:13px;background:#35274a;border:1px solid #8670a3;border-radius:10px}
+.title-card small{color:#c5b9de}.title-card.locked{opacity:.6}
+.title-card button{padding:7px;border-radius:8px;background:#71529c;color:#fff;border:1px solid #a58abd;cursor:pointer}
+.title-card button:disabled{opacity:.6}

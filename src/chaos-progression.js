@@ -1,4 +1,5 @@
-import { AWAKENINGS, resolveUniqueAwakening } from './chaos-awakenings.js';
+import { AWAKENINGS, resolveUniqueAwakening, resolveAwakeningRecipe } from './chaos-awakenings.js';
+import { ULTIMATE_RECIPES } from './chaos-ultimate.js';
 // CHAOS SHOGI progression: persisted mastery and optional awakened card bonuses.
 export const MASTERY_THRESHOLDS = Object.freeze([0,30,90,180,300,450,630,840,1080,1350]);
 export const MASTERY_XP_PER_PLAY = 40;
@@ -6,6 +7,8 @@ export const MASTERY_MATCH_CAP = 120;
 export const MASTERY_LEVEL_REWARD = 60;
 export const AWAKEN_REQUIRED_LEVEL = 5;
 export const AWAKEN_SHARD_COST = 120;
+export const ULTIMATE_REQUIRED_LEVEL = 10;
+export const ULTIMATE_SHARD_COST = 400;
 
 export function masteryLevel(xp=0){
   const value=Number.isFinite(Number(xp))?Math.max(0,Number(xp)):0;
@@ -59,5 +62,9 @@ export function applyAwakeningOnPlay(game,side,cardId,draw,action={},ops={}){
   const player=game.cards[side];
   player.awakenedUsed||=[];
   player.awakenedUsed.push(cardId);
+  if(game.ultimate?.[side]?.includes(cardId)&&ULTIMATE_RECIPES[cardId]){
+    resolveAwakeningRecipe(game,side,cardId,action,{...ops,draw},ULTIMATE_RECIPES[cardId]);
+    game.log.push('究極覚醒Ⅱが発動！');
+  }
   return applied;
 }

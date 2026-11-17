@@ -19,7 +19,7 @@ test('authenticated players can inspect only another account owned cards',async 
   assert.equal(result.data.username,'Alice');
   assert.equal(result.data.cards.grant,3);
   assert.equal(result.data.skins.grant,'default');
-  assert.deepEqual(Object.keys(result.data).sort(),['cards','skins','username']);
+  assert.deepEqual(Object.keys(result.data).sort(),['cards','skins','title','username']);
   assert.equal((await request('bob','/collection/players/missing')).status,404);
   assert.equal((await request('bob','/collection/players/no!')).status,400);
 });
