@@ -244,3 +244,151 @@ body{background-image:repeating-linear-gradient(0deg,#0e20320a 0px,#0e20320a 3px
 .facility-shortcuts button:hover{background:#2a4d4b;border-color:#d6ff68;color:#f1ffaf}
 @media(max-width:650px){.facility-shortcuts{grid-template-columns:repeat(2,minmax(0,1fr))}
  .facility-shortcuts button{font-size:9px;padding:8px 4px}}
+
+
+/* Fullscreen gameplay-first SPRA: no outer header, hero copy or web footer. */
+html,body{width:100%;height:100%;min-height:100%;margin:0;overflow:hidden;overscroll-behavior:none}
+body{position:fixed;inset:0;touch-action:pan-x pan-y;background:#0b1b2d}
+.shell,#spraMain{position:relative!important;inset:0;width:100vw!important;
+ min-width:0;max-width:none!important;height:100dvh;min-height:0;
+ margin:0!important;padding:0!important;overflow:hidden}
+.city-section,.arena-panel,.tutorial-section{position:absolute!important;inset:0!important;
+ width:100%!important;height:100%!important;max-width:none!important;
+ margin:0!important;padding:0!important;overflow:hidden}
+.city-section{z-index:1}
+.city-frame,.arena-frame{position:relative;width:100%;height:100%!important;min-height:0;
+ border:0!important;border-radius:0!important;box-shadow:none!important;overflow:hidden}
+#cityCanvas,#gameCanvas,#tutorialCanvas{display:block;width:100%!important;height:100%!important;
+ max-width:none!important;aspect-ratio:auto!important;image-rendering:pixelated;
+ object-fit:fill;touch-action:none}
+#cityCanvas{cursor:crosshair}
+.city-hud{position:absolute;left:14px;top:12px;z-index:5;display:flex;
+ flex-wrap:wrap;align-items:center;gap:10px;pointer-events:none}
+.city-hud>span{background:#091a30d9;border:2px solid #567888;
+ padding:7px 10px;font-size:11px;box-shadow:3px 3px 0 #030b15}
+.city-hud .city-hud-logo{background:#defe72;border-color:#eaff9b;
+ color:#0f1e2d;font-size:18px;font-weight:1000;letter-spacing:1px}
+.city-hud-coin b{color:#ddff84;font-size:13px}
+.city-menu-toggle{position:absolute;z-index:9;top:13px;right:13px;
+ background:#d3ff70;color:#162936;font-size:13px;font-weight:900;border:3px solid #f3ffce;
+ padding:11px 15px;box-shadow:4px 4px 0 #061323}
+.city-menu{position:absolute;z-index:8;right:13px;top:65px;
+ width:min(430px,calc(100vw - 26px));max-height:calc(100dvh - 85px);overflow:auto;
+ background:#0d2639f2;border:4px solid #8db8be;box-shadow:6px 6px 0 #030b16;padding:15px}
+.city-menu>strong{display:block;font-size:17px;color:#dfff83;margin-bottom:8px}
+.city-menu .city-tools{display:flex;flex-wrap:wrap;gap:8px;padding:8px 0}
+.city-menu .city-tools .btn{min-height:40px;padding:9px 14px;font-size:12px}
+.city-menu .facility-shortcuts{margin:7px 0 14px;grid-template-columns:repeat(2,minmax(0,1fr))}
+.city-menu .facility-shortcuts button{padding:10px 6px}
+.city-menu .pixel-back{margin-top:3px;width:100%;text-align:left}
+.city-corner{font-size:9px!important;top:auto!important;left:50%!important;
+ bottom:14px!important;transform:translateX(-50%);white-space:nowrap;
+ max-width:calc(100% - 170px);text-overflow:ellipsis;overflow:hidden;
+ border-color:#39556b!important;background:#091929bb!important}
+.modal-backdrop{position:fixed;inset:0;z-index:11;background:#0209179e;backdrop-filter:blur(2px)}
+#joinCard,#roomCard{position:fixed!important;z-index:12;
+ left:50%;top:50%;transform:translate(-50%,-50%);
+ width:min(850px,calc(100vw - 28px));max-width:none;margin:0!important;
+ max-height:min(90dvh,900px);overflow:auto;
+ box-shadow:9px 9px 0 #030d18!important}
+.arena-panel{z-index:2}
+.game-head{position:absolute;z-index:6;left:50%;top:12px;
+ transform:translateX(-50%);width:min(520px,65vw);margin:0!important;
+ display:grid;grid-template-columns:1fr 95px 1fr;gap:10px;
+ align-items:center;background:#071729df;border:2px solid #5f7b86;
+ padding:7px 11px;pointer-events:none}
+.game-head .score{display:block;text-align:center}
+.game-head .score b{display:block;margin-bottom:4px;font-size:10px}
+.game-head .score strong{font-size:19px}
+.game-head .scorebar{display:block;height:7px;margin-top:4px}
+.game-head .clock-box b{font-size:25px}
+.game-head .clock-box small{font-size:7px}
+.arena-frame{position:absolute!important;inset:0}
+.game-foot{position:absolute!important;z-index:6;left:12px;bottom:9px;right:auto;
+ width:auto;margin:0!important;padding:0!important;pointer-events:none}
+.game-foot .control-hint{display:none!important}
+.game-foot .stats{background:#071729cf;border:2px solid #4c6b7c;
+ padding:6px 11px;gap:13px;font-size:10px}
+.game-foot .stats b{font-size:11px}
+.battle-minimap{right:12px;top:12px;z-index:6}
+.ink-hud{left:12px;top:12px;z-index:6}
+.spra-special-hud{left:12px;top:120px;z-index:6}
+.mobile-controls{position:absolute;z-index:7}
+#cityMenu .facility-shortcuts,#cityMenu .city-tools{position:static!important}
+#toast{z-index:80}
+
+/* First-run pixel practice scene, playable with keys and touch. */
+.tutorial-section{z-index:3;background:#152538}
+.tutorial-brand{position:absolute;left:18px;top:14px;z-index:4;
+ color:#eaff99;background:#0b1c31e2;border:2px solid #668294;
+ padding:10px 13px;font-size:23px;letter-spacing:1px;font-weight:1000;
+ text-shadow:3px 3px 0 #0a1b28;pointer-events:none}
+.tutorial-brand span{display:block;font-size:9px;letter-spacing:3px;color:#9cdbd6}
+.tutorial-skip{position:absolute;top:15px;right:15px;z-index:5;
+ padding:10px 13px;background:#11283ee8;color:#e1f6fc;
+ border:2px solid #87adb9;font-size:11px;font-weight:900}
+.tutorial-guide{position:absolute;z-index:4;left:50%;bottom:28px;
+ transform:translateX(-50%);width:min(570px,calc(100% - 270px));
+ background:#0a2135ed;border:4px solid #e2ff93;box-shadow:6px 6px 0 #061121;
+ padding:14px 19px;pointer-events:none}
+.tutorial-step-index{font-size:10px;color:#d7ff77;letter-spacing:2px;font-weight:900}
+.tutorial-guide h2{font-size:clamp(15px,2.3vw,25px);margin:5px 0;color:#f3ffdf}
+.tutorial-guide p{font-size:12px;line-height:1.65;color:#d7ebf1;margin:3px 0 8px}
+.tutorial-goal{font-size:11px;color:#f9d58d}
+.tutorial-goal strong{color:#e5ff9d;font-size:12px}
+.tutorial-finish{display:block;margin:13px auto 0;background:#dbff77;color:#13252c;
+ padding:11px 17px;border:3px solid #f6ffc0;font-weight:1000;
+ font-size:14px;pointer-events:auto}
+.tutorial-touch{position:absolute;inset:0;z-index:5;pointer-events:none}
+.tutorial-dpad{position:absolute;bottom:25px;left:24px;display:flex;
+ flex-direction:column;align-items:center;gap:3px;pointer-events:auto}
+.tutorial-dpad>div{display:flex;gap:3px}
+.tutorial-dpad button,.tutorial-actions button{touch-action:none;user-select:none;
+ background:#11293cdd;color:#e9ffff;border:3px solid #adcbd5;
+ width:58px;height:49px;font-size:17px;font-weight:900}
+.tutorial-actions{position:absolute;bottom:25px;right:22px;
+ display:flex;align-items:end;gap:6px;pointer-events:auto}
+.tutorial-actions button{width:65px;height:60px;font-size:11px}
+.tutorial-actions #tutorialFire{width:74px;height:77px;background:#d4ff6f;
+ border-color:#f0ffb5;color:#18302c;font-size:14px}
+@media(max-width:840px){
+ .tutorial-guide{bottom:108px;width:min(530px,calc(100% - 40px));
+ padding:10px 14px}
+ .tutorial-dpad{bottom:13px;left:14px}
+ .tutorial-actions{bottom:13px;right:11px}
+ .tutorial-dpad button{width:46px;height:42px}
+ .tutorial-actions button{width:53px;height:51px}
+ .tutorial-actions #tutorialFire{width:67px;height:60px}
+ .city-corner{display:none}
+ .city-menu{max-height:calc(100dvh - 76px);padding:10px}
+ .game-head{top:6px;width:min(400px,57vw);grid-template-columns:1fr 70px 1fr;padding:4px;gap:3px}
+ .game-head .score strong{font-size:12px}
+ .game-head .score b{font-size:8px}
+ .game-head .clock-box b{font-size:16px}
+ .ink-hud{top:6px;left:6px}
+ .spra-special-hud{left:6px;top:65px}
+ .battle-minimap{top:6px;right:6px}
+}
+@media(max-width:560px){
+ .tutorial-brand{font-size:17px;padding:5px 8px;left:7px;top:7px}
+ .tutorial-skip{font-size:9px;top:8px;right:7px;padding:7px}
+ .tutorial-guide{bottom:86px;width:calc(100% - 20px);padding:8px 9px}
+ .tutorial-guide h2{font-size:15px;margin:2px 0}
+ .tutorial-guide p{font-size:10px;line-height:1.5;margin:3px 0}
+ .tutorial-step-index,.tutorial-goal{font-size:9px}
+ .tutorial-dpad button{width:40px;height:35px;font-size:13px}
+ .tutorial-actions button{width:45px;height:45px;font-size:9px}
+ .tutorial-actions #tutorialFire{width:53px;height:55px;font-size:10px}
+ .city-menu-toggle{top:7px;right:7px;padding:8px 10px;font-size:11px}
+ .city-hud{top:7px;left:7px;gap:3px}
+ .city-hud>span{padding:4px 5px;font-size:8px}
+ .city-hud .city-hud-logo{font-size:12px}
+ .game-head{top:8px;width:min(210px,50vw);padding:2px;grid-template-columns:1fr 40px 1fr}
+ .game-head .score strong{font-size:10px}
+ .game-head .score b{font-size:6px}
+ .game-head .clock-box b{font-size:13px}
+ .game-head .scorebar{margin-top:2px;height:4px}
+ .game-foot{bottom:4px;left:4px}
+ .game-foot .stats{font-size:8px;gap:5px;padding:3px}
+ .game-foot .stats b{font-size:8px}
+}
