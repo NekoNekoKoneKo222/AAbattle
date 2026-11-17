@@ -51,11 +51,30 @@ function shell(group: THREE.Group, chest: number, sleeves: number, pants: number
   return { leftArm, rightArm, leftLeg, rightLeg };
 }
 
-export function createVoxelHero(id: string, skin?: Skin): THREE.Group {
+export function createVoxelHero(id: string, skin?: Skin, lightweight = false): THREE.Group {
   const group = new THREE.Group();
   group.name = 'voxel_hero_' + id;
   const outfit = (c: number) => tint(c, skin);
   let p: BodyParts;
+  if(lightweight){
+    // Cheap original 3D silhouette for many combatants on mobile/10-player maps.
+    const palette:Record<string,[number,number,number,number]>={
+      rei:[0x277ad6,0x2265b3,0x333b55,SKIN],
+      gald:[0xe47b36,0xe37b2c,0x40495a,0x40495a],
+      jin:[0x336844,0x39734d,0x25323d,SKIN],
+      mina:[0xf5f5fa,0xffffff,0x444558,SKIN],
+      bom:[0xc44d39,0xbf4738,0x776955,SKIN],
+      chrono:[0x6243af,0x7657bf,0x303454,SKIN],
+      noise:[0x3a97c5,0x3f9cc8,0x343956,SKIN],
+      frost:[0x98bfe8,0xb8d8fc,0x7786b0,SKIN],
+    };
+    const [body,sleeves,pants,head]=palette[id]||palette.rei;
+    p=shell(group,outfit(body),outfit(sleeves),pants,head,id==='gald'?1.2:1);
+    face(group);
+    cube(group,[.65,.18,.60],[0,2.08,0],outfit(body),'headgear');
+    group.userData.voxelParts=p;
+    return group;
+  }
   switch (id) {
     case 'gald':
       p = shell(group, outfit(0xe47b36), outfit(0xe37b2c), 0x40495a, 0x40495a, 1.2);

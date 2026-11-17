@@ -244,3 +244,22 @@ describe('10-player battle royale CPU rarity limits',()=>{
     expect(game.players.every(p=>!p.bot||['rei','gald','mina'].includes(p.character))).toBe(true);
   });
 });
+
+describe('large-arena simulation performance primitives',()=>{
+  it('checks segment-to-wall intersections exactly with no sampling gaps',()=>{
+    const map=createGame({mode:'survival'}).map;
+    map.walls=[{id:'block',x:10,z:10,w:1,h:2,hp:0,kind:'wall'}];
+    expect(lineClear(map,{x:3,z:10},{x:17,z:10})).toBe(false);
+    expect(lineClear(map,{x:3,z:5},{x:17,z:5})).toBe(true);
+    expect(lineClear(map,{x:0,z:0},{x:20,z:20})).toBe(false);
+    expect(lineClear(map,{x:9,z:13},{x:11,z:13})).toBe(true);
+  });
+  it('processes a crowded 100x100 arena in a bounded amount of CPU time',()=>{
+    const game=createGame({mode:'survival',shift:false,difficulty:'expert'});
+    const started=performance.now();
+    for(let i=0;i<300;i++)stepGame(game);
+    const elapsed=performance.now()-started;
+    expect(game.tick).toBe(300);
+    expect(elapsed).toBeLessThan(10000);
+  });
+});

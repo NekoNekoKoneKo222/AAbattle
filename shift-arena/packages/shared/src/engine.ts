@@ -20,7 +20,25 @@ const norm=(x:number,z:number):[number,number]=>{const d=length(x,z)||1;return [
 const inZone=(p:{x:number;z:number},z:Zone)=>distance(p,z)<=z.radius;
 const wallCollides=(x:number,z:number,w:Wall,r=.42)=>x+r>w.x-w.w/2&&x-r<w.x+w.w/2&&z+r>w.z-w.h/2&&z-r<w.z+w.h/2;
 export function solidAt(map:MapDefinition,x:number,z:number,r=.42){return x<r||z<r||x>map.width-r||z>map.height-r||map.walls.some(w=>wallCollides(x,z,w,r));}
-export function lineClear(map:MapDefinition,a:{x:number;z:number},b:{x:number;z:number}){const d=distance(a,b),steps=Math.ceil(d/.25);for(let i=1;i<steps;i++){const t=i/steps;if(map.walls.some(w=>wallCollides(a.x+(b.x-a.x)*t,a.z+(b.z-a.z)*t,w,.06)))return false;}return true;}
+/** Segment/AABB intersection: once per wall, NOT hundreds of ray steps × walls. */
+export function lineClear(map:MapDefinition,a:{x:number;z:number},b:{x:number;z:number}){
+  const dx=b.x-a.x,dz=b.z-a.z;
+  const minX=Math.min(a.x,b.x),maxX=Math.max(a.x,b.x);
+  const minZ=Math.min(a.z,b.z),maxZ=Math.max(a.z,b.z);
+  for(const wall of map.walls){
+    const left=wall.x-wall.w/2-.06,right=wall.x+wall.w/2+.06;
+    const bottom=wall.z-wall.h/2-.06,top=wall.z+wall.h/2+.06;
+    if(maxX<left||minX>right||maxZ<bottom||minZ>top)continue;
+    let enter=0,exit=1;
+    if(Math.abs(dx)<1e-8){if(a.x<left||a.x>right)continue;}
+    else{const x1=(left-a.x)/dx,x2=(right-a.x)/dx;enter=Math.max(enter,Math.min(x1,x2));exit=Math.min(exit,Math.max(x1,x2));}
+    if(enter>exit)continue;
+    if(Math.abs(dz)<1e-8){if(a.z<bottom||a.z>top)continue;}
+    else{const z1=(bottom-a.z)/dz,z2=(top-a.z)/dz;enter=Math.max(enter,Math.min(z1,z2));exit=Math.min(exit,Math.max(z1,z2));}
+    if(enter<exit&&exit>0&&enter<1)return false;
+  }
+  return true;
+}
 function spawn(index:number,team:number,map:MapDefinition):[number,number]{
   if(team>=2){
     const angle=(team-2)*Math.PI*2/10;
@@ -229,7 +247,9 @@ function navDirection(g:GameState,p:Fighter,target:{x:number;z:number}):[number,
   if(cached&&g.tick-cached.tick<12&&Math.hypot(cached.targetX-target.x,cached.targetZ-target.z)<2.5)
     return [cached.dx,cached.dz];
   let result:[number,number]=norm(target.x-p.x,target.z-p.z);
-  if((g.mode==='survival'||g.mode==='ffa')&&g.players.length>=8){
+  // Large maps formerly ran a 3500-cell search for every blocked bot.
+  // Beyond a short local radius, cheap obstacle steering is enough.
+  if(distance(p,target)>14||(g.mode==='survival'||g.mode==='ffa')&&g.players.length>=8){
     const angle=Math.atan2(result[1],result[0]);
     for(const off of [0,.45,-.45,.9,-.9,1.4,-1.4,2.1,-2.1,Math.PI]){
       const vx=Math.cos(angle+off),vz=Math.sin(angle+off);
@@ -248,7 +268,7 @@ function navDirection(g:GameState,p:Fighter,target:{x:number;z:number}):[number,
     // Early stop when the search reaches our position; larger arena requires
     // a wider search than the old 26×18 board.
     let reached=false;
-    for(let i=0;i<queue.length&&i<3500&&!reached;i++){
+    for(let i=0;i<queue.length&&i<240&&!reached;i++){
       const [x,z]=queue[i];
       for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
         const nx=x+dx,nz=z+dz,key=cell(nx,nz);
