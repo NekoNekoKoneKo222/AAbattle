@@ -1,4 +1,5 @@
 import express from 'express';
+import { registerChaosBossRoutes } from './chaos-boss.js';
 import { randomBytes } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import { newGame, applyAction, view, expire } from './chaos-shogi.js';
@@ -37,6 +38,7 @@ export function createChaosOnline({currentUser,collection,findUser}){
   const matchQueue=mode=>{const queue=queues[mode],size=mode==='tag'?4:2;while(queue.length>=size){const group=queue.splice(0,size),room=createRoom(mode,group[0].user,{collapse:false,allowPermanent:mode!=='ranked'});room.teams.b=mode==='tag'?[group[0].user,group[2].user]:[group[0].user];room.teams.w=mode==='tag'?[group[1].user,group[3].user]:[group[1].user];for(const entry of group){room.ready.add(entry.user.id);room.decks.set(entry.user.id,entry.deck);room.awakenings.set(entry.user.id,entry.awakened||[]);room.ultimates.set(entry.user.id,entry.ultimate||[]);}startMatch(room);}};
   router.use(async(req,res,next)=>{try{res.set('Cache-Control','no-store');const user=await currentUser(req);if(!user)return res.status(401).json({error:'AAbattleアカウントでログインしてください。'});req.chaosUser={id:user.id,username:safeName(user),admin:user.username_key==='nekonekokoneko'};if(req.method!=='GET'){const origin=req.get('origin');if(origin&&new URL(origin).host!==req.get('host'))return res.status(403).json({error:'送信元が一致しません。'});if(!req.is('application/json'))return res.status(415).json({error:'JSONで送信してください。'});}next();}catch(error){next(error);}});
   const route=handler=>async(req,res)=>{try{const result=await handler(req);res.json(result);}catch(error){res.status(error.status||400).json({error:error.message});}};
+  const bossMode=registerChaosBossRoutes(router,{collection});
   router.get('/me',route(async req=>{const id=req.chaosUser.id,room=roomFor(id),profile=collection?await collection.profile(id):null;if(profile)ratings.set(id,profile.rating);return {user:{...req.chaosUser,title:profile?.titles?.display||'見習い棋士'},rating:profile?.rating??ratings.get(id)??1000,room:room?publicRoom(room):null,queue:Object.entries(queues).find(([,q])=>q.some(e=>e.user.id===id))?.[0]||null};}));
   if(collection){
     router.get('/collection/players/:username',route(async req=>{const key=String(req.params.username||'').normalize('NFKC').trim().toLocaleLowerCase('und');if(!/^[\p{L}\p{N}_]{3,20}$/u.test(key))throw fail(400,'ユーザー名が不正です。');const user=await findUser?.(key);if(!user)throw fail(404,'プレイヤーが見つかりません。');return {username:safeName(user),...await collection.cardShowcase(user.id)};}));
