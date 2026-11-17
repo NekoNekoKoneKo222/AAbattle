@@ -18,6 +18,7 @@ const paintCanvas=document.createElement('canvas');
 paintCanvas.width=PW;paintCanvas.height=PH;
 const paintCtx=paintCanvas.getContext('2d');
 const paintImage=paintCtx.createImageData(PW,PH);
+let dirtyLeft=PW,dirtyTop=PH,dirtyRight=-1,dirtyBottom=-1;
 const COLORS=['#26d7ec','#ff9835'];
 let paint=new Uint8Array(PW*PH),paintDirty=true;
 let ws=null,myId=null,roomCode='',isHost=false,scene='city',phase='lobby',round=0;
@@ -328,7 +329,13 @@ $('backLobbyBtn').addEventListener('click',()=>send({type:'lobby'}));
 
 function setInkPixel(index,value){
  if(index<0||index>=paint.length||value<0||value>2)return;
+ if(paint[index]===value)return;
  paint[index]=value;
+ const ix=index%PW,iy=Math.floor(index/PW);
+ dirtyLeft=Math.min(dirtyLeft,ix);
+ dirtyTop=Math.min(dirtyTop,iy);
+ dirtyRight=Math.max(dirtyRight,ix);
+ dirtyBottom=Math.max(dirtyBottom,iy);
  const i=index*4,d=paintImage.data;
  if(!value){d[i+3]=0;return;}
  const noise=((index*2654435761>>>8)%13)-6;
@@ -557,16 +564,33 @@ setInterval(()=>{
 
 function drawBox(x,y,w,h,color){ctx.fillStyle=color;ctx.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h));}
 function worldBox(x,y,w,h,c){drawBox(x*TILE,y*TILE,w*TILE,h*TILE,c);}
-function drawFloor(){
- const startX=Math.max(0,Math.floor(cameraX)-2),startY=Math.max(0,Math.floor(cameraY)-2);
- const endX=Math.min(W,Math.ceil(cameraX+canvas.width/TILE)+2);
- const endY=Math.min(H,Math.ceil(cameraY+canvas.height/TILE)+2);
- for(let y=startY;y<endY;y++)for(let x=startX;x<endX;x++){
-  const hash=(x*73856093 ^ y*19349663)>>>0;
-  worldBox(x,y,1.02,1.02,hash%7===0?'#213646':(x+y)%2?'#1b303f':'#1c3242');
-  if(hash%23===0)worldBox(x+.25,y+.25,.14,.1,'#314f5c');
+// Build low-resolution floor atlas one time, instead of issuing ~2400
+// Canvas fill operations on *every* battle frame.
+const floorCanvas=document.createElement('canvas');
+floorCanvas.width=16*TILE;floorCanvas.height=16*TILE;
+const floorCtx=floorCanvas.getContext('2d',{alpha:false});
+for(let y=0;y<16;y++)for(let x=0;x<16;x++){
+ const hash=(x*73856093 ^ y*19349663)>>>0;
+ floorCtx.fillStyle=hash%7===0?'#213646':(x+y)%2?'#1b303f':'#1c3242';
+ floorCtx.fillRect(x*TILE,y*TILE,TILE,TILE);
+ if(hash%23===0){
+   floorCtx.fillStyle='#314f5c';
+   floorCtx.fillRect(x*TILE+4,y*TILE+4,3,2);
  }
- if(paintDirty){paintCtx.putImageData(paintImage,0,0);paintDirty=false;}
+}
+const floorPattern=ctx.createPattern(floorCanvas,'repeat');
+function drawFloor(){
+ ctx.fillStyle=floorPattern;
+ ctx.fillRect(Math.floor(cameraX*TILE),Math.floor(cameraY*TILE),
+   canvas.width+TILE,canvas.height+TILE);
+ if(paintDirty){
+  // Re-upload only dirty subcells, not the entire giant 640x400 texture.
+  if(dirtyRight>=dirtyLeft&&dirtyBottom>=dirtyTop)paintCtx.putImageData(
+    paintImage,0,0,dirtyLeft,dirtyTop,
+    dirtyRight-dirtyLeft+1,dirtyBottom-dirtyTop+1);
+  dirtyLeft=PW;dirtyTop=PH;dirtyRight=-1;dirtyBottom=-1;
+  paintDirty=false;
+ }
  ctx.imageSmoothingEnabled=false;
 
  // Copy only the visible viewport, not the entire 2560x1600 world texture.
@@ -742,10 +766,21 @@ function render(now){
    if(now-lastErrorAt>7000){console.error('SPRA ink renderer:',err);toast('インク描画を修復中です');lastErrorAt=now;}
    paintDirty=true;
   }
-  drawCosmic(ctx,{specials:specialObjects,shots:gumShots,effects,cameraX,cameraY,
-    tile:TILE,width:canvas.width,height:canvas.height,elapsed:clock,now});
-  drawBombs();
-  drawEffects(now);
+  // Each effect is isolated: a malformed shot cannot blank the whole arena.
+  for(const [label,draw] of [
+   ['cosmic',()=>drawCosmic(ctx,{specials:specialObjects,shots:gumShots,effects,cameraX,cameraY,
+     tile:TILE,width:canvas.width,height:canvas.height,elapsed:clock,now})],
+   ['bombs',drawBombs],['effects',()=>drawEffects(now)]
+  ]) {
+   ctx.save();
+   try{draw();}
+   catch(err){
+     if(now-lastErrorAt>6000){
+       console.error('SPRA render '+label+':',err);
+       toast('描画を一部省略しました ('+label+')');lastErrorAt=now;
+     }
+   }finally{ctx.restore();}
+  }
  }catch(err){
   if(now-lastErrorAt>7000){console.error('SPRA battle renderer:',err);toast('描画エラーを検出しました');lastErrorAt=now;}
  }finally{ctx.restore();}
@@ -769,7 +804,7 @@ function render(now){
    actorCtx.globalAlpha=1;
    drawAim();
  }finally{actorCtx.restore();}
- if((frames++%3)===0){
+ if((frames++%8)===0){
   try{drawMiniMap();}catch(err){console.warn('SPRA minimap:',err);}
  }
 }
