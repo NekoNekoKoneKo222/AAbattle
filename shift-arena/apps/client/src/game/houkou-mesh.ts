@@ -117,7 +117,7 @@ function sample(node:Record<string,number[]>|undefined,t:number):number[]|null{
   if(!node)return null;
   const values=Object.entries(node).map(([time,v])=>[Number(time),v] as const).sort((a,b)=>a[0]-b[0]);
   if(!values.length)return null;
-  const a=values.findLast(([when])=>when<=t)||values[0];
+  const a=[...values].reverse().find(([when])=>when<=t)||values[0];
   const b=values.find(([when])=>when>=t)||values[values.length-1];
   const fraction=a[0]===b[0]?0:Math.max(0,Math.min(1,(t-a[0])/(b[0]-a[0])));
   return a[1].map((n,i)=>n+(b[1][i]-n)*fraction);
