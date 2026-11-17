@@ -131,25 +131,29 @@ export function createInkSurface(width, height, walls = []) {
     return counts.map(count => Math.round(1000 * count / Math.max(1, paintable)) / 10);
   }
   // Ordered run lengths compress contiguous same-colour subpixels in network deltas.
-  function flush() {
+  function flush(maxCells = Infinity) {
     if (!changed.size) return [];
-    const indices = [...changed.keys()].sort((a, b) => a - b);
-    const runs = [];
-    let start = indices[0], last = start, value = changed.get(start), length = 1;
-    for (let i = 1; i < indices.length; i++) {
-      const index = indices[i], color = changed.get(index);
-      if (index === last + 1 && color === value) {
-        last = index;
-        length++;
-      } else {
-        runs.push(start, length, value);
-        start = last = index;
-        value = color;
-        length = 1;
+    // Process a bounded batch at each broadcast. Unsent changes remain queued
+    // rather than causing a multi-megabyte spike during intense CPU battles.
+    const budget=Number.isFinite(maxCells)?Math.max(1,Math.floor(maxCells)):Infinity;
+    const indices=[];
+    for(const index of changed.keys()) {
+      indices.push(index);
+      if(indices.length>=budget)break;
+    }
+    indices.sort((a,b)=>a-b);
+    const runs=[];
+    let start=indices[0],last=start,value=changed.get(start),length=1;
+    for(let i=1;i<indices.length;i++){
+      const index=indices[i],color=changed.get(index);
+      if(index===last+1&&color===value){last=index;length++;}
+      else{
+        runs.push(start,length,value);
+        start=last=index;value=color;length=1;
       }
     }
-    runs.push(start, length, value);
-    changed.clear();
+    runs.push(start,length,value);
+    for(const index of indices)changed.delete(index);
     return runs;
   }
   function clear() {
