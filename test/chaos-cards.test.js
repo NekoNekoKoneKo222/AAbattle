@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { newGame, applyAction, view } from '../src/chaos-shogi.js';
-import { CARD_CATALOG, COMBOS, DEFAULT_DECK, validateDeck, canActivate, combosFor, startTurnCards } from '../src/chaos-cards.js';
+import { CARD_CATALOG, COMBOS, DEFAULT_DECK, validateDeck, canActivate, combosFor, startTurnCards, pickMeteorTargets } from '../src/chaos-cards.js';
 
 const at=(x,y)=>y*9+x;
 const setup=()=>{const s=newGame();s.board.fill(null);s.board[at(4,8)]={side:'b',type:'K',promoted:false};s.board[at(4,0)]={side:'w',type:'K',promoted:false};s.board[at(0,2)]={side:'w',type:'P',promoted:false};s.cards.b.deck=[];s.cards.w.deck=[];s.cards.b.hand=[];s.cards.w.hand=[];s.cards.b.cp=10;s.cards.w.cp=10;s.history=[];return s;};
@@ -121,4 +121,47 @@ test('rule card grants two moves and enemy dispel turns off the Dobby combo',()=
   let combo=setup();combo.cards.b.hand=['dobby','infinity'];combo.cards.w.hand=['tax'];combo=applyAction(combo,{kind:'card',cardId:'dobby',choice:'steal'});combo=applyAction(combo,{kind:'move',from:at(4,8),to:at(3,8),promote:false});combo=applyAction(combo,{kind:'move',from:at(4,0),to:at(3,0),promote:false});combo.cards.b.cp=10;combo=applyAction(combo,{kind:'card',cardId:'infinity'});assert.ok(combosFor(combo,'b').length);
   combo=applyAction(combo,{kind:'move',from:at(3,8),to:at(2,8),promote:false});combo.cards.w.hand=['dispel'];combo.cards.w.cp=10;combo=applyAction(combo,{kind:'card',cardId:'dispel',target:1});assert.equal(combosFor(combo,'b').length,0);
   combo=applyAction(combo,{kind:'move',from:at(3,0),to:at(2,0),promote:false});combo.cards.b.cp=10;assert.equal(canActivate(combo,'b',0),false);combo.cards.b.hand=['infinity'];combo=applyAction(combo,{kind:'card',cardId:'infinity'});combo.cards.b.cp=3;assert.equal(canActivate(combo,'b',0),true);
+});
+
+test('meteor chooses three distinct random targets from the 3x3 area',()=>{
+  const eligible=[10,11,12,19,20,21];
+  const zero=pickMeteorTargets(eligible,()=>0);
+  const high=pickMeteorTargets(eligible,()=>0.999999999);
+  assert.equal(zero.length,3);
+  assert.equal(new Set(zero).size,3);
+  assert.ok(zero.every(i=>eligible.includes(i)));
+  assert.notDeepEqual(zero,high,'different random values should change the chosen victims');
+  assert.deepEqual(pickMeteorTargets([1,2],()=>0),[2,1]);
+});
+
+test('meteor destroys up to three random enemy pieces in 3x3, never the king, awards zero points',()=>{
+  let s=setup();
+  const positions=[at(0,1),at(1,1),at(2,1),at(0,2),at(1,2),at(2,2)];
+  for(const index of positions)s.board[index]={side:'w',type:'P',promoted:false};
+  s.board[at(2,2)]={side:'b',type:'S',promoted:false};
+  const enemy=positions.filter(i=>s.board[i].side==='w');
+  s.cards.b.hand=['meteor'];s.cards.b.cp=10;
+  const next=applyAction(s,{kind:'card',cardId:'meteor',target:at(1,1)});
+  assert.equal(enemy.filter(i=>next.board[i]===null).length,3);
+  assert.equal(next.board[at(2,2)].type,'S','friendly pieces should not be damaged');
+  assert.equal(next.board[at(4,0)].type,'K','king is immune');
+  assert.equal(next.scores.b,0);
+  assert.equal(next.cards.b.cp,3);
+  assert.match(next.log.join(' '),/判定ポイント獲得なし/);
+});
+
+test('meteor has no area score even when fewer than three victims can be hit',()=>{
+  const s=setup();s.cards.b.hand=['meteor'];
+  const next=applyAction(s,{kind:'card',cardId:'meteor',target:at(0,2)});
+  assert.equal(next.board[at(0,2)],null);
+  assert.equal(next.scores.b,0);
+  assert.equal(next.cards.b.cp,3);
+});
+
+test('meteor validates empty areas and 7 CP before consuming the hand card',()=>{
+  const s=setup();s.cards.b.hand=['meteor'];s.cards.b.cp=6;
+  assert.throws(()=>applyAction(s,{kind:'card',cardId:'meteor',target:at(0,2)}),/CPが足りません/);
+  s.cards.b.cp=10;
+  assert.throws(()=>applyAction(s,{kind:'card',cardId:'meteor',target:at(8,8)}),/範囲に破壊できる駒がありません/);
+  assert.deepEqual(s.cards.b.hand,['meteor']);
 });
