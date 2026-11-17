@@ -275,7 +275,9 @@ function receive(msg){
   scores=Array.isArray(msg.scores)?msg.scores:[0,0];
   winner=msg.winner;isHost=msg.host===myId;
   players=msg.players||[];bombs=msg.bombs||[];
-  readChanges(msg.changes);
+  // Recover gracefully when this client fell behind on ink packets.
+  if(typeof msg.fullPaint==='string')decodePaint(msg.fullPaint);
+  else readChanges(msg.changes);
   if(Array.isArray(msg.effects))for(const fx of msg.effects)effects.push({...fx,time:performance.now()});
   if(effects.length>90)effects.splice(0,effects.length-90);
   updateUI();
@@ -396,7 +398,16 @@ function drawFloor(){
  }
  if(paintDirty){paintCtx.putImageData(paintImage,0,0);paintDirty=false;}
  ctx.imageSmoothingEnabled=false;
- ctx.drawImage(paintCanvas,0,0,W*TILE,H*TILE);
+
+ // Copy only the visible viewport, not the entire 2560x1600 world texture.
+ // The old full-map draw every frame was expensive and could starve avatar updates.
+ const sx=Math.max(0,Math.floor(cameraX*PAINT_SCALE));
+ const sy=Math.max(0,Math.floor(cameraY*PAINT_SCALE));
+ const sw=Math.min(PW-sx,Math.ceil(canvas.width/TILE*PAINT_SCALE)+2);
+ const sh=Math.min(PH-sy,Math.ceil(canvas.height/TILE*PAINT_SCALE)+2);
+ if(sw>0&&sh>0)ctx.drawImage(paintCanvas,sx,sy,sw,sh,
+     sx*TILE/PAINT_SCALE,sy*TILE/PAINT_SCALE,
+     sw*TILE/PAINT_SCALE,sh*TILE/PAINT_SCALE);
  for(const b of walls){
   worldBox(b.x+.3,b.y+.5,b.w,b.h,'#071522');
   worldBox(b.x,b.y,b.w,b.h,'#3a5069');
@@ -503,10 +514,13 @@ function drawMiniMap(){
  mini.strokeStyle='#e0f7ff';mini.lineWidth=1.5;
  mini.strokeRect(cameraX*sx,cameraY*sy,canvas.width/TILE*sx,canvas.height/TILE*sy);
 }
-let frames=0;
+let frames=0,renderAt=0,lastErrorAt=0;
 function render(now){
- const dt=Math.min(.1,(now-lastFrame)/1000);lastFrame=now;clock+=dt;
  requestAnimationFrame(render);
+ // A stable 30 FPS cap avoids rendering both massive map textures at full
+ // refresh rate on lower-powered mobile browsers. Physics stays on the server.
+ if(now-renderAt<33)return;
+ const dt=Math.min(.1,(now-lastFrame)/1000);lastFrame=now;renderAt=now;clock+=dt;
  if(scene!=='battle')return;
  const me=players.find(p=>p.id===myId);
  const viewW=canvas.width/TILE,viewH=canvas.height/TILE;
@@ -516,12 +530,27 @@ function render(now){
   cameraX+=(nextX-cameraX)*Math.min(1,dt*9);
   cameraY+=(nextY-cameraY)*Math.min(1,dt*9);
  }
- ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#122336';ctx.fillRect(0,0,canvas.width,canvas.height);
+ // Even if ink rendering fails on a particular browser, restore the canvas
+ // and render the players on top instead of leaving a blank frozen arena.
+ ctx.setTransform(1,0,0,1,0,0);
+ ctx.fillStyle='#122336';ctx.fillRect(0,0,canvas.width,canvas.height);
  ctx.save();
- ctx.translate(-Math.round(cameraX*TILE),-Math.round(cameraY*TILE));
- drawFloor();drawBombs();drawEffects(now);
- for(const p of players)drawAvatar(p,dt,now);
- drawAim();ctx.restore();
- if((frames++%4)===0)drawMiniMap();
+ try {
+  ctx.translate(-Math.round(cameraX*TILE),-Math.round(cameraY*TILE));
+  try {drawFloor();}catch(err){
+   if(now-lastErrorAt>7000){console.error('SPRA ink renderer:',err);toast('インク描画を修復中です');lastErrorAt=now;}
+   paintDirty=true;
+  }
+  drawBombs();
+  drawEffects(now);
+  // Avatars always render after ink and explosive effects.
+  for(const p of players)drawAvatar(p,dt,now);
+  drawAim();
+ }catch(err){
+  if(now-lastErrorAt>7000){console.error('SPRA battle renderer:',err);toast('描画エラーを検出しました');lastErrorAt=now;}
+ }finally{ctx.restore();}
+ if((frames++%3)===0){
+  try{drawMiniMap();}catch(err){console.warn('SPRA minimap:',err);}
+ }
 }
 requestAnimationFrame(render);

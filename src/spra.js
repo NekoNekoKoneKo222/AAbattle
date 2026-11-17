@@ -172,19 +172,46 @@ function updateBombs(room, dt) {
   }
 }
 function botInput(room, p) {
-  const enemy = [...room.players.values()].filter(v => v.team !== p.team && v.deadFor <= 0).sort((a, b) => distance(a, p) - distance(b, p))[0];
+  const enemy = [...room.players.values()]
+    .filter(v => v.team !== p.team && v.deadFor <= 0)
+    .sort((a, b) => distance(a, p) - distance(b, p))[0];
   if (!enemy) {
     p.input = { x: 0, y: 0, fire: false, swim: false };
     return;
   }
-  const dx = enemy.x - p.x, dy = enemy.y - p.y, d = Math.hypot(dx, dy) || 1;
-  const jitter = Math.sin(room.elapsed * 0.8 + p.id.length) * 0.14;
-  p.aim = Math.atan2(dy, dx) + jitter;
-  const blockAhead = nearWall(p.x + dx/d*2, p.y + dy/d*2, .5);
-  p.input = { x: blockAhead ? -dy/d : d > 8 ? dx / d : Math.sin(room.elapsed * 1.8 + p.id.length) * .55,
-    y: blockAhead ? (p.y >= SPRA_HEIGHT / 2 ? 1 : -1) : d > 8 ? dy / d : Math.cos(room.elapsed * 1.8 + p.id.length) * .55,
-    fire: d < (SPRA_WEAPONS[p.weapon]?.range || 22), swim: p.ink < 65 };
-  if(d<12 && p.bombCd===0 && p.ink>100 && Math.random()<.0025) bomb(room,p);
+  const dx=enemy.x-p.x, dy=enemy.y-p.y, d=Math.hypot(dx,dy)||1;
+  const desired=Math.atan2(dy,dx);
+  const gun=SPRA_WEAPONS[p.weapon]||SPRA_WEAPONS.shooter;
+  p.aim=desired+Math.sin(room.elapsed*.8+p.id.length)*.14;
+
+  // Find a safe 2.4-unit step among 16 possible directions. This prevents
+  // bots from remaining pinned against the big walls of the expanded arena.
+  const previous=Number.isFinite(p.botHeading)?p.botHeading:desired;
+  let best=-Infinity, chosen=desired;
+  for(let i=0;i<16;i++){
+    const angle=i*Math.PI/8;
+    const x=Math.cos(angle), y=Math.sin(angle);
+    if(nearWall(p.x+x*2.4,p.y+y*2.4,.5))continue;
+    if(nearWall(p.x+x*1.1,p.y+y*1.1,.5))continue;
+    const progress=Math.cos(angle-desired);
+    const momentum=Math.cos(angle-previous);
+    const score=progress*1.3+momentum*.55+
+      Math.sin(room.elapsed*.3+p.id.charCodeAt(0)+i)*.055;
+    if(score>best){best=score;chosen=angle;}
+  }
+  if(best===-Infinity){
+    const fallbacks=[0,Math.PI/2,Math.PI,-Math.PI/2];
+    chosen=fallbacks.find(angle=>!nearWall(p.x+Math.cos(angle),p.y+Math.sin(angle),.38))??previous;
+  }
+  p.botHeading=chosen;
+  const own=room.ink.sample(p.x,p.y)===p.team+1;
+  p.input={
+    x:Math.cos(chosen)*(d<5?.45:1),
+    y:Math.sin(chosen)*(d<5?.45:1),
+    fire:d<gun.range*.93 && !nearWall(p.x+Math.cos(desired)*3,p.y+Math.sin(desired)*3,.1),
+    swim:p.ink<80&&own
+  };
+  if(d<12&&p.bombCd===0&&p.ink>100&&Math.random()<.0025)bomb(room,p);
 }
 function move(room, p, dt) {
   if (p.deadFor > 0) {
@@ -221,8 +248,32 @@ function send(ws, object) {
     try { ws.send(JSON.stringify(object)); } catch {}
   }
 }
+const MAX_SOCKET_BACKLOG = 200 * 1024;
 function broadcast(room, object) {
-  for (const p of room.players.values()) if (p.ws) send(p.ws, object);
+  // Serialize the large ink delta only once per frame, not once for each
+  // member of an eight-player room.
+  const payload = JSON.stringify(object);
+  for (const p of room.players.values()) {
+    const ws = p.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) continue;
+    if (object.type === 'state' && ws.bufferedAmount > MAX_SOCKET_BACKLOG) {
+      // Do not pile up megabytes of obsolete paint events. The next
+      // successfully delivered frame must resynchronize its full paint.
+      ws.spraNeedsPaint = true;
+      continue;
+    }
+    try {
+      if (object.type === 'state' && (ws.spraNeedsPaint || payload.length > 230_000)) {
+        const fullState = { ...object, changes: [], fullPaint: room.ink.snapshot() };
+        ws.send(JSON.stringify(fullState));
+        ws.spraNeedsPaint = false;
+      } else {
+        ws.send(payload);
+      }
+    } catch {
+      if (object.type === 'state') ws.spraNeedsPaint = true;
+    }
+  }
 }
 function snapshot(room) {
   return { type: 'state', code: room.code, host: room.host, round: room.round, phase: room.state,
@@ -364,7 +415,7 @@ export function createSpra() {
         room.state = 'results';
         room.winner = room.ink.counts[0] === room.ink.counts[1] ? -1 : room.ink.counts[0] > room.ink.counts[1] ? 0 : 1;
       }
-      if (now - room.broadcastAt >= 100 || room.state === 'results') {
+      if (now - room.broadcastAt >= 125 || room.state === 'results') {
         room.broadcastAt = now;
         broadcast(room, snapshot(room));
       }
