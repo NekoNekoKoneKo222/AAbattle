@@ -26,3 +26,13 @@
 .boss-meter progress{height:19px;width:100%;accent-color:#ed6c6c}
 .hand-card.ultimate-card{border-color:#ffce6b;box-shadow:0 0 0 1px #ffce6b99,0 0 18px #e7aa4577}
 @media(max-width:600px){.boss-panel{padding:14px}.boss-controls{flex-direction:column;align-items:stretch}.boss-controls label,.boss-controls button{width:100%}}
+
+/* 二文字の駒名が 9×9 と拡張盤のどちらでも収まるようにする。 */
+.board .square .piece{font-size:clamp(10px,2vw,23px);letter-spacing:-.06em;white-space:nowrap;overflow:visible;text-align:center}
+.board.expanded .square .piece{font-size:clamp(9px,1.65vw,18px)}
+.hand button{width:50px;font-size:17px;white-space:nowrap;line-height:1.1}
+@media(max-width:520px){
+  .board .square .piece{font-size:clamp(9px,2.7vw,14px)}
+  .board.expanded .square .piece{font-size:clamp(8px,2.1vw,12px)}
+  .hand button{width:46px;font-size:15px}
+}
