@@ -275,7 +275,9 @@ function receive(msg){
   scores=Array.isArray(msg.scores)?msg.scores:[0,0];
   winner=msg.winner;isHost=msg.host===myId;
   players=msg.players||[];bombs=msg.bombs||[];
-  readChanges(msg.changes);
+  // Recover gracefully when this client fell behind on ink packets.
+  if(typeof msg.fullPaint==='string')decodePaint(msg.fullPaint);
+  else readChanges(msg.changes);
   if(Array.isArray(msg.effects))for(const fx of msg.effects)effects.push({...fx,time:performance.now()});
   if(effects.length>90)effects.splice(0,effects.length-90);
   updateUI();
