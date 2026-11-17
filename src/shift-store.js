@@ -108,7 +108,7 @@ export class ShiftStore {
   getProfile(user) { return this.withProfile(user); }
   adminGrant(admin, recipient, item, amount, character) {
     if(!isShiftAdminUser(admin))throw fail('管理者権限がありません。',403);
-    const kinds=['coins','cash','sun_power','diamonds','credits','prestige','sun','glitch','hero','sun_skin'];
+    const kinds=['coins','sun_power','diamonds','credits','prestige','sun','glitch','hero','sun_skin'];
     if(!kinds.includes(item))throw fail('不正なアイテム種類です。');
     const quantity=item==='hero'||item==='sun_skin'?1:Number(amount);
     if(!Number.isSafeInteger(quantity)||quantity<1||quantity>1000000)throw fail('数量は1～1,000,000の整数で指定してください。');
@@ -139,7 +139,7 @@ export class ShiftStore {
     });
   }
   setSelected(user, character) { return this.withProfile(user, p => { if (!p.owned_characters.includes(character)) throw fail('未所持のキャラクターです。', 403); p.selected_character = character; }); }
-  setTarget(user, character) { return this.withProfile(user, p => { if (!nextRoadTier(p.owned_characters).includes(character)) throw fail('現在のキャラロードで選べません。'); p.road_target = character; }); }
+  setTarget(user, character) { return this.withProfile(user, p => { if (!nextRoadTier(p.owned_characters).includes(character) && !(p.road_target===character&&!p.owned_characters.includes(character))) throw fail('現在のキャラロードで選べません。'); p.road_target = character; }); }
   rerollRoad(user) { return this.withProfile(user, p => {
     const available=Object.keys(characterRoad).filter(id=>id!=='rei'&&!p.owned_characters.includes(id));
     if(available.length<=1)throw fail('変更できるキャラクターがありません。');
@@ -147,10 +147,10 @@ export class ShiftStore {
     if(!current)throw fail('すべてのキャラクターを獲得済みです。');
     const price=roadRerollCost(characterRoad[current].rarity);
     const e=p.economy ||= defaultEconomy();
-    if((e.cash||0)<price)throw fail('キャッシュが不足しています。');
+    if(p.credits<price)throw fail('クレジットが不足しています。');
     const drawn=randomUnownedRoadHero(p.owned_characters,current);
     if(!drawn)throw fail('変更できるキャラクターがありません。');
-    e.cash-=price;
+    p.credits-=price;
     p.road_target=drawn.character;
     return {character:drawn.character,rarity:drawn.rarity,cost:price,profile:publicProfile(p)};
   }); }
@@ -250,11 +250,10 @@ export class ShiftStore {
     for(let i=0;i<rolls;i++){
       // Only obtainable through free play. A drop contains no paid gambling.
       const v=randomInt(1000);
-      const type=v<465?'coins':v<825?'sun_power':v<945?'credits':v<970?'cash':v<995?'diamonds':'bonus_drop';
+      const type=v<470?'coins':v<850?'sun_power':v<970?'credits':v<995?'diamonds':'bonus_drop';
       if(type==='coins'){const amount=(kind==='glitch'?90:55)+randomInt(kind==='glitch'?151:96);e.coins+=amount;rewards.push({type,amount});}
       else if(type==='sun_power'){const amount=(kind==='glitch'?75:35)+randomInt(kind==='glitch'?96:76);e.sun_power+=amount;rewards.push({type,amount});}
       else if(type==='credits'){const amount=20+randomInt(kind==='glitch'?61:36);if(!nextRoadTier(p.owned_characters).length)p.prestige+=amount;else p.credits+=amount;rewards.push({type,amount});}
-      else if(type==='cash'){const amount=kind==='glitch'?15:6;e.cash=(e.cash||0)+amount;rewards.push({type,amount});}
       else if(type==='diamonds'){const amount=kind==='glitch'?15:6;e.diamonds+=amount;rewards.push({type,amount});}
       else {e.drops.sun++;rewards.push({type:'sun',amount:1});}
     }
@@ -282,8 +281,6 @@ export class ShiftStore {
     const economy=p.economy ||= defaultEconomy();
     const coins=source==='solo'?10:won?30:14,sunPower=source==='solo'?8:won?22:12;
     economy.coins+=coins;economy.sun_power+=sunPower;economy.total_matches++;
-    const cash=source==='solo'?2:won?8:4;
-    economy.cash=(economy.cash||0)+cash;
     if(economy.last_drop_day!==utcDay()){economy.last_drop_day=utcDay();economy.daily_drops=0;}
     if(economy.total_matches%3===0&&economy.daily_drops<3){economy.drops.sun++;economy.daily_drops++;}
     if(economy.total_matches%12===0)economy.drops.glitch++;
@@ -294,7 +291,7 @@ export class ShiftStore {
       entry.count = Math.min(mission.goal, entry.count + count); p.missions[id] = entry;
     }
     if (client) await client.query('UPDATE shift_reward_transactions SET credits=$3,mastery_xp=$4 WHERE match_id=$1 AND user_id=$2', [matchId,user.id,amount,xp]);
-    return { credited: true, credits: amount, coins, cash, sunPower, xp, profile: publicProfile(p) };
+    return { credited: true, credits: amount, coins, sunPower, xp, profile: publicProfile(p) };
   }); }
   async searchUsers(user, query) {
     const key = String(query || '').trim().slice(0, 24).toLowerCase();
