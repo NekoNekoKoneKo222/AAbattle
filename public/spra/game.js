@@ -1,5 +1,6 @@
 import { SPRA_WEAPONS, SPRA_CATEGORIES } from './weapons.js';
 import { createCity } from './city.js';
+import { createSpraTutorial } from './tutorial.js';
 import { SPRA_SPECIALS } from './specials.js';
 import { drawCosmic } from './cosmic-render.js';
 import { createSpraFacilities, FASHION_COLORS } from './facilities.js';
@@ -56,20 +57,34 @@ function saveBag(){
 function textItem(text,className=''){
  const elem=document.createElement('span');elem.textContent=text;elem.className=className;return elem;
 }
+function closeCityMenu(){
+ $('cityMenu').classList.add('hidden');
+ $('cityMenuToggle').setAttribute('aria-expanded','false');
+}
 function sceneTo(next){
+ if(scene==='tutorial'&&next!=='tutorial')tutorial.stop();
  scene=next;
- for(const [id,key] of [['citySection','city'],['joinCard','reception'],['roomCard','room'],['arenaPanel','battle']])
-  $(id).classList.toggle('hidden',key!==next);
+ for(const [id,visible] of [
+  ['citySection',['city','reception','room'].includes(next)],
+  ['tutorialSection',next==='tutorial'],
+  ['joinCard',next==='reception'],
+  ['roomCard',next==='room'],
+  ['arenaPanel',next==='battle'],
+  ['modalBackdrop',next==='reception'||next==='room']
+ ])$(''+id).classList.toggle('hidden',!visible);
+ if(next!=='city')closeCityMenu();
  city.setActive(next==='city'&&$('shopOverlay').classList.contains('hidden'));
+ if(next==='tutorial')tutorial.start();
  if(next!=='battle'){pointer.down=false;touch.fire=false;touch.swim=false;}
- if(next!=='city'&&next!=='battle')$(next==='room'?'roomCard':'joinCard').scrollIntoView({block:'start',behavior:'smooth'});
+ // This is a viewport game, not a vertically scrolling landing page.
 }
 function openReception(){
  $('shopOverlay').classList.add('hidden');
  sceneTo('reception');
 }
 function openShop(){
- if(scene==='battle')return;
+ if(scene==='battle'||scene==='tutorial')return;
+ closeCityMenu();
  $('shopOverlay').classList.remove('hidden');
  city.setActive(false);
  drawShop();
@@ -98,6 +113,17 @@ const city=createCity($('cityCanvas'),{
   onFacility:id=>facilities.open(id),
   getAppearance:()=>facilities.getAppearance()
 });
+const tutorial=createSpraTutorial($('tutorialCanvas'),{
+ onComplete:()=>{
+  localStorage.setItem('spra_tutorial_complete_v1','1');
+  sceneTo('city');
+  toast('チュートリアル完了！ 街を探検してバトル受付に行こう。');
+ },
+ onSkip:()=>{
+  localStorage.setItem('spra_tutorial_complete_v1','1');
+  sceneTo('city');
+ }
+});
 function disconnectToCity(){
  if(ws){const old=ws;ws=null;old.onclose=null;old.close();}
  myId=null;roomCode='';isHost=false;phase='lobby';round=0;
@@ -109,9 +135,21 @@ function disconnectToCity(){
  toast('カラフルシティに戻りました');
 }
 $('openMatch').addEventListener('click',openReception);
+$('cityMenuToggle').addEventListener('click',()=>{
+ if(scene!=='city')return;
+ const menu=$('cityMenu');
+ const opened=menu.classList.toggle('hidden')===false;
+ $('cityMenuToggle').setAttribute('aria-expanded',String(opened));
+ city.setActive(!opened&&$('shopOverlay').classList.contains('hidden'));
+});
+$('replayTutorial').addEventListener('click',()=>{
+ closeCityMenu();
+ sceneTo('tutorial');
+});
 for(const b of document.querySelectorAll('[data-town-facility]')){
  b.addEventListener('click',()=>{
    const id=b.dataset.townFacility;
+   closeCityMenu();
    if(id==='shop')openShop();
    else if(id==='battle')openReception();
    else facilities.open(id);
@@ -213,7 +251,9 @@ $('roomMode').addEventListener('change',()=>{
  if(isHost)send({type:'mode',mode:$('roomMode').value});
 });
 saveBag();drawShop();drawRoomWeapons();drawRoomSpecials();
-if(queryRoom&&/^[a-z0-9]{6}$/i.test(queryRoom))sceneTo('reception');else sceneTo('city');
+if(queryRoom&&/^[a-z0-9]{6}$/i.test(queryRoom))sceneTo('reception');
+else if(localStorage.getItem('spra_tutorial_complete_v1')==='1')sceneTo('city');
+else sceneTo('tutorial');
 
 function send(data){if(ws?.readyState===WebSocket.OPEN)ws.send(JSON.stringify(data));}
 function updateConnection(online){

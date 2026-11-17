@@ -10,40 +10,71 @@
   <script type="module" defer src="/spra/game.js"></script>
 </head>
 <body>
-  <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
   <div class="shell">
-    <header class="topbar">
-      <a class="wordmark" href="/spra/" aria-label="SPRA Home"><span class="logo">S<span>P</span>RA</span><span class="edition">INK BATTLE <span class="v">/ WEB ARENA</span></span></a>
-      <div class="head-right"><span id="connection" class="connection"><i></i> OFFLINE</span><a class="back" href="/">← ASCII BATTLE</a></div>
-    </header>
-    <main>
-      <section class="intro">
-        <div class="eyebrow"><span class="pulse"></span> MULTIPLAYER / TURF WAR</div>
-        <h1>街から、<em>塗り合え。</em></h1>
-        <p>ドット絵の街を探索して、武器屋で新しいブキを手に入れよう。<br>バトル受付から超大型マップの最大4対4インクPvPに参加！</p>
+    <main id="spraMain">
+      <section id="tutorialSection" class="tutorial-section hidden" aria-label="はじめての操作チュートリアル">
+        <canvas id="tutorialCanvas" width="960" height="600" aria-label="操作を学べるドット絵の練習ステージ"></canvas>
+        <div class="tutorial-brand">SPRA <span>INK TRAINING</span></div>
+        <button id="tutorialSkip" class="tutorial-skip">スキップして街へ ▸</button>
+        <div class="tutorial-guide" role="status" aria-live="polite">
+          <div class="tutorial-step-index" id="tutorialCounter">TUTORIAL 01 / 07</div>
+          <h2 id="tutorialHeading">まずは歩こう！</h2>
+          <p id="tutorialDescription">WASDで移動しよう</p>
+          <div class="tutorial-goal">目標：<strong id="tutorialObjective">8マス移動する</strong></div>
+          <button id="tutorialFinish" class="tutorial-finish hidden">カラフルシティへ行く ▸</button>
+        </div>
+        <div class="tutorial-touch">
+          <div id="tutorialDpad" class="tutorial-dpad">
+            <button data-tutorial-move="up" aria-label="上へ">▲</button>
+            <div><button data-tutorial-move="left" aria-label="左へ">◀</button>
+              <button data-tutorial-move="down" aria-label="下へ">▼</button>
+              <button data-tutorial-move="right" aria-label="右へ">▶</button></div>
+          </div>
+          <div class="tutorial-actions">
+            <button id="tutorialSwim">潜る<br>SWIM</button>
+            <button id="tutorialBomb">ボム<br>Q</button>
+            <button id="tutorialFire">撃つ<br>SHOT</button>
+          </div>
+        </div>
       </section>
 
-      <section id="citySection" class="city-section">
-        <div class="city-top"><div><span class="pixel-kicker">SPRA / PIXEL CITY</span><h2>カラフルシティ</h2></div><div class="city-wallet">SHELL COINS <b id="cityCoins">1200</b> ◎</div></div>
-        <div class="city-frame"><canvas id="cityCanvas" width="800" height="480" aria-label="探索できるドット絵の街"></canvas>
-          <div class="city-corner">WASD / 方向キー：移動　E：話す・入る</div>
+      <section id="citySection" class="city-section hidden" aria-label="カラフルシティ">
+        <div class="city-frame">
+          <canvas id="cityCanvas" width="800" height="480" aria-label="探索できるドット絵の街"></canvas>
+          <div class="city-hud">
+            <span class="city-hud-logo">SPRA</span>
+            <span class="city-hud-coin">COINS <b id="cityCoins">1200</b> ◎</span>
+            <span id="connection" class="connection"><i></i> OFFLINE</span>
+          </div>
+          <button id="cityMenuToggle" class="city-menu-toggle" aria-expanded="false" aria-controls="cityMenu">☰ メニュー</button>
+          <div id="cityMenu" class="city-menu hidden" aria-label="街のメニュー">
+            <strong>カラフルシティ</strong>
+            <div class="city-tools"><button id="openShop" class="btn secondary">武器屋</button>
+              <button id="openMatch" class="btn primary">バトル受付</button></div>
+            <div class="facility-shortcuts" aria-label="街の施設">
+              <button data-town-facility="shop">武器ショップ</button>
+              <button data-town-facility="fashion">ファッション</button>
+              <button data-town-facility="battle">バトル受付</button>
+              <button data-town-facility="training">トレーニング</button>
+              <button data-town-facility="arcade">ゲームセンター</button>
+              <button data-town-facility="workshop">カスタマイズ工房</button>
+              <button data-town-facility="ranking">ランキング広場</button>
+              <button data-town-facility="room">自分の部屋</button>
+            </div>
+            <button id="replayTutorial" class="pixel-back">▶ 操作チュートリアルをもう一度</button>
+          </div>
+          <div class="city-corner">WASD 移動 ／ E 施設へ ／ メニューから施設を選択</div>
           <div class="city-touch">
-            <div class="city-dpad"><button data-city-control="up" aria-label="上">▲</button><div><button data-city-control="left" aria-label="左">◀</button><button data-city-control="down" aria-label="下">▼</button><button data-city-control="right" aria-label="右">▶</button></div></div>
+            <div class="city-dpad"><button data-city-control="up" aria-label="上">▲</button><div>
+              <button data-city-control="left" aria-label="左">◀</button>
+              <button data-city-control="down" aria-label="下">▼</button>
+              <button data-city-control="right" aria-label="右">▶</button></div></div>
             <button id="cityInteract" class="city-interact">E<br>話す</button>
           </div>
         </div>
-        <div class="city-tools"><button id="openShop" class="btn secondary">▤ 武器屋に行く</button><button id="openMatch" class="btn primary">▣ バトル受付へ</button><span>街中を歩いて建物の入り口で E を押せます</span></div>
-        <div class="facility-shortcuts" aria-label="街の施設へのショートカット">
-          <button data-town-facility="shop">武器ショップ</button>
-          <button data-town-facility="fashion">ファッション</button>
-          <button data-town-facility="battle">バトル受付</button>
-          <button data-town-facility="training">トレーニング</button>
-          <button data-town-facility="arcade">ゲームセンター</button>
-          <button data-town-facility="workshop">カスタマイズ工房</button>
-          <button data-town-facility="ranking">ランキング広場</button>
-          <button data-town-facility="room">自分の部屋</button>
-        </div>
       </section>
+
+      <div id="modalBackdrop" class="modal-backdrop hidden"></div>
 
       <section id="shopOverlay" class="shop-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="shopTitle">
         <div class="shop-panel">
@@ -136,13 +167,7 @@
         <div class="game-foot"><div class="stats"><span class="stats-name" id="myTeam">BLUE TEAM</span><span>HP <b id="myHp">100</b></span><span>INK <b id="myInk">300</b></span><span>KO <b id="myKo">0</b></span><span>ボム <b id="myBomb">READY</b></span></div><div class="control-hint">WASD 移動 / 左クリック 射撃（アスターガムは長押し→離す） / Shift 潜伏＋HP回復 / Q サブ / E 回避 / R スペシャル / ミニマップでジャンプ</div></div>
       </section>
 
-      <section class="howto">
-        <div><span>01 / PAINT</span><h3>インクで塗れ</h3><p>地面をチームカラーに塗り替えよう。広く塗ったチームが勝利。</p></div>
-        <div><span>02 / REFILL</span><h3>潜伏＆回復</h3><p>自分の色で高速移動。潜伏でHPとインクを回復、敵色の上では減速。</p></div>
-        <div><span>03 / WIN</span><h3>連携して制圧</h3><p>相手をKOしたら数秒で復活。前線を押し上げよう。</p></div>
-      </section>
     </main>
-    <footer>SPRA © Original fan-style ink arena · HTML5 & WebSocket · <a href="/">AAbattleへ戻る</a></footer>
   </div>
   <div id="toast" role="status" aria-live="polite"></div>
 </body>
