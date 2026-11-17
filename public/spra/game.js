@@ -342,12 +342,54 @@ function drawEffects(now) {
     const age = (now - fx.time) / 550, alpha = Math.max(0, 1 - age);
     ctx.save();ctx.globalAlpha = alpha;
     if (fx.type === 'shot') {
-      ctx.strokeStyle = colorOf(fx.team);ctx.lineWidth = (fx.weapon === 'roller' ? 13 : 5) * (1 - age * .75);
-      ctx.lineCap = 'round';ctx.beginPath();ctx.moveTo(fx.x * TILE, fx.y * TILE);
-      ctx.lineTo(fx.tx * TILE, fx.ty * TILE);ctx.stroke();
-      for (let j = 0; j < 5; j++) {
-        const t = j / 5, x = (fx.x + (fx.tx - fx.x) * t) * TILE, y = (fx.y + (fx.ty - fx.y) * t) * TILE;
-        ctx.fillStyle = colorOf(fx.team);ctx.beginPath();ctx.arc(x, y, 5 + (j % 3) * 3, 0, Math.PI * 2);ctx.fill();
+      const teamColor = colorOf(fx.team);
+      const dx = fx.tx - fx.x, dy = fx.ty - fx.y;
+      const theta = Math.atan2(dy, dx);
+      const seed = fx.seed || 1;
+      const hash = k => {
+        const x = Math.sin(seed * .731 + k * 43.77) * 43758.5453;
+        return x - Math.floor(x);
+      };
+      // Individual droplets travel outward, never a single flat beam.
+      const count = fx.weapon === 'roller' ? 25 : 18;
+      for (let k = 0; k < count; k++) {
+        const t = (k + .45 + hash(k) * .3) / count;
+        const offset = (hash(k + 60) - .5) * (fx.weapon === 'roller' ? .65 : .28);
+        const px = (fx.x + dx * t - Math.sin(theta) * offset) * TILE;
+        const py = (fx.y + dy * t + Math.cos(theta) * offset) * TILE;
+        ctx.fillStyle = teamColor;
+        ctx.globalAlpha = alpha * (0.45 + .4 * hash(k + 110));
+        ctx.beginPath();
+        ctx.arc(px, py, (fx.weapon === 'roller' ? 4.5 : 2.8) + hash(k + 140) * 5,
+          0, Math.PI * 2);
+        ctx.fill();
+      }
+      // Wet, angular splash bloom + detached particles at the impact point.
+      const bloomSize = fx.weapon === 'blaster' ? 2.6 :
+        fx.weapon === 'roller' ? 2.1 : 1.25;
+      const bloom = Math.min(1, age * 4);
+      ctx.globalAlpha = alpha * .38;
+      ctx.fillStyle = teamColor;
+      ctx.beginPath();
+      const petals = 14;
+      for (let k = 0; k <= petals; k++) {
+        const a = k * Math.PI * 2 / petals;
+        const noisy = .62 + .35 * hash(k + 220);
+        const r = bloomSize * TILE * bloom * noisy;
+        const px = fx.tx * TILE + Math.cos(a) * r;
+        const py = fx.ty * TILE + Math.sin(a) * r;
+        if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = alpha * .8;
+      for (let k = 0; k < 14; k++) {
+        const a = hash(k + 290) * Math.PI * 2;
+        const d = bloomSize * TILE * bloom * (.8 + hash(k + 320) * .65);
+        const radius = 2.4 + hash(k + 350) * 4.8;
+        ctx.beginPath();
+        ctx.arc(fx.tx * TILE + Math.cos(a) * d,
+          fx.ty * TILE + Math.sin(a) * d, radius, 0, Math.PI * 2);
+        ctx.fill();
       }
     } else if (fx.type === 'bomb' || fx.type === 'ko') {
       const radius = (fx.type === 'bomb' ? 105 : 55) * age;
