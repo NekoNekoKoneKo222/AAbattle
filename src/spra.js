@@ -289,13 +289,22 @@ export function createSpra() {
         broadcast(room, snapshot(room));
       } else if (msg.type === 'team' && room.state === 'lobby') {
         const team = Number(msg.team);
-        if (team === 0 || team === 1) { player.team = team; spawn(player); broadcast(room, snapshot(room)); }
+        if (team === 0 || team === 1) {
+          const teammates = [...room.players.values()].filter(other => other.id !== player.id && other.team === team);
+          if (teammates.length >= 4) return send(ws, { type: 'error', message: 'そのチームは4人で満員です。' });
+          player.team = team;
+          spawn(player);
+          broadcast(room, snapshot(room));
+        }
       } else if (msg.type === 'bot' && player.id === room.host && room.state !== 'playing') {
         addBot(room);
         broadcast(room, snapshot(room));
       } else if (msg.type === 'start' && player.id === room.host && room.state !== 'playing') {
         if (room.players.size < 2) addBot(room);
         if (room.players.size < 2) return;
+        const blues = [...room.players.values()].filter(p => p.team === 0).length;
+        const oranges = room.players.size - blues;
+        if (!blues || !oranges) return send(ws, { type: 'error', message: 'PvPには青・オレンジ両方のチームが必要です。' });
         reset(room);
         room.state = 'playing';
         broadcast(room, { type: 'reset', paint: Buffer.from(room.paint).toString('base64') });
