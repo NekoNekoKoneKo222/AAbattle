@@ -2,6 +2,7 @@ import { randomUUID, randomBytes } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createInkSurface, INK_SCALE } from './spra-ink.js';
 import { SPRA_WEAPONS } from '../public/spra/weapons.js';
+export { SPRA_WEAPONS };
 
 export const SPRA_WIDTH = 160;
 export const SPRA_HEIGHT = 100;
@@ -33,7 +34,7 @@ const validTile = (x, y) => x >= 0 && y >= 0 && x < SPRA_WIDTH && y < SPRA_HEIGH
 function makeRoom(code) {
   return {
     code, host: null, state: 'lobby', ink: createInkSurface(SPRA_WIDTH, SPRA_HEIGHT, WALLS),
-    players: new Map(), effects: [], bombs: [], nextBomb: 0, elapsed: 0,
+    players: new Map(), effects: [], bombs: [], nextBomb: 0, round:0, elapsed: 0,
     winner: -1, updatedAt: Date.now(), broadcastAt: 0, practice: false
   };
 }
@@ -58,7 +59,7 @@ function spawn(p) {
   p.y = SPRA_HEIGHT / 2 + (Math.random() - 0.5) * 28;
   p.aim = p.team === 0 ? 0 : Math.PI;
   p.hp = 100; p.ink = SPRA_INK_MAX; p.deadFor = 0; p.invuln = 1.5;
-  p.cooldown = 0; p.bombCd = 0;
+  p.cooldown = 0; p.bombCd = 0; p.swimming=false;
 }
 function inflict(room, target, damage, by) {
   if (target.deadFor > 0 || target.invuln > 0 || target.team === by.team) return;
@@ -181,7 +182,7 @@ function botInput(room, p) {
   p.aim = Math.atan2(dy, dx) + jitter;
   const blockAhead = nearWall(p.x + dx/d*2, p.y + dy/d*2, .5);
   p.input = { x: blockAhead ? -dy/d : d > 8 ? dx / d : Math.sin(room.elapsed * 1.8 + p.id.length) * .55,
-    y: blockAhead ? dx/d * (p.y > SPRA_HEIGHT / 2 ? -1 : 1) : d > 8 ? dy / d : Math.cos(room.elapsed * 1.8 + p.id.length) * .55,
+    y: blockAhead ? (p.y >= SPRA_HEIGHT / 2 ? 1 : -1) : d > 8 ? dy / d : Math.cos(room.elapsed * 1.8 + p.id.length) * .55,
     fire: d < (SPRA_WEAPONS[p.weapon]?.range || 22), swim: p.ink < 65 };
   if(d<12 && p.bombCd===0 && p.ink>100 && Math.random()<.0025) bomb(room,p);
 }
@@ -224,7 +225,7 @@ function broadcast(room, object) {
   for (const p of room.players.values()) if (p.ws) send(p.ws, object);
 }
 function snapshot(room) {
-  return { type: 'state', code: room.code, host: room.host, phase: room.state,
+  return { type: 'state', code: room.code, host: room.host, round: room.round, phase: room.state,
     remaining: Math.max(0, Math.ceil(SPRA_DURATION - room.elapsed)),
     scores: score(room), players: [...room.players.values()].map(pack),
     changes: room.ink.flush(), paintScale: INK_SCALE, effects: room.effects.splice(0, 30),
@@ -339,6 +340,7 @@ export function createSpra() {
         const oranges = room.players.size - blues;
         if (!blues || !oranges) return send(ws, { type: 'error', message: 'PvPには青・オレンジ両方のチームが必要です。' });
         reset(room);
+        room.round++;
         room.state = 'playing';
         broadcast(room, { type: 'reset', paint: room.ink.snapshot(), paintScale: INK_SCALE });
         broadcast(room, snapshot(room));
