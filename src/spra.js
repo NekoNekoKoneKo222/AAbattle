@@ -1,24 +1,25 @@
 import { randomUUID, randomBytes } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createInkSurface, INK_SCALE } from './spra-ink.js';
+import { SPRA_WEAPONS } from '../public/spra/weapons.js';
 
-export const SPRA_WIDTH = 54;
-export const SPRA_HEIGHT = 34;
+export const SPRA_WIDTH = 160;
+export const SPRA_HEIGHT = 100;
 export const SPRA_DURATION = 180;
+export const SPRA_INK_MAX = 300;
 const MAX_HUMANS = 8;
 const STEP = 0.05;
 const COLORS = ['#25d4f5', '#ff9c28'];
 const WALLS = [
-  { x: 13, y: 5, w: 4, h: 7 }, { x: 37, y: 22, w: 4, h: 7 },
-  { x: 13, y: 22, w: 4, h: 7 }, { x: 37, y: 5, w: 4, h: 7 },
-  { x: 23, y: 14, w: 8, h: 6 },
-  { x: 5, y: 15, w: 5, h: 4 }, { x: 44, y: 15, w: 5, h: 4 }
+  { x: 26, y: 14, w: 9, h: 17 }, { x: 125, y: 69, w: 9, h: 17 },
+  { x: 26, y: 69, w: 9, h: 17 }, { x: 125, y: 14, w: 9, h: 17 },
+  { x: 51, y: 30, w: 14, h: 9 }, { x: 95, y: 61, w: 14, h: 9 },
+  { x: 51, y: 61, w: 14, h: 9 }, { x: 95, y: 30, w: 14, h: 9 },
+  { x: 75, y: 43, w: 10, h: 14 },
+  { x: 12, y: 44, w: 10, h: 12 }, { x: 138, y: 44, w: 10, h: 12 },
+  { x: 77, y: 10, w: 6, h: 12 }, { x: 77, y: 78, w: 6, h: 12 },
+  { x: 38, y: 46, w: 5, h: 8 }, { x: 117, y: 46, w: 5, h: 8 }
 ];
-export const SPRA_WEAPONS = Object.freeze({
-  shooter: { label: 'シューター', delay: 0.17, cost: 4, damage: 18, range: 15, radius: 1.15 },
-  roller: { label: 'ローラー', delay: 0.48, cost: 9, damage: 32, range: 4.2, radius: 2.55 },
-  blaster: { label: 'ブラスター', delay: 0.72, cost: 11, damage: 38, range: 12, radius: 2.45 }
-});
 const roomCode = () => randomBytes(4).toString('hex').slice(0, 6).toUpperCase();
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, Number.isFinite(n) ? n : 0));
 const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -32,16 +33,16 @@ const validTile = (x, y) => x >= 0 && y >= 0 && x < SPRA_WIDTH && y < SPRA_HEIGH
 function makeRoom(code) {
   return {
     code, host: null, state: 'lobby', ink: createInkSurface(SPRA_WIDTH, SPRA_HEIGHT, WALLS),
-    players: new Map(), effects: [], elapsed: 0,
+    players: new Map(), effects: [], bombs: [], nextBomb: 0, elapsed: 0,
     winner: -1, updatedAt: Date.now(), broadcastAt: 0, practice: false
   };
 }
 
 function makePlayer(id, name, team, ws = null, bot = false) {
   return {
-    id, name, team, ws, bot, x: team === 0 ? 4.5 : SPRA_WIDTH - 4.5,
-    y: SPRA_HEIGHT / 2 + (Math.random() - 0.5) * 10,
-    aim: team === 0 ? 0 : Math.PI, hp: 100, ink: 100, weapon: 'shooter',
+    id, name, team, ws, bot, x: team === 0 ? 9 : SPRA_WIDTH - 9,
+    y: SPRA_HEIGHT / 2 + (Math.random() - 0.5) * 28,
+    aim: team === 0 ? 0 : Math.PI, hp: 100, ink: SPRA_INK_MAX, weapon: 'shooter',
     input: { x: 0, y: 0, fire: false, swim: false },
     cooldown: 0, bombCd: 0, charge: 0, deadFor: 0, invuln: 0,
     ko: 0, deaths: 0, connectedAt: Date.now(), inputsAt: 0, inputCount: 0
@@ -53,10 +54,10 @@ function splash(room, x, y, r, team, angle=0, seed=1, style='impact') {
   room.ink.impact(x, y, r, team, angle, seed, style);
 }
 function spawn(p) {
-  p.x = p.team === 0 ? 4.5 : SPRA_WIDTH - 4.5;
-  p.y = SPRA_HEIGHT / 2 + (Math.random() - 0.5) * 10;
+  p.x = p.team === 0 ? 9 : SPRA_WIDTH - 9;
+  p.y = SPRA_HEIGHT / 2 + (Math.random() - 0.5) * 28;
   p.aim = p.team === 0 ? 0 : Math.PI;
-  p.hp = 100; p.ink = 100; p.deadFor = 0; p.invuln = 1.5;
+  p.hp = 100; p.ink = SPRA_INK_MAX; p.deadFor = 0; p.invuln = 1.5;
   p.cooldown = 0; p.bombCd = 0;
 }
 function inflict(room, target, damage, by) {
@@ -73,57 +74,101 @@ function inflict(room, target, damage, by) {
 function shoot(room, p) {
   const gun = SPRA_WEAPONS[p.weapon] || SPRA_WEAPONS.shooter;
   if (p.cooldown > 0 || p.ink < gun.cost || p.deadFor > 0) return;
-  p.cooldown = gun.delay; p.ink -= gun.cost;
-  const seed = Math.round(room.elapsed*1000) + p.id.charCodeAt(0)*31 + p.ko*13;
-  const dx=Math.cos(p.aim), dy=Math.sin(p.aim);
-  let end={x:p.x,y:p.y}, struck=false;
-  const hit=new Set();
-  for(let r=.65;r<=gun.range;r+=.48) {
-    const x=p.x+dx*r,y=p.y+dy*r;
-    if(nearWall(x,y,.09))break;
-    end={x,y};
-    if(p.weapon==='roller')continue;
-    for(const other of room.players.values()){
-      if(other.team===p.team || other.deadFor>0 || hit.has(other.id))continue;
-      if(Math.hypot(x-other.x,y-other.y)<.78) {
-        hit.add(other.id); inflict(room,other,gun.damage,p); struck=true;
-        if(p.weapon==='shooter')break;
+  p.cooldown = gun.delay;
+  p.ink -= gun.cost;
+  const seed = Math.round(room.elapsed * 1000) + p.id.charCodeAt(0) * 37;
+  const count = gun.projectiles || 1;
+  const type = gun.type;
+  const hit = new Set();
+  const ends = [];
+  for (let j = 0; j < count; j++) {
+    const spread = (j - (count - 1) / 2) * gun.spread +
+      (Math.sin(seed * 1.17 + j * 9.74) * .04);
+    const angle = p.aim + spread;
+    const dx = Math.cos(angle), dy = Math.sin(angle);
+    let end = { x: p.x, y: p.y };
+    const range = gun.range * (1 - Math.abs(spread) * .11);
+    let struck = false;
+    for (let r = 0.7; r <= range; r += 0.62) {
+      const x = p.x + dx * r, y = p.y + dy * r;
+      if (nearWall(x, y, .09)) break;
+      end = { x, y };
+      if (type === 'roller' || type === 'brush') continue;
+      for (const other of room.players.values()) {
+        if (other.team === p.team || other.deadFor > 0 || hit.has(other.id)) continue;
+        if (Math.hypot(x - other.x, y - other.y) < .79) {
+          hit.add(other.id);
+          inflict(room, other, gun.damage, p);
+          struck = true;
+          if (['shooter','dualies','splatling','charger'].includes(type)) break;
+        }
+      }
+      if (struck && ['shooter','dualies','splatling','charger'].includes(type)) break;
+    }
+    const sx = p.x + dx * .55, sy = p.y + dy * .55;
+    if (type === 'roller' || type === 'brush') {
+      room.ink.trail(sx, sy, end.x, end.y, type === 'roller' ? gun.radius * .35 : gun.radius * .21, p.team, seed+j, true);
+      splash(room, end.x, end.y, gun.radius*.65, p.team, angle, seed+j, 'roller');
+    } else if (type === 'charger') {
+      room.ink.trail(sx, sy, end.x, end.y, .13, p.team, seed+j, true);
+      splash(room, end.x, end.y, gun.radius, p.team, angle, seed+j, 'shooter');
+    } else if (type === 'blaster') {
+      room.ink.trail(sx, sy, end.x, end.y, .14, p.team, seed+j, false);
+      splash(room, end.x, end.y, gun.radius, p.team, angle, seed+j, 'bomb');
+    } else {
+      room.ink.trail(sx, sy, end.x, end.y, type === 'slosher' ? .35 : .19, p.team, seed+j, false);
+      splash(room, end.x, end.y, gun.radius * (count > 1 ? .64 : 1), p.team, angle, seed+j, 'shooter');
+    }
+    ends.push(end);
+  }
+  if (['roller','brush','blaster','slosher','brella'].includes(type)) {
+    for (const other of room.players.values()) {
+      if (other.team === p.team || other.deadFor > 0 || hit.has(other.id)) continue;
+      if (ends.some(end => Math.hypot(other.x-end.x,other.y-end.y) < gun.radius*.75+.65)) {
+        hit.add(other.id);
+        inflict(room, other, gun.damage, p);
       }
     }
-    if(struck && p.weapon==='shooter')break;
   }
-  const startX=p.x+dx*.6,startY=p.y+dy*.6;
-  if(p.weapon==='roller'){
-    room.ink.trail(startX,startY,end.x,end.y,.9,p.team,seed,true);
-    splash(room,end.x,end.y,gun.radius*.82,p.team,p.aim,seed,'roller');
-  } else if(p.weapon==='blaster'){
-    room.ink.trail(startX,startY,end.x,end.y,.12,p.team,seed,false);
-    splash(room,end.x,end.y,gun.radius,p.team,p.aim,seed,'bomb');
-  } else {
-    room.ink.trail(startX,startY,end.x,end.y,.2,p.team,seed,false);
-    splash(room,end.x,end.y,gun.radius,p.team,p.aim,seed,'shooter');
-  }
-  if(p.weapon!=='shooter')for(const other of room.players.values()){
-    if(other.team!==p.team && other.deadFor===0 &&
-      Math.hypot(other.x-end.x,other.y-end.y)<=gun.radius+.55)inflict(room,other,gun.damage,p);
-  }
-  room.effects.push({type:'shot',x:p.x,y:p.y,tx:end.x,ty:end.y,team:p.team,weapon:p.weapon,seed});
+  const end = ends[Math.floor(ends.length/2)] || {x:p.x,y:p.y};
+  room.effects.push({type:'shot',x:p.x,y:p.y,tx:end.x,ty:end.y,
+    team:p.team,weapon:p.weapon,weaponType:type,seed});
 }
+// Q launches a real projectile. The server integrates its arc and paints only
+// after ground contact or obstacle collision; clients render the same flight.
 function bomb(room, p) {
-  if (p.bombCd > 0 || p.ink < 18 || p.deadFor > 0) return;
-  p.ink -= 18; p.bombCd = 7;
-  const dx = Math.cos(p.aim), dy = Math.sin(p.aim);
-  let x = p.x, y = p.y;
-  for (let d = 0; d < 6; d += 0.5) {
-    const nx = p.x + dx * d, ny = p.y + dy * d;
-    if (nearWall(nx, ny, 0.15)) break;
-    x = nx; y = ny;
+  if (p.bombCd > 0 || p.ink < 48 || p.deadFor > 0 || room.bombs.length >= 32) return;
+  p.ink -= 48;
+  p.bombCd = 7;
+  room.bombs.push({
+    id: ++room.nextBomb, owner: p.id, team:p.team,
+    x:p.x, y:p.y, z:.7,
+    vx:Math.cos(p.aim)*13.5, vy:Math.sin(p.aim)*13.5,
+    vz:9, seed:Math.round(room.elapsed*1000) + room.nextBomb
+  });
+}
+function updateBombs(room, dt) {
+  for(let i=room.bombs.length-1;i>=0;i--) {
+    const b=room.bombs[i];
+    const oldX=b.x,oldY=b.y;
+    b.x += b.vx*dt; b.y += b.vy*dt;
+    b.z += b.vz*dt;
+    b.vz -= 19*dt;
+    const collision=nearWall(b.x,b.y,.2);
+    if(collision) {b.x=oldX; b.y=oldY;}
+    if(b.z > 0 && !collision) continue;
+    room.bombs.splice(i,1);
+    const owner=room.players.get(b.owner);
+    if(!owner)continue;
+    splash(room,b.x,b.y,5.1,b.team,Math.atan2(b.vy,b.vx),b.seed,'bomb');
+    for(const target of room.players.values()) {
+      if(target.team!==b.team && target.deadFor<=0) {
+        const dist=Math.hypot(target.x-b.x,target.y-b.y);
+        if(dist<4.9)inflict(room,target,dist<2.5?80:42,owner);
+      }
+    }
+    room.effects.push({type:'bomb',x:b.x,y:b.y,team:b.team,seed:b.seed});
   }
-  splash(room,x,y,3.7,p.team,p.aim,Math.round(room.elapsed*1000),'bomb');
-  for (const other of room.players.values()) {
-    if (other.team !== p.team && other.deadFor === 0 && Math.hypot(x - other.x, y - other.y) < 3.6) inflict(room, other, 49, p);
-  }
-  room.effects.push({ type: 'bomb', x, y, team: p.team });
 }
 function botInput(room, p) {
   const enemy = [...room.players.values()].filter(v => v.team !== p.team && v.deadFor <= 0).sort((a, b) => distance(a, p) - distance(b, p))[0];
@@ -134,9 +179,11 @@ function botInput(room, p) {
   const dx = enemy.x - p.x, dy = enemy.y - p.y, d = Math.hypot(dx, dy) || 1;
   const jitter = Math.sin(room.elapsed * 0.8 + p.id.length) * 0.14;
   p.aim = Math.atan2(dy, dx) + jitter;
-  p.input = { x: d > 7 ? dx / d : Math.sin(room.elapsed * 1.8 + p.id.length) * 0.6,
-    y: d > 7 ? dy / d : Math.cos(room.elapsed * 1.8 + p.id.length) * 0.6,
-    fire: d < 15, swim: p.ink < 25 };
+  const blockAhead = nearWall(p.x + dx/d*2, p.y + dy/d*2, .5);
+  p.input = { x: blockAhead ? -dy/d : d > 8 ? dx / d : Math.sin(room.elapsed * 1.8 + p.id.length) * .55,
+    y: blockAhead ? dx/d * (p.y > SPRA_HEIGHT / 2 ? -1 : 1) : d > 8 ? dy / d : Math.cos(room.elapsed * 1.8 + p.id.length) * .55,
+    fire: d < (SPRA_WEAPONS[p.weapon]?.range || 22), swim: p.ink < 65 };
+  if(d<12 && p.bombCd===0 && p.ink>100 && Math.random()<.0025) bomb(room,p);
 }
 function move(room, p, dt) {
   if (p.deadFor > 0) {
@@ -150,20 +197,23 @@ function move(room, p, dt) {
   if (p.bot) botInput(room, p);
   const own = room.ink.sample(p.x,p.y) === p.team + 1;
   const swim = p.input.swim && own;
-  const speed = swim ? 9.6 : own ? 6.2 : 5.1;
+  p.swimming = swim;
+  const speed = swim ? 12 : own ? 8.1 : room.ink.sample(p.x,p.y) && !own ? 5.1 : 7.0;
   let { x, y } = p.input;
   const length = Math.hypot(x, y);
   if (length > 1) { x /= length; y /= length; }
   if (!nearWall(p.x + x * speed * dt, p.y)) p.x += x * speed * dt;
   if (!nearWall(p.x, p.y + y * speed * dt)) p.y += y * speed * dt;
-  p.ink = clamp(p.ink + (swim ? 31 : own ? 12 : 3.5) * dt, 0, 100);
+  p.ink = clamp(p.ink + (swim ? 145 : own ? 42 : 8) * dt, 0, SPRA_INK_MAX);
   if (p.input.fire && !swim) shoot(room, p);
 }
+function roomSafeSwim(p) { return Boolean(p.swimming); }
 function pack(p) {
   return { id: p.id, name: p.name, team: p.team, x: +p.x.toFixed(2), y: +p.y.toFixed(2),
     aim: +p.aim.toFixed(2), hp: p.hp, ink: Math.floor(p.ink),
     weapon: p.weapon, ko: p.ko, deaths: p.deaths, dead: p.deadFor > 0,
-    bombCd: +p.bombCd.toFixed(1), swim: p.input.swim && !p.deadFor, bot: p.bot };
+    bombCd: +p.bombCd.toFixed(1), maxInk: SPRA_INK_MAX,
+    swim: p.input.swim && roomSafeSwim(p), bot: p.bot };
 }
 function send(ws, object) {
   if (ws?.readyState === WebSocket.OPEN) {
@@ -178,11 +228,12 @@ function snapshot(room) {
     remaining: Math.max(0, Math.ceil(SPRA_DURATION - room.elapsed)),
     scores: score(room), players: [...room.players.values()].map(pack),
     changes: room.ink.flush(), paintScale: INK_SCALE, effects: room.effects.splice(0, 30),
-    winner: room.winner, colors: COLORS };
+    winner: room.winner, colors: COLORS,
+    bombs: room.bombs.map(b => ({id:b.id,x:+b.x.toFixed(2),y:+b.y.toFixed(2),z:+b.z.toFixed(2),team:b.team})) };
 }
 function reset(room) {
   room.state = 'lobby'; room.elapsed = 0; room.winner = -1;
-  room.ink.clear();
+  room.ink.clear(); room.bombs=[];
   for (const p of room.players.values()) { spawn(p); p.ko = 0; p.deaths = 0; p.invuln = 0; }
 }
 function addBot(room) {
@@ -192,6 +243,9 @@ function addBot(room) {
   const team = left <= right ? 0 : 1;
   const bot = makePlayer(randomUUID(), 'INK BOT ' + ([...room.players.values()].filter(p => p.bot).length + 1), team, null, true);
   room.players.set(bot.id, bot);
+}
+function fillBots(room) {
+  while(room.players.size < MAX_HUMANS) addBot(room);
 }
 function cleanName(value) {
   return String(value || 'PLAYER').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 18) || 'PLAYER';
@@ -243,7 +297,7 @@ export function createSpra() {
         room.host ||= id;
         room.updatedAt = Date.now();
         links.set(ws, { id, code });
-        send(ws, { type: 'welcome', id, code, width: SPRA_WIDTH, height: SPRA_HEIGHT,
+        send(ws, { type: 'welcome', id, code, width: SPRA_WIDTH, height: SPRA_HEIGHT, maxInk:SPRA_INK_MAX,
           walls: WALLS, duration: SPRA_DURATION, colors: COLORS,
           paint: room.ink.snapshot(), paintScale: INK_SCALE });
         broadcast(room, snapshot(room));
@@ -280,8 +334,7 @@ export function createSpra() {
         addBot(room);
         broadcast(room, snapshot(room));
       } else if (msg.type === 'start' && player.id === room.host && room.state !== 'playing') {
-        if (room.players.size < 2) addBot(room);
-        if (room.players.size < 2) return;
+        fillBots(room);
         const blues = [...room.players.values()].filter(p => p.team === 0).length;
         const oranges = room.players.size - blues;
         if (!blues || !oranges) return send(ws, { type: 'error', message: 'PvPには青・オレンジ両方のチームが必要です。' });
@@ -304,6 +357,7 @@ export function createSpra() {
       if (room.state !== 'playing') continue;
       room.elapsed += STEP;
       for (const p of room.players.values()) move(room, p, STEP);
+      updateBombs(room,STEP);
       if (room.elapsed >= SPRA_DURATION) {
         room.state = 'results';
         room.winner = room.ink.counts[0] === room.ink.counts[1] ? -1 : room.ink.counts[0] > room.ink.counts[1] ? 0 : 1;
