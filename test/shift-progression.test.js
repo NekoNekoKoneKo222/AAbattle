@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { ShiftStore, isShiftAdminUser } from '../src/shift-store.js';
+import { normalizeAccountUsername } from '../src/account-username.js';
 import { ShiftPartyManager } from '../src/shift-party.js';
 import { defaultPlayerModel, characterRoad, roadRerollCost } from '../shift-arena/packages/shared/dist/index.js';
 
@@ -264,4 +265,18 @@ test('admin item grants require authenticated administrator identity and validat
   assert.ok(p.owned_characters.includes('gald'));
   assert.ok(p.economy.skins.gald.includes('sun_skin'));
   await assert.rejects(store.adminGrant(admin,target,'hero',1,'gald'),/所持/);
+});
+
+
+test('admin recipient username accepts every valid registered username format',()=>{
+  assert.deepEqual(normalizeAccountUsername('nekonekokoneko'),{username:'nekonekokoneko',key:'nekonekokoneko'});
+  assert.deepEqual(normalizeAccountUsername('NekoNekoKoneko'),{username:'NekoNekoKoneko',key:'nekonekokoneko'});
+  assert.deepEqual(normalizeAccountUsername('  USER_120  '),{username:'USER_120',key:'user_120'});
+  assert.deepEqual(normalizeAccountUsername('１２３Ａｂｃ'),{username:'123Abc',key:'123abc'});
+  assert.deepEqual(normalizeAccountUsername('たぬき太郎'),{username:'たぬき太郎',key:'たぬき太郎'});
+  assert.equal(normalizeAccountUsername('a'),null);
+  assert.equal(normalizeAccountUsername('Invalid-Dash'),null);
+  assert.equal(normalizeAccountUsername('username with spaces'),null);
+  assert.equal(normalizeAccountUsername('x'.repeat(21)),null);
+  assert.equal(normalizeAccountUsername(null),null);
 });

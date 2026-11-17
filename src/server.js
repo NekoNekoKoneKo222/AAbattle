@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { createStore, TradeError } from './store.js';
 import { ShiftStore, isShiftAdminUser } from './shift-store.js';
+import { normalizeAccountUsername } from './account-username.js';
 import { ShiftPartyManager } from './shift-party.js';
 import { validateArt, generateFighter, generationMode, ollamaStatus, ollamaModel } from './generator.js';
 import { createBattle, stepBattle } from './battle.js';
@@ -185,11 +186,11 @@ async function requireUser(req, res) {
   return user;
 }
 function credentials(body) {
-  const username = String(body?.username || '').normalize('NFKC').trim();
+  const normalized = normalizeAccountUsername(body?.username);
   const password = String(body?.password || '');
-  if (!/^[\p{L}\p{N}_]{3,20}$/u.test(username)) throw new Error('ユーザー名は3～20文字の文字・数字・_のみです。');
+  if (!normalized) throw new Error('ユーザー名は3～20文字の文字・数字・_のみです。');
   if (password.length < 10 || password.length > 128) throw new Error('パスワードは10～128文字にしてください。');
-  return { username, password, key: username.toLocaleLowerCase('und') };
+  return { ...normalized, password };
 }
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
@@ -217,9 +218,9 @@ app.post('/api/shift/admin/grant',shiftWrap(async(req,res)=>{
   if(!isShiftAdminUser(user))return res.status(403).json({error:'管理者のみ利用できます。'});
   const origin=req.get('origin'),expected=`${req.protocol}://${req.get('host')}`;
   if(origin!==expected)return res.status(403).json({error:'送信元を確認できません。'});
-  const username=String(req.body?.targetUsername||'').normalize('NFKC').trim().toLocaleLowerCase('und');
-  if(!/^[p{L}p{N}_]{3,20}$/u.test(username))return res.status(400).json({error:'対象のユーザー名が不正です。'});
-  const target=await store.findUser(username);
+  const targetUsername=normalizeAccountUsername(req.body?.targetUsername);
+  if(!targetUsername)return res.status(400).json({error:'ユーザー名は登録時と同じく3～20文字の文字・数字・_のみです。'});
+  const target=await store.findUser(targetUsername.key);
   if(!target)return res.status(404).json({error:'対象アカウントが見つかりません。'});
   res.json(await shiftStore.adminGrant(user,target,req.body?.item,req.body?.amount,req.body?.character));
 }));

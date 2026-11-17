@@ -92,7 +92,7 @@ type ModelPayload={json:GeometryJSON;atlas:THREE.Texture;normal:AnimationJSON;ul
 let payload:Promise<ModelPayload>|null=null;
 function loadPayload():Promise<ModelPayload>{
   return payload??=Promise.all([
-    getJson<GeometryJSON>('houkou.json'),texture('bladetexture2.png'),
+    getJson<GeometryJSON>('houkou.json?v=user-supplied-v2'),texture('bladetexture2.png'),
     getJson<AnimationJSON>('normal_attack.json'),getJson<AnimationJSON>('ultimate_animation.json')
   ]).then(([json,atlas,normal,ultimate])=>({json,atlas,normal,ultimate}));
 }
