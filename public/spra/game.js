@@ -1,6 +1,7 @@
 import { SPRA_WEAPONS, SPRA_CATEGORIES } from './weapons.js';
 import { createCity } from './city.js';
 import { createSpraTutorial } from './tutorial.js';
+import { battleXpReward, levelFromXp, totalXpForLevel, SPRA_MAX_LEVEL } from './progression.js';
 import { SPRA_SPECIALS } from './specials.js';
 import { drawCosmic } from './cosmic-render.js';
 import { createSpraFacilities, FASHION_COLORS } from './facilities.js';
@@ -34,6 +35,14 @@ if(!owned.has(selectedWeapon)||!SPRA_WEAPONS[selectedWeapon])selectedWeapon='sho
 if(SPRA_WEAPONS[selectedWeapon]?.type==='cosmic')selectedSpecial='final_frontier';
 else if(!SPRA_SPECIALS[selectedSpecial]||selectedSpecial==='final_frontier')selectedSpecial='tornado';
 let credits=Math.max(0,Number(localStorage.getItem('spra_coins_v2')||1200)||0);
+let playerXP=Math.max(0,Math.min(1000000,Number(localStorage.getItem('spra_player_xp_v1')||0)||0));
+const playerLevel=()=>levelFromXp(playerXP);
+function xpProgress(){
+ const level=playerLevel();
+ if(level>=SPRA_MAX_LEVEL)return 'MAX';
+ const base=totalXpForLevel(level),next=totalXpForLevel(level+1);
+ return (playerXP-base)+' / '+(next-base);
+}
 const nickname=$('nickname');
 nickname.value=localStorage.getItem('spra_name')||'';
 const keys=new Set();
@@ -52,8 +61,13 @@ function saveBag(){
  localStorage.setItem('spra_equipped_v2',selectedWeapon);
  localStorage.setItem('spra_special_v3',selectedSpecial);
  localStorage.setItem('spra_coins_v2',String(credits));
+ localStorage.setItem('spra_player_xp_v1',String(playerXP));
  $('cityCoins').textContent=credits;
  $('shopCoins').textContent=credits;
+ $('cityLevel').textContent=playerLevel();
+ $('cityXP').textContent=xpProgress();
+ $('shopLevel').textContent=playerLevel();
+ $('shopXpText').textContent='XP '+xpProgress();
  $('shopCurrent').textContent='装備中：'+(SPRA_WEAPONS[selectedWeapon]?.label||'シューター');
 }
 function textItem(text,className=''){
@@ -186,6 +200,8 @@ function equip(id){
 function purchase(id){
  const weapon=SPRA_WEAPONS[id];if(!weapon)return;
  if(!owned.has(id)){
+  if(playerLevel()<weapon.requiredLevel)
+    return toast(weapon.label+' の購入にはLv.'+weapon.requiredLevel+'が必要です。（現在Lv.'+playerLevel()+'）');
   if(credits<weapon.price)return toast('コインが足りません。バトルで獲得できます。');
   credits-=weapon.price;owned.add(id);
  }
@@ -204,16 +220,21 @@ function drawShop(){
  const list=$('shopItems');list.replaceChildren();
  for(const weapon of Object.values(SPRA_WEAPONS).filter(w=>shopFilter==='all'||w.type===shopFilter)){
   const card=document.createElement('button');
-  card.className='shop-weapon'+(selectedWeapon===weapon.id?' equipped':'');
+  const locked=!owned.has(weapon.id)&&playerLevel()<weapon.requiredLevel;
+  card.className='shop-weapon'+(selectedWeapon===weapon.id?' equipped':'')+(locked?' level-locked':'');
   const header=document.createElement('div');header.className='shop-weapon-name';
   const icon=document.createElement('span');icon.className='weapon-pixel-icon';
-  icon.textContent={shooter:'⌁',dualies:'⌁⌁',roller:'▰',brush:'▥',blaster:'✸',charger:'→',slosher:'▤',splatling:'⊞',bow:'⋔',brella:'⌂'}[weapon.type]||'●';
+  icon.textContent={shooter:'⌁',dualies:'⌁⌁',roller:'▰',brush:'▥',blaster:'✸',charger:'→',slosher:'▤',splatling:'⊞',bow:'⋔',brella:'⌂',cosmic:'★',drill:'◈',wiper:'⚔'}[weapon.type]||'●';
   const title=document.createElement('strong');title.textContent=weapon.label;
   header.append(icon,title);
   const stat=document.createElement('small');
-  stat.textContent='威力 '+weapon.damage+' / 射程 '+weapon.range+' / 連射 '+(1/weapon.delay).toFixed(1)+'/s';
+  stat.textContent='必要 Lv.'+weapon.requiredLevel+' / 威力 '+weapon.damage+
+    ' / 射程 '+weapon.range+' / 連射 '+(1/weapon.delay).toFixed(1)+'/s';
   const price=document.createElement('b');
-  price.textContent=selectedWeapon===weapon.id?'[ 装備中 ]':owned.has(weapon.id)?'[ 装備する ]':'◎ '+weapon.price;
+  price.textContent=selectedWeapon===weapon.id?'[ 装備中 ]':
+    owned.has(weapon.id)?'[ 装備する ]':
+    locked?'🔒 Lv.'+weapon.requiredLevel+'で解放 / ◎ '+weapon.price:
+    '◎ '+weapon.price+' / 購入可能';
   card.append(header,stat,price);
   card.addEventListener('click',()=>purchase(weapon.id));
   list.append(card);
@@ -350,9 +371,14 @@ function maybeReward(){
  const me=players.find(p=>p.id===myId);
  if(!me)return;
  const reward=winner===-1?180:me.team===winner?350:150;
+ const xpEarned=battleXpReward({winner,team:me.team,kos:me.ko,mode});
+ const previousLevel=playerLevel();
  localStorage.setItem(key,'1');
- credits+=reward;saveBag();
- toast('バトル報酬 +'+reward+'コイン！');
+ credits+=reward;playerXP+=xpEarned;saveBag();
+ if(playerLevel()>previousLevel){
+   toast('LEVEL UP! Lv.'+previousLevel+' → Lv.'+playerLevel()+' / +'+xpEarned+' XP');
+ }else toast('バトル報酬 +'+reward+'コイン / +'+xpEarned+' XP');
+
 }
 function receive(msg){
  if(msg.type==='error'){toast(msg.message||'エラー');if(!myId)ws?.close();return;}
