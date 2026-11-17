@@ -330,9 +330,10 @@ describe('Houkou charged sword and double-edged ultimate',()=>{
     g.players.push(wing);a.ultimate=100;
     stepGame(g,{h:{...neutral,ax:1,az:0,ultimate:true}});
     expect(g.bullets.some(b=>b.kind==='houkou-slash')).toBe(true);
+    expect(a.ultimate).toBe(0); // ultimate resets immediately; damage later recharges it
     for(let i=0;i<15;i++)stepGame(g);
     expect(center.hp).toBe(fighterMaxHp(center));
     expect(wing.hp).toBeLessThan(fighterMaxHp(wing));
-    expect(a.ultimate).toBe(0);
+    expect(a.ultimate).toBeGreaterThan(0); // successful hits recharge the meter
   });
 });
