@@ -397,27 +397,110 @@ function botInput(room, p) {
   };
   if(d<12&&p.bombCd===0&&p.ink>100&&Math.random()<.0025)bomb(room,p);
 }
-function move(room, p, dt) {
-  if (p.deadFor > 0) {
-    p.deadFor = Math.max(0, p.deadFor - dt);
-    if (p.deadFor === 0) spawn(p);
+function move(room,p,dt){
+  if(p.deadFor>0){
+    p.deadFor=Math.max(0,p.deadFor-dt);
+    if(p.deadFor===0)spawn(p);
     return;
   }
-  p.cooldown = Math.max(0, p.cooldown - dt);
-  p.bombCd = Math.max(0, p.bombCd - dt);
-  p.invuln = Math.max(0, p.invuln - dt);
-  if (p.bot) botInput(room, p);
-  const own = room.ink.sample(p.x,p.y) === p.team + 1;
-  const swim = p.input.swim && own;
-  p.swimming = swim;
-  const speed = swim ? 12 : own ? 8.1 : room.ink.sample(p.x,p.y) && !own ? 5.1 : 7.0;
-  let { x, y } = p.input;
-  const length = Math.hypot(x, y);
-  if (length > 1) { x /= length; y /= length; }
-  if (!nearWall(p.x + x * speed * dt, p.y)) p.x += x * speed * dt;
-  if (!nearWall(p.x, p.y + y * speed * dt)) p.y += y * speed * dt;
-  p.ink = clamp(p.ink + (swim ? 145 : own ? 42 : 8) * dt, 0, SPRA_INK_MAX);
-  if (p.input.fire && !swim) shoot(room, p);
+  p.cooldown=Math.max(0,p.cooldown-dt);
+  p.bombCd=Math.max(0,p.bombCd-dt);
+  p.invuln=Math.max(0,p.invuln-dt);
+  p.dodgeCd=Math.max(0,p.dodgeCd-dt);
+  p.wallCd=Math.max(0,p.wallCd-dt);
+  p.jumpCd=Math.max(0,p.jumpCd-dt);
+  p.shieldFor=Math.max(0,p.shieldFor-dt);
+  if(!p.shieldFor)p.shieldHp=0;
+  p.flightFor=Math.max(0,p.flightFor-dt);
+  if(p.flightFor===0&&isBlocked(WALLS,SPRA_WIDTH,SPRA_HEIGHT,p.x,p.y,.4)&&p.flightSafe){
+    p.x=p.flightSafe.x;p.y=p.flightSafe.y;
+  }
+  if(p.jump){
+    const jump=p.jump;
+    jump.progress=Math.min(1,jump.progress+dt/jump.duration);
+    const t=jump.progress;
+    p.x=jump.from.x+(jump.to.x-jump.from.x)*t;
+    p.y=jump.from.y+(jump.to.y-jump.from.y)*t;
+    if(t>=1){p.x=jump.to.x;p.y=jump.to.y;p.jump=null;p.invuln=Math.max(p.invuln,.3);}
+    return;
+  }
+  if(p.bot)botInput(room,p);
+  const own=room.ink.sample(p.x,p.y)===p.team+1;
+  const enemyInk=room.ink.sample(p.x,p.y)>0&&!own;
+  const swim=Boolean(p.input.swim&&own&&p.flightFor<=0);
+  p.swimming=swim;
+  p.stealth=swim;
+  const gun=SPRA_WEAPONS[p.weapon]||SPRA_WEAPONS.shooter;
+  const isRoll=gun.type==='roller'&&p.input.fire&&!swim&&p.ink>0;
+  const isDrill=p.drillFor>0;
+  p.drillFor=Math.max(0,p.drillFor-dt);
+  p.dodgeFor=Math.max(0,p.dodgeFor-dt);
+  let speed=swim?13.2:own?9.3:enemyInk?4.3:7.2;
+  if(isRoll)speed=13.4;
+  if(isDrill)speed=17.2;
+  if(p.dodgeFor>0)speed=19;
+  if(p.flightFor>0)speed=12.5;
+  let {x,y}=p.input;
+  let magnitude=Math.hypot(x,y);
+  if(magnitude>1){x/=magnitude;y/=magnitude;}
+  if(isDrill){x=Math.cos(p.drillHeading);y=Math.sin(p.drillHeading);}
+  const nextX=p.x+x*speed*dt,nextY=p.y+y*speed*dt;
+  if(!isBlocked(WALLS,SPRA_WIDTH,SPRA_HEIGHT,nextX,p.y,.38)||p.flightFor>0) {
+    p.x=clamp(nextX,1.5,SPRA_WIDTH-1.5);
+  }else if(swim&&p.wallCd<=0){
+    const crossing=wallCrossLanding({
+      walls:WALLS,width:SPRA_WIDTH,height:SPRA_HEIGHT,wallInk:room.wallInk
+    },p,x,y);
+    if(crossing){
+      p.x=crossing.x;p.y=crossing.y;p.wallCd=2.5;
+      room.effects.push({type:'wall_climb',x:p.x,y:p.y,team:p.team});
+    }
+  }
+  if(!isBlocked(WALLS,SPRA_WIDTH,SPRA_HEIGHT,p.x,nextY,.38)||p.flightFor>0) {
+    p.y=clamp(nextY,1.5,SPRA_HEIGHT-1.5);
+  }else if(swim&&p.wallCd<=0){
+    const crossing=wallCrossLanding({
+      walls:WALLS,width:SPRA_WIDTH,height:SPRA_HEIGHT,wallInk:room.wallInk
+    },p,x,y);
+    if(crossing){
+      p.x=crossing.x;p.y=crossing.y;p.wallCd=2.5;
+      room.effects.push({type:'wall_climb',x:p.x,y:p.y,team:p.team});
+    }
+  }
+  if(p.flightFor>0&&!isBlocked(WALLS,SPRA_WIDTH,SPRA_HEIGHT,p.x,p.y,.45))p.flightSafe={x:p.x,y:p.y};
+  p.ink=clamp(p.ink+(swim?147:own?41:enemyInk?3:8)*dt,0,SPRA_INK_MAX);
+  if(swim){
+    p.hp=clamp(p.hp+23*dt,0,100);
+    p.charge=0;p.wasFiring=false;
+    return;
+  }
+  const before=room.ink.counts[p.team];
+  if(isDrill||isRoll){
+    const radius=isDrill?1.55:gun.radius*.8;
+    room.ink.trail(p.x-x*speed*dt,p.y-y*speed*dt,p.x,p.y,radius,p.team,room.elapsed*2000,true);
+    splash(room,p.x,p.y,radius,p.team,p.aim,room.elapsed*1000,'roller');
+    p.ink=clamp(p.ink-(isDrill?10:16)*dt,0,SPRA_INK_MAX);
+    if(p.rollHitCd<=0){
+      for(const target of room.players.values())if(target.team!==p.team&&target.deadFor<=0
+        &&Math.hypot(target.x-p.x,target.y-p.y)<2.3){
+        inflict(room,target,isDrill?48:32,p);p.rollHitCd=.5;
+      }
+    }
+    awardPaint(room,p,before);
+  }
+  p.rollHitCd=Math.max(0,p.rollHitCd-dt);
+  if(p.input.fire) {
+    if(gun.type==='charger'){
+      p.charge=clamp(p.charge+dt/1.3,0,1);
+    }else if(gun.type==='roller'){
+      if(p.cooldown<=0){p.cooldown=.42;shoot(room,p);}
+    }else shoot(room,p);
+    p.wasFiring=true;
+  }else{
+    if(p.wasFiring&&gun.type==='charger'&&p.charge>.12&&p.cooldown<=0)
+      shoot(room,p,p.charge);
+    p.charge=0;p.wasFiring=false;
+  }
 }
 function roomSafeSwim(p) { return Boolean(p.swimming); }
 function pack(p) {
