@@ -325,7 +325,7 @@ function receive(msg){
  }
  if(msg.type==='reset'){
   decodePaint(msg.paint);
-  effects=[];smooth.clear();bombs=[];cameraX=0;cameraY=0;
+  effects=[];smooth.clear();bombs=[];gumShots=[];specialObjects=[];cameraX=0;cameraY=0;
   $('result').classList.add('hidden');
   return;
  }
@@ -399,12 +399,15 @@ function updateUI(){
    'ホストの再開を待つか、街へ戻れます。';
  }
 }
-const controls=new Set(['w','a','s','d','q','shift','arrowup','arrowdown','arrowleft','arrowright',' ']);
+const controls=new Set(['w','a','s','d','q','e','r','j','shift','arrowup','arrowdown','arrowleft','arrowright',' ']);
 window.addEventListener('keydown',e=>{
  if(scene!=='battle'||phase!=='playing'||['INPUT','TEXTAREA','BUTTON'].includes(document.activeElement?.tagName))return;
  const key=e.key.toLowerCase();
  if(controls.has(key))e.preventDefault();
  if(key==='q'&&!keys.has(key))bombQueued=true;
+ if(key==='r'&&!keys.has(key))specialQueued=true;
+ if(key==='e'&&!keys.has(key))dodgeQueued=true;
+ if(key==='j'&&!keys.has(key))toast('右上のミニマップで、つながった味方インクの位置をタップしてください。');
  keys.add(key);
 });
 window.addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));
@@ -446,6 +449,21 @@ function holdButton(id,name){
 }
 holdButton('fireTouch','fire');holdButton('swimTouch','swim');
 $('bombTouch').addEventListener('pointerdown',e=>{e.preventDefault();bombQueued=true;});
+$('specialTouch').addEventListener('pointerdown',e=>{e.preventDefault();specialQueued=true;});
+$('dodgeTouch').addEventListener('pointerdown',e=>{e.preventDefault();dodgeQueued=true;});
+$('jumpTouch').addEventListener('pointerdown',e=>{
+ e.preventDefault();toast('右上のミニマップから味方インクへジャンプ！');
+});
+miniCanvas.addEventListener('pointerdown',event=>{
+ if(scene!=='battle'||phase!=='playing')return;
+ const box=miniCanvas.getBoundingClientRect();
+ if(!box.width||!box.height)return;
+ jumpQueued={
+  x:Math.max(0,Math.min(W,(event.clientX-box.left)*W/box.width)),
+  y:Math.max(0,Math.min(H,(event.clientY-box.top)*H/box.height))
+ };
+ toast('スーパージャンプを申請しました（自陣のつながったインクのみ）');
+});
 setInterval(()=>{
  if(scene!=='battle'||phase!=='playing'||!myId||ws?.readyState!==WebSocket.OPEN)return;
  const x=(+keys.has('d')||+keys.has('arrowright'))-(+keys.has('a')||+keys.has('arrowleft'))+touch.moveX;
@@ -454,8 +472,10 @@ setInterval(()=>{
  let aim=me?.aim||0;
  if(me&&pointer.active)aim=Math.atan2(pointer.y-me.y,pointer.x-me.x);
  send({type:'input',x,y,aim,fire:pointer.down||touch.fire||keys.has(' '),
-  swim:keys.has('shift')||touch.swim,bomb:bombQueued});
- bombQueued=false;
+  swim:keys.has('shift')||touch.swim,bomb:bombQueued,
+  dodge:dodgeQueued,special:specialQueued,
+  jump:jumpQueued,specialTarget:pointer.active?{x:pointer.x,y:pointer.y}:null});
+ bombQueued=false;specialQueued=false;dodgeQueued=false;jumpQueued=null;
 },65);
 
 function drawBox(x,y,w,h,color){ctx.fillStyle=color;ctx.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h));}
