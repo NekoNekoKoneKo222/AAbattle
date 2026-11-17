@@ -79,6 +79,20 @@ test('SPRA browser: player and CPU continue updating after sustained ink fire', 
     await page.waitForTimeout(3500);
     await page.mouse.up();
     assert.equal(errors.length, 0, 'canvas must not throw while shooting: '+errors.join(' | '));
+    // Paint-covered arenas must still display actual avatars in a completely
+    // independent transparent canvas, not merely a non-empty floor texture.
+    const actorCanvasVisible=await page.evaluate(()=>{
+      const canvas=document.getElementById('actorCanvas');
+      const background=document.getElementById('gameCanvas');
+      if(!canvas||canvas.width!==background.width||canvas.height!==background.height)return false;
+      const data=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
+      let pixels=0;
+      for(let i=3;i<data.length;i+=4)if(data[i]>170)pixels++;
+      return pixels>200;
+    });
+    assert.equal(actorCanvasVisible,true,
+      'Players and CPU must remain visibly drawn on the foreground canvas during shooting');
+
     assert.ok(states.length-oldCount>=10, 'state updates must continue while shooting');
     const first=states[Math.max(0,oldCount-1)];
     const last=states.at(-1);

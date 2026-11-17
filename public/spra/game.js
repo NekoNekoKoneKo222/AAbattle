@@ -9,6 +9,8 @@ const $ = id => document.getElementById(id);
 const W=160,H=100,TILE=16,PAINT_SCALE=4,INK_MAX=300;
 const PW=W*PAINT_SCALE,PH=H*PAINT_SCALE;
 const canvas=$('gameCanvas'),ctx=canvas.getContext('2d',{alpha:false});
+const actorCanvas=$('actorCanvas'),actorCtx=actorCanvas.getContext('2d',{alpha:true});
+actorCtx.imageSmoothingEnabled=false;
 const miniCanvas=$('miniMap'),mini=miniCanvas.getContext('2d',{alpha:false});
 ctx.imageSmoothingEnabled=false;mini.imageSmoothingEnabled=false;
 const paintCanvas=document.createElement('canvas');
@@ -603,6 +605,8 @@ function drawEffects(now){
  ctx.globalAlpha=1;
 }
 function drawAvatar(p,dt,now){
+ const a=actorCtx;
+ const pixel=(x,y,w,h,color)=>{a.fillStyle=color;a.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h));};
  if(p.dead)return;
  let s=smooth.get(p.id);
  if(!s){s={x:p.x,y:p.y,aim:p.aim};smooth.set(p.id,s);}
@@ -612,54 +616,63 @@ function drawAvatar(p,dt,now){
  const x=s.x*TILE,y=s.y*TILE,color=COLORS[p.team],mine=p.id===myId;
  if(p.swim){
   // Hidden in their own ink; show rippling pixel wake and an ink-meter above self.
-  drawBox(x-11,y-6,22,13,'#09243b');
-  drawBox(x-8,y-4,16,9,color);
-  drawBox(x+Math.cos(s.aim)*7-3,y+Math.sin(s.aim)*7-3,6,6,'#eafaff');
+  // Swimmers remain recognizable as animated ink-creatures on the actor layer.
+  // Teammates receive a brighter outline, enemies retain a small ink wake.
+  const teammate=players.some(q=>q.id===myId&&q.team===p.team);
+  pixel(x-15,y-9,30,18,teammate?'#e5ff9b':'#172c42');
+  pixel(x-12,y-7,24,14,color);
+  pixel(x-7,y-5,5,5,'#edffff');
+  pixel(x+3,y-5,5,5,'#edffff');
+  pixel(x-5,y-4,2,2,'#17314b');
+  pixel(x+5,y-4,2,2,'#17314b');
+  pixel(x+Math.cos(s.aim)*12-4,y+Math.sin(s.aim)*12-4,8,8,color);
   if(mine){
-   drawBox(x-36,y-26,72,10,'#0a1524');
-   drawBox(x-34,y-24,68,6,'#284455');
-   drawBox(x-34,y-24,68*p.ink/INK_MAX,6,'#d9ff5e');
-   ctx.font='bold 9px monospace';ctx.fillStyle='#efffc6';
-   ctx.textAlign='center';ctx.fillText('INK +',x,y-30);ctx.textAlign='left';
+   pixel(x-36,y-26,72,10,'#0a1524');
+   pixel(x-34,y-24,68,6,'#284455');
+   pixel(x-34,y-24,68*p.ink/INK_MAX,6,'#d9ff5e');
+   a.font='bold 9px monospace';a.fillStyle='#efffc6';
+   a.textAlign='center';a.fillText('INK +',x,y-30);a.textAlign='left';
   }
  }else{
-  if(mine){drawBox(x-15,y-16,30,31,'#d7ff62');drawBox(x-13,y-14,26,27,'#112c42');}
+  if(mine){pixel(x-15,y-16,30,31,'#d7ff62');pixel(x-13,y-14,26,27,'#112c42');}
   const look=p.cosmetics||{};
   const shirt=FASHION_COLORS[look.shirt]||color;
   const hat=FASHION_COLORS[look.hat]||(p.team?'#55295c':'#194961');
   const shoes=FASHION_COLORS[look.shoes]||'#102534';
-  drawBox(x-9,y+2,7,10,shoes);drawBox(x+3,y+2,7,10,shoes);
-  drawBox(x-11,y-8,22,16,shirt);
-  drawBox(x-9,y-18,18,13,'#f5bb9e');
-  drawBox(x-11,y-19,22,7,hat);
-  drawBox(x-5,y-11,3,3,'#071522');drawBox(x+4,y-11,3,3,'#071522');
-  ctx.save();ctx.translate(Math.round(x),Math.round(y));ctx.rotate(s.aim);
-  drawBox(4,-4,15,7,'#132537');
-  drawBox(12,-3,10,5,FASHION_COLORS[look.skin]||'#e1ff96');
-  ctx.restore();
+  pixel(x-9,y+2,7,10,shoes);pixel(x+3,y+2,7,10,shoes);
+  pixel(x-11,y-8,22,16,shirt);
+  pixel(x-9,y-18,18,13,'#f5bb9e');
+  pixel(x-11,y-19,22,7,hat);
+  pixel(x-5,y-11,3,3,'#071522');pixel(x+4,y-11,3,3,'#071522');
+  a.save();a.translate(Math.round(x),Math.round(y));a.rotate(s.aim);
+  pixel(4,-4,15,7,'#132537');
+  pixel(12,-3,10,5,FASHION_COLORS[look.skin]||'#e1ff96');
+  a.restore();
  }
  if(p.shield>0){
-  ctx.strokeStyle='#b8e9ff';ctx.lineWidth=3;
-  ctx.strokeRect(Math.round(x)-17,Math.round(y)-20,34,37);
+  a.strokeStyle='#b8e9ff';a.lineWidth=3;
+  a.strokeRect(Math.round(x)-17,Math.round(y)-20,34,37);
  }
  if(p.flight>0){
-  drawBox(x-2,y-30,5,11,'#c4edfa');
-  drawBox(x-10,y-32,21,6,'#ddd5ff');
+  pixel(x-2,y-30,5,11,'#c4edfa');
+  pixel(x-10,y-32,21,6,'#ddd5ff');
  }
  // Label and health pip remain pixel-based.
- ctx.textAlign='center';ctx.font='bold 10px monospace';ctx.fillStyle='#f6ffff';
- ctx.fillText((mine?'★ ':'')+p.name,x,y-29);ctx.textAlign='left';
+ a.textAlign='center';a.font='bold 10px monospace';a.fillStyle='#f6ffff';
+ a.fillText((mine?'★ ':'')+p.name,x,y-29);a.textAlign='left';
  if(!p.swim){
-  drawBox(x-13,y-26,26,4,'#081522');
-  drawBox(x-13,y-26,26*p.hp/100,4,p.hp<40?'#ff5573':'#bdff76');
+  pixel(x-13,y-26,26,4,'#081522');
+  pixel(x-13,y-26,26*p.hp/100,4,p.hp<40?'#ff5573':'#bdff76');
  }
 }
 function drawAim(){
+ const a=actorCtx;
+ const pixel=(x,y,w,h,color)=>{a.fillStyle=color;a.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h));};
  const me=players.find(p=>p.id===myId);
  if(!me||me.dead||!pointer.active)return;
  const ax=pointer.x*TILE,ay=pointer.y*TILE;
- drawBox(ax-1,ay-13,2,10,'#efffa1');drawBox(ax-1,ay+4,2,10,'#efffa1');
- drawBox(ax-13,ay-1,10,2,'#efffa1');drawBox(ax+4,ay-1,10,2,'#efffa1');
+ pixel(ax-1,ay-13,2,10,'#efffa1');pixel(ax-1,ay+4,2,10,'#efffa1');
+ pixel(ax-13,ay-1,10,2,'#efffa1');pixel(ax+4,ay-1,10,2,'#efffa1');
 }
 function drawMiniMap(){
  mini.imageSmoothingEnabled=false;
@@ -707,12 +720,29 @@ function render(now){
     tile:TILE,width:canvas.width,height:canvas.height,elapsed:clock,now});
   drawBombs();
   drawEffects(now);
-  // Avatars always render after ink and explosive effects.
-  for(const p of players)drawAvatar(p,dt,now);
-  drawAim();
  }catch(err){
   if(now-lastErrorAt>7000){console.error('SPRA battle renderer:',err);toast('描画エラーを検出しました');lastErrorAt=now;}
  }finally{ctx.restore();}
+ // Render sprites onto a separate transparent canvas. Paint and projectile
+ // layers cannot ever cover avatars, even if they corrupt their canvas state.
+ actorCtx.setTransform(1,0,0,1,0,0);
+ actorCtx.globalAlpha=1;
+ actorCtx.globalCompositeOperation='source-over';
+ actorCtx.clearRect(0,0,actorCanvas.width,actorCanvas.height);
+ actorCtx.save();
+ try{
+   actorCtx.translate(-Math.round(cameraX*TILE),-Math.round(cameraY*TILE));
+   for(const p of players){
+     if(!Number.isFinite(p.x)||!Number.isFinite(p.y))continue;
+     actorCtx.save();
+     try{drawAvatar(p,dt,now);}
+     catch(err){
+       if(now-lastErrorAt>7000){console.warn('SPRA player rendering:',err);lastErrorAt=now;}
+     }finally{actorCtx.restore();}
+   }
+   actorCtx.globalAlpha=1;
+   drawAim();
+ }finally{actorCtx.restore();}
  if((frames++%3)===0){
   try{drawMiniMap();}catch(err){console.warn('SPRA minimap:',err);}
  }
