@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { aimWallDistance, characterById, fighterMaxHp, validatePlayerModel, type Fighter, type GameState, type PlayerModel } from '@shift/shared';
 import { createModelRig, poseModelRig, disposeModelRig, type ModelRig } from './model-rig';
 import { createVoxelHero, poseVoxelHero, disposeVoxelHero } from './voxel-heroes';
+import { attachHoukouFx, poseHoukouModel } from './houkou-mesh';
 export type Quality='auto'|'low'|'medium'|'high';
 type Nameplate={root:HTMLDivElement;name:HTMLSpanElement;hp:HTMLSpanElement;fill:HTMLSpanElement;ammo:HTMLDivElement};
 const mat=(color:number,roughness=.7)=>new THREE.MeshStandardMaterial({color,roughness,metalness:.15});
@@ -40,7 +41,7 @@ function fighterMesh(p:Fighter,model:PlayerModel|null,lightweight=false){
 }
 export class ArenaRenderer {
   isTouchDevice(){return this.appleTouch;}
-  readonly canvas:HTMLCanvasElement; private renderer:THREE.WebGLRenderer; private scene=new THREE.Scene(); private camera=new THREE.OrthographicCamera(-8,8,5,-5,.1,100); private ground=new THREE.Group(); private signalGroup=new THREE.Group(); private signalMeshes=new Map<string,THREE.Group>(); private terminalRing:THREE.Mesh|null=null; private actors=new Map<string,THREE.Group>(); private modelDocs=new Map<string,PlayerModel|null>(); private modelLoading=new Set<string>(); private bullets=new Map<number,THREE.Mesh>(); private effects=new Map<number,THREE.Mesh>(); private ray=new THREE.Raycaster(); private plane=new THREE.Plane(new THREE.Vector3(0,1,0),0); private target=new THREE.Vector3(); private frame=0; private quality:Quality; private aimLine:THREE.Line; private aimTip:THREE.Mesh; private nameplateLayer:HTMLDivElement;private nameplates=new Map<string,Nameplate>();private projectPoint=new THREE.Vector3();
+  readonly canvas:HTMLCanvasElement; private renderer:THREE.WebGLRenderer; private scene=new THREE.Scene(); private camera=new THREE.OrthographicCamera(-8,8,5,-5,.1,100); private ground=new THREE.Group(); private signalGroup=new THREE.Group(); private signalMeshes=new Map<string,THREE.Group>(); private terminalRing:THREE.Mesh|null=null; private actors=new Map<string,THREE.Group>(); private modelDocs=new Map<string,PlayerModel|null>(); private modelLoading=new Set<string>(); private bullets=new Map<number,THREE.Mesh|THREE.Group>(); private effects=new Map<number,THREE.Mesh>(); private ray=new THREE.Raycaster(); private plane=new THREE.Plane(new THREE.Vector3(0,1,0),0); private target=new THREE.Vector3(); private frame=0; private quality:Quality; private aimLine:THREE.Line; private aimTip:THREE.Mesh; private nameplateLayer:HTMLDivElement;private nameplates=new Map<string,Nameplate>();private projectPoint=new THREE.Vector3();
   private readonly appleTouch=isAppleTouchBrowser();private crowdMode=false;
   private readonly crowdDetail=new Map<string,boolean>();
   targetFrameMs(){return this.crowdMode?(this.appleTouch?33:26):(this.appleTouch?30:16);}
@@ -194,7 +195,7 @@ this.renderer.setClearColor(0x14243b,1);this.canvas=this.renderer.domElement;thi
     this.ground.add(this.terminalRing);
   }
 
-  update(g:GameState,localId:string,signals:{kind:string;x:number;z:number;expiresAt:number}[]=[],aim?:[number,number],aiming=true,aimDistance=1){this.frame++;if(this.terminalRing){(this.terminalRing.material as THREE.MeshBasicMaterial).color.setHex(g.terminal.owner===0?0x4be5f4:g.terminal.owner===1?0xff637c:0xf7dd83);this.terminalRing.visible=g.shiftEnabled;this.terminalRing.rotation.z=this.frame*.002;}const activePins=new Set<string>();for(const s of signals)if(s.kind==='pin'&&s.expiresAt>Date.now()){const key=`${s.expiresAt}-${s.x}-${s.z}`;activePins.add(key);let marker=this.signalMeshes.get(key);if(!marker){marker=new THREE.Group();const cone=new THREE.Mesh(new THREE.ConeGeometry(.35,.8,6),new THREE.MeshBasicMaterial({color:0xf7ed6d}));cone.position.y=1.2;marker.add(cone);const ring=new THREE.Mesh(new THREE.RingGeometry(.5,.65,24),new THREE.MeshBasicMaterial({color:0xf7ed6d,side:THREE.DoubleSide}));ring.rotation.x=-Math.PI/2;ring.position.y=.12;marker.add(ring);marker.position.set(s.x,0,s.z);this.signalGroup.add(marker);this.signalMeshes.set(key,marker);}marker.children[0].position.y=1.2+Math.sin(this.frame*.1)*.2;}for(const[key,marker]of this.signalMeshes)if(!activePins.has(key)){this.signalGroup.remove(marker);marker.traverse(o=>{if(o instanceof THREE.Mesh){o.geometry.dispose();(o.material as THREE.Material).dispose();}});this.signalMeshes.delete(key);}const live=new Set<string>();for(const p of g.players){live.add(p.id);if(p.modelOwner)this.requestModel(p.modelOwner);const model=p.modelOwner?this.modelDocs.get(p.modelOwner)||null:null;let group=this.actors.get(p.id);if(group&&(group.userData.character!==p.character||group.userData.skin!==(p.skinChoice||null)||group.userData.customModel!==!!model)){this.scene.remove(group);const oldRig=group.userData.modelRig as ModelRig|undefined;if(oldRig)disposeModelRig(oldRig);if(group.userData.voxelHero)disposeVoxelHero(group.userData.voxelHero as THREE.Group);this.actors.delete(p.id);group=undefined;}if(!group){group=fighterMesh(p,model,this.appleTouch||this.crowdMode&&p.bot);this.scene.add(group);this.actors.set(p.id,group);}const rig=group.userData.modelRig as ModelRig|undefined;
+  update(g:GameState,localId:string,signals:{kind:string;x:number;z:number;expiresAt:number}[]=[],aim?:[number,number],aiming=true,aimDistance=1){this.frame++;if(this.terminalRing){(this.terminalRing.material as THREE.MeshBasicMaterial).color.setHex(g.terminal.owner===0?0x4be5f4:g.terminal.owner===1?0xff637c:0xf7dd83);this.terminalRing.visible=g.shiftEnabled;this.terminalRing.rotation.z=this.frame*.002;}const activePins=new Set<string>();for(const s of signals)if(s.kind==='pin'&&s.expiresAt>Date.now()){const key=`${s.expiresAt}-${s.x}-${s.z}`;activePins.add(key);let marker=this.signalMeshes.get(key);if(!marker){marker=new THREE.Group();const cone=new THREE.Mesh(new THREE.ConeGeometry(.35,.8,6),new THREE.MeshBasicMaterial({color:0xf7ed6d}));cone.position.y=1.2;marker.add(cone);const ring=new THREE.Mesh(new THREE.RingGeometry(.5,.65,24),new THREE.MeshBasicMaterial({color:0xf7ed6d,side:THREE.DoubleSide}));ring.rotation.x=-Math.PI/2;ring.position.y=.12;marker.add(ring);marker.position.set(s.x,0,s.z);this.signalGroup.add(marker);this.signalMeshes.set(key,marker);}marker.children[0].position.y=1.2+Math.sin(this.frame*.1)*.2;}for(const[key,marker]of this.signalMeshes)if(!activePins.has(key)){this.signalGroup.remove(marker);marker.traverse(o=>{if(o instanceof THREE.Mesh){o.geometry.dispose();(o.material as THREE.Material).dispose();}});this.signalMeshes.delete(key);}const live=new Set<string>();for(const p of g.players){live.add(p.id);if(p.modelOwner)this.requestModel(p.modelOwner);const model=p.modelOwner?this.modelDocs.get(p.modelOwner)||null:null;let group=this.actors.get(p.id);if(group&&(group.userData.character!==p.character||group.userData.skin!==(p.skinChoice||null)||group.userData.customModel!==!!model)){this.scene.remove(group);const oldRig=group.userData.modelRig as ModelRig|undefined;if(oldRig)disposeModelRig(oldRig);if(group.userData.voxelHero)disposeVoxelHero(group.userData.voxelHero as THREE.Group);if(group.userData.houkouWarning){const w=group.userData.houkouWarning as THREE.Group;w.userData.disposed=true;w.traverse(o=>{if(o instanceof THREE.Mesh){o.geometry.dispose();(o.material as THREE.Material).dispose();}});}this.actors.delete(p.id);group=undefined;}if(!group){group=fighterMesh(p,model,this.appleTouch||this.crowdMode&&p.bot);this.scene.add(group);this.actors.set(p.id,group);}const rig=group.userData.modelRig as ModelRig|undefined;
       const now=performance.now();
       if(p.attackAt>group.userData.lastAttackAt)group.userData.attackStarted=now;
       if(p.skillAt>group.userData.lastSkillAt)group.userData.skillStarted=now;
@@ -206,7 +207,17 @@ this.renderer.setClearColor(0x14243b,1);this.canvas=this.renderer.domElement;thi
         else poseModelRig(rig,attackElapsed!==null&&attackElapsed<=rig.model.attack.length?attackElapsed:null,'attack');
       }
       const voxel=group.userData.voxelHero as THREE.Group|undefined;
-      if(voxel)poseVoxelHero(voxel,now/1000,Math.hypot(p.vx,p.vz),attackElapsed!==null&&attackElapsed<.35,skillElapsed!==null&&skillElapsed<.5);
+      if(voxel){
+        poseVoxelHero(voxel,now/1000,Math.hypot(p.vx,p.vz),attackElapsed!==null&&attackElapsed<.35,skillElapsed!==null&&skillElapsed<.5);
+        if(p.character==='houkou')poseHoukouModel(voxel,p,g.tick);
+      }
+      if(p.character==='houkou'){
+        let warning=group.userData.houkouWarning as THREE.Group|undefined;
+        if(!warning){warning=new THREE.Group();attachHoukouFx(warning,'warning_line');group.add(warning);group.userData.houkouWarning=warning;}
+        warning.visible=p.hp>0&&p.chargeTicks>=25;
+        warning.position.set(Math.cos(p.warningAngle)*1.6,.08,Math.sin(p.warningAngle)*1.6);
+        warning.rotation.y=Math.PI/2-p.warningAngle;
+      }
       const speed=Math.hypot(p.vx,p.vz),bob=p.hp>0?Math.sin(this.frame*.08+p.x)*Math.min(speed,5)*.013:0;group.visible=p.hp>0||g.mode!=='survival';// No visual slide after the movement stick is released.
       // Remotes retain brief network smoothing, but local position is exact.
       const renderY=p.hp>0?bob:-.35;
@@ -220,13 +231,26 @@ this.renderer.setClearColor(0x14243b,1);this.canvas=this.renderer.domElement;thi
         group.traverse(o=>{if(o instanceof THREE.Mesh&&o.userData.hpBar)o.scale.x=Math.max(.01,p.hp/fighterMaxHp(p));});
         group.userData.lastHp=p.hp;
       }}
-    for(const [id,mesh] of this.actors)if(!live.has(id)){this.scene.remove(mesh);if(mesh.userData.modelRig)disposeModelRig(mesh.userData.modelRig as ModelRig);if(mesh.userData.voxelHero)disposeVoxelHero(mesh.userData.voxelHero as THREE.Group);this.actors.delete(id);}
-    const bulletIds=new Set<number>();for(const b of g.bullets){bulletIds.add(b.id);let mesh=this.bullets.get(b.id);if(!mesh){mesh=new THREE.Mesh(projectileGeo,b.team===0?this.projectileMaterials.blue:this.projectileMaterials.red);mesh.castShadow=false;mesh.receiveShadow=false;this.scene.add(mesh);this.bullets.set(b.id,mesh);}const progress=b.lob&&b.flightTime?Math.max(0,Math.min(1,1-b.life/b.flightTime)):0;
+    for(const [id,mesh] of this.actors)if(!live.has(id)){this.scene.remove(mesh);if(mesh.userData.modelRig)disposeModelRig(mesh.userData.modelRig as ModelRig);if(mesh.userData.voxelHero)disposeVoxelHero(mesh.userData.voxelHero as THREE.Group);if(mesh.userData.houkouWarning)(mesh.userData.houkouWarning as THREE.Group).userData.disposed=true;this.actors.delete(id);}
+    const bulletIds=new Set<number>();for(const b of g.bullets){bulletIds.add(b.id);let mesh=this.bullets.get(b.id);if(!mesh){
+      if(b.kind==='houkou-slash'){
+        mesh=new THREE.Group();mesh.userData.houkouFx=true;
+        attachHoukouFx(mesh,'slash');
+      }else mesh=new THREE.Mesh(projectileGeo,b.team===0?this.projectileMaterials.blue:this.projectileMaterials.red);
+      mesh.castShadow=false;mesh.receiveShadow=false;this.scene.add(mesh);this.bullets.set(b.id,mesh);
+    }const progress=b.lob&&b.flightTime?Math.max(0,Math.min(1,1-b.life/b.flightTime)):0;
     const distance=b.lob?Math.hypot((b.landX??0)-(b.launchX??0),(b.landZ??0)-(b.launchZ??0)):0;
     const maxDistance=b.lob?characterById(g.players.find(p=>p.id===b.owner)?.character||'bom').attack.range:1;
     const arcHeight=3.5-2.7*Math.max(0,Math.min(1,distance/maxDistance));
-    mesh.position.set(b.x,.6+(b.lob?Math.sin(progress*Math.PI)*arcHeight:0),b.z);mesh.scale.setScalar(b.splash>0?1.7:1);}
-    for(const[id,mesh]of this.bullets)if(!bulletIds.has(id)){this.scene.remove(mesh);this.bullets.delete(id);}
+    mesh.position.set(b.x,b.kind==='houkou-slash'?.22:.6+(b.lob?Math.sin(progress*Math.PI)*arcHeight:0),b.z);
+    mesh.scale.setScalar(b.kind==='houkou-slash'?2.1:b.splash>0?1.7:1);
+    if(b.kind==='houkou-slash')mesh.rotation.y=Math.atan2(b.vx,b.vz);
+    }
+    for(const[id,mesh]of this.bullets)if(!bulletIds.has(id)){
+      mesh.userData.disposed=true;
+      if(mesh.userData.houkouFx)mesh.traverse(object=>{if(object instanceof THREE.Mesh){object.geometry.dispose();(object.material as THREE.Material).dispose();}});
+      this.scene.remove(mesh);this.bullets.delete(id);
+    }
     const effectIds=new Set<number>();for(const e of g.effects){effectIds.add(e.id);let mesh=this.effects.get(e.id);if(!mesh){const color=e.kind==='slowfield'?0x9de1ff:e.kind==='drone'?0x7bffc3:e.kind==='bomb'||e.kind==='mine'?0xffbd6d:0xd8a6ff;mesh=new THREE.Mesh(new THREE.CylinderGeometry(e.radius,e.radius,.04,24),new THREE.MeshBasicMaterial({color,transparent:true,opacity:.38,depthWrite:false}));this.scene.add(mesh);this.effects.set(e.id,mesh);}mesh.position.set(e.x,.1,e.z);}
     for(const[id,mesh]of this.effects)if(!effectIds.has(id)){
       this.scene.remove(mesh);mesh.geometry.dispose();
