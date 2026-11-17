@@ -1,5 +1,7 @@
 import { SPRA_WEAPONS, SPRA_CATEGORIES } from './weapons.js';
 import { createCity } from './city.js';
+import { SPRA_SPECIALS } from './specials.js';
+import { createSpraFacilities, FASHION_COLORS } from './facilities.js';
 
 const $ = id => document.getElementById(id);
 const W=160,H=100,TILE=16,PAINT_SCALE=4,INK_MAX=300;
@@ -14,14 +16,19 @@ const paintImage=paintCtx.createImageData(PW,PH);
 const COLORS=['#26d7ec','#ff9835'];
 let paint=new Uint8Array(PW*PH),paintDirty=true;
 let ws=null,myId=null,roomCode='',isHost=false,scene='city',phase='lobby',round=0;
-let players=[],walls=[],bombs=[],effects=[],remaining=180,scores=[0,0],winner=-1;
+let players=[],walls=[],bombs=[],gumShots=[],specialObjects=[],wallColors=[],effects=[],remaining=180,scores=[0,0],winner=-1,mode='turf';
 let lastFrame=performance.now(),clock=0,cameraX=0,cameraY=0,smooth=new Map(),toastTimer=null;
 let selectedWeapon=localStorage.getItem('spra_equipped_v2')||'shooter';
+let selectedSpecial=localStorage.getItem('spra_special_v3')||'tornado';
+let trainingRequested=false,jumpQueued=null,specialQueued=false,dodgeQueued=false;
+let currentSpecialTarget={x:0,y:0};
 const defaultOwned=['shooter','roller','blaster'];
 let owned;
 try {owned=new Set([...defaultOwned,...JSON.parse(localStorage.getItem('spra_owned_v2')||'[]')]);}
 catch {owned=new Set(defaultOwned);}
 if(!owned.has(selectedWeapon)||!SPRA_WEAPONS[selectedWeapon])selectedWeapon='shooter';
+if(SPRA_WEAPONS[selectedWeapon]?.type==='cosmic')selectedSpecial='final_frontier';
+else if(!SPRA_SPECIALS[selectedSpecial]||selectedSpecial==='final_frontier')selectedSpecial='tornado';
 let credits=Math.max(0,Number(localStorage.getItem('spra_coins_v2')||1200)||0);
 const nickname=$('nickname');
 nickname.value=localStorage.getItem('spra_name')||'';
@@ -39,6 +46,7 @@ function toast(msg){
 function saveBag(){
  localStorage.setItem('spra_owned_v2',JSON.stringify([...owned]));
  localStorage.setItem('spra_equipped_v2',selectedWeapon);
+ localStorage.setItem('spra_special_v3',selectedSpecial);
  localStorage.setItem('spra_coins_v2',String(credits));
  $('cityCoins').textContent=credits;
  $('shopCoins').textContent=credits;
@@ -69,7 +77,26 @@ function closeShop(){
  $('shopOverlay').classList.add('hidden');
  city.setActive(scene==='city');
 }
-const city=createCity($('cityCanvas'),{onShop:openShop,onBattle:openReception,onHint:toast});
+const facilities=createSpraFacilities({
+  getCoins:()=>credits,
+  spendCoins:amount=>{
+    const sum=Math.max(0,Math.floor(Number(amount)||0));
+    if(credits<sum)return false;
+    credits-=sum;saveBag();return true;
+  },
+  addCoins:amount=>{credits+=Math.max(0,Math.floor(Number(amount)||0));saveBag();},
+  getWeapon:()=>SPRA_WEAPONS[selectedWeapon],
+  getNickname:()=>nickname.value.trim(),
+  onTraining:()=>join('',true),onWeaponTrial:()=>join('',true),
+  onBattle:openReception,
+  onAppearance:cosmetics=>send({type:'cosmetics',cosmetics}),
+  notify:toast
+});
+const city=createCity($('cityCanvas'),{
+  onShop:openShop,onBattle:openReception,onHint:toast,
+  onFacility:id=>facilities.open(id),
+  getAppearance:()=>facilities.getAppearance()
+});
 function disconnectToCity(){
  if(ws){const old=ws;ws=null;old.onclose=null;old.close();}
  myId=null;roomCode='';isHost=false;phase='lobby';round=0;
@@ -82,6 +109,7 @@ function disconnectToCity(){
 }
 $('openMatch').addEventListener('click',openReception);
 $('openShop').addEventListener('click',openShop);
+$('shopTryBtn').addEventListener('click',()=>{closeShop();facilities.open('shop');});
 $('joinBackCity').addEventListener('click',()=>sceneTo('city'));
 $('roomBackCity').addEventListener('click',disconnectToCity);
 $('leaveToCity').addEventListener('click',disconnectToCity);
@@ -100,8 +128,10 @@ window.addEventListener('keydown',e=>{
 function equip(id){
  if(!owned.has(id)||!SPRA_WEAPONS[id])return;
  selectedWeapon=id;
- saveBag();send({type:'weapon',weapon:id});
- drawShop();drawRoomWeapons();
+ if(SPRA_WEAPONS[id]?.type==='cosmic')selectedSpecial='final_frontier';
+ else if(selectedSpecial==='final_frontier')selectedSpecial='tornado';
+ saveBag();send({type:'weapon',weapon:id});send({type:'special',special:selectedSpecial});
+ drawShop();drawRoomWeapons();drawRoomSpecials();
  toast(SPRA_WEAPONS[id].label+' を装備！');
 }
 function purchase(id){
@@ -151,7 +181,7 @@ function drawRoomWeapons(){
   list.append(b);
  }
 }
-saveBag();drawShop();drawRoomWeapons();
+saveBag();drawShop();drawRoomWeapons();drawRoomSpecials();
 if(queryRoom&&/^[a-z0-9]{6}$/i.test(queryRoom))sceneTo('reception');else sceneTo('city');
 
 function send(data){if(ws?.readyState===WebSocket.OPEN)ws.send(JSON.stringify(data));}
