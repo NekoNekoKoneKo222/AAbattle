@@ -89,68 +89,107 @@ function inflict(room, target, damage, by) {
     splash(room, target.x, target.y, 1.7, by.team);
   }
 }
-function shoot(room, p) {
-  const gun = SPRA_WEAPONS[p.weapon] || SPRA_WEAPONS.shooter;
-  if (p.cooldown > 0 || p.ink < gun.cost || p.deadFor > 0) return;
-  p.cooldown = gun.delay;
-  p.ink -= gun.cost;
-  const seed = Math.round(room.elapsed * 1000) + p.id.charCodeAt(0) * 37;
-  const count = gun.projectiles || 1;
-  const type = gun.type;
-  const hit = new Set();
-  const ends = [];
-  for (let j = 0; j < count; j++) {
-    const spread = (j - (count - 1) / 2) * gun.spread +
-      (Math.sin(seed * 1.17 + j * 9.74) * .04);
-    const angle = p.aim + spread;
-    const dx = Math.cos(angle), dy = Math.sin(angle);
-    let end = { x: p.x, y: p.y };
-    const range = gun.range * (1 - Math.abs(spread) * .11);
-    let struck = false;
-    for (let r = 0.7; r <= range; r += 0.62) {
-      const x = p.x + dx * r, y = p.y + dy * r;
-      if (nearWall(x, y, .09)) break;
-      end = { x, y };
-      if (type === 'roller' || type === 'brush') continue;
-      for (const other of room.players.values()) {
-        if (other.team === p.team || other.deadFor > 0 || hit.has(other.id)) continue;
-        if (Math.hypot(x - other.x, y - other.y) < .79) {
+function awardPaint(room, player, beforeCount) {
+  const gained=Math.max(0,room.ink.counts[player.team]-beforeCount);
+  player.specialCharge=clamp(player.specialCharge+gained/19,0,100);
+}
+function coatWall(room, x, y, team) {
+  const i=wallAt(WALLS,x,y,.55);
+  if(i<0)return false;
+  room.wallInk[i]=team+1;
+  return true;
+}
+function shoot(room,p,charge=1) {
+  const gun=SPRA_WEAPONS[p.weapon]||SPRA_WEAPONS.shooter;
+  if(p.cooldown>0||p.ink<gun.cost||p.deadFor>0||p.jump)return;
+  const type=gun.type;
+  p.cooldown=gun.delay;
+  p.ink-=gun.cost;
+  const before=room.ink.counts[p.team];
+  const seed=Math.round(room.elapsed*1000)+p.id.charCodeAt(0)*37;
+  if(type==='drill'){
+    // Holding fire starts a short burrowing rush. Its physical collision and
+    // ground-paint trail are resolved in move(), not client-side.
+    p.drillFor=1.1;
+    p.drillHeading=p.aim;
+    room.effects.push({type:'drill',x:p.x,y:p.y,team:p.team});
+    return;
+  }
+  const count=gun.projectiles||1;
+  const hit=new Set(), ends=[];
+  for(let j=0;j<count;j++){
+    const spread=(j-(count-1)/2)*gun.spread+Math.sin(seed*1.17+j*9.74)*.035;
+    const angle=p.aim+spread,dx=Math.cos(angle),dy=Math.sin(angle);
+    let end={x:p.x,y:p.y},struck=false,ignoredWall=-1;
+    const range=gun.range*(1-Math.abs(spread)*.11);
+    for(let r=.7;r<=range;r+=.58){
+      const x=p.x+dx*r,y=p.y+dy*r;
+      const blocked=nearWall(x,y,.09);
+      if(blocked){
+        const wall=wallAt(WALLS,x,y,.35);
+        if(type==='slosher'&&wall>=0&&(ignoredWall<0||ignoredWall===wall)){
+          ignoredWall=wall;continue; // lob over one painted obstacle
+        }
+        coatWall(room,x,y,p.team);
+        break;
+      }
+      end={x,y};
+      if(['roller','brush','drill'].includes(type))continue;
+      for(const other of room.players.values()){
+        if(other.team===p.team||other.deadFor>0||hit.has(other.id))continue;
+        // Submerged players cannot be targeted from long range; splashes and
+        // point-blank counterattacks can still hit them.
+        if(other.swimming&&Math.hypot(p.x-other.x,p.y-other.y)>2.7)continue;
+        if(Math.hypot(x-other.x,y-other.y)<.79){
           hit.add(other.id);
-          inflict(room, other, gun.damage, p);
-          struck = true;
-          if (['shooter','dualies','splatling','charger'].includes(type)) break;
+          inflict(room,other,Math.round(gun.damage*(type==='charger'?Math.max(.5,charge):1)),p);
+          struck=true;
+          if(['shooter','dualies','splatling'].includes(type))break;
         }
       }
-      if (struck && ['shooter','dualies','splatling','charger'].includes(type)) break;
+      if(struck&&['shooter','dualies','splatling'].includes(type))break;
     }
-    const sx = p.x + dx * .55, sy = p.y + dy * .55;
-    if (type === 'roller' || type === 'brush') {
-      room.ink.trail(sx, sy, end.x, end.y, type === 'roller' ? gun.radius * .35 : gun.radius * .21, p.team, seed+j, true);
-      splash(room, end.x, end.y, gun.radius*.65, p.team, angle, seed+j, 'roller');
-    } else if (type === 'charger') {
-      room.ink.trail(sx, sy, end.x, end.y, .13, p.team, seed+j, true);
-      splash(room, end.x, end.y, gun.radius, p.team, angle, seed+j, 'shooter');
-    } else if (type === 'blaster') {
-      room.ink.trail(sx, sy, end.x, end.y, .14, p.team, seed+j, false);
-      splash(room, end.x, end.y, gun.radius, p.team, angle, seed+j, 'bomb');
-    } else {
-      room.ink.trail(sx, sy, end.x, end.y, type === 'slosher' ? .35 : .19, p.team, seed+j, false);
-      splash(room, end.x, end.y, gun.radius * (count > 1 ? .64 : 1), p.team, angle, seed+j, 'shooter');
+    const sx=p.x+dx*.55,sy=p.y+dy*.55;
+    if(type==='wiper'){
+      const slashX=p.x+dx*3,slashY=p.y+dy*3;
+      splash(room,slashX,slashY,1.8,p.team,angle,seed+j,'roller');
+      room.ink.trail(sx,sy,end.x,end.y,.42,p.team,seed+j,false);
+      for(const other of room.players.values()){
+        if(other.team===p.team||other.deadFor>0||hit.has(other.id))continue;
+        const ox=other.x-p.x,oy=other.y-p.y;
+        const distance=Math.hypot(ox,oy),forward=ox*dx+oy*dy;
+        if(distance<4.3&&forward>0&&Math.abs(ox*dy-oy*dx)<2.7){
+          hit.add(other.id);inflict(room,other,Math.round(gun.damage*1.65),p);
+        }
+      }
+      room.effects.push({type:'slash',x:p.x,y:p.y,tx:end.x,ty:end.y,team:p.team});
+    }else if(type==='roller'||type==='brush'){
+      room.ink.trail(sx,sy,end.x,end.y,type==='roller'?gun.radius*.35:gun.radius*.21,p.team,seed+j,true);
+      splash(room,end.x,end.y,gun.radius*.65,p.team,angle,seed+j,'roller');
+    }else if(type==='charger'){
+      room.ink.trail(sx,sy,end.x,end.y,.19*(charge+.25),p.team,seed+j,true);
+      splash(room,end.x,end.y,gun.radius*charge,p.team,angle,seed+j,'shooter');
+    }else if(type==='blaster'){
+      room.ink.trail(sx,sy,end.x,end.y,.14,p.team,seed+j,false);
+      splash(room,end.x,end.y,gun.radius,p.team,angle,seed+j,'bomb');
+    }else{
+      room.ink.trail(sx,sy,end.x,end.y,type==='slosher'?.35:.19,p.team,seed+j,false);
+      splash(room,end.x,end.y,gun.radius*(count>1?.64:1),p.team,angle,seed+j,'shooter');
     }
     ends.push(end);
   }
-  if (['roller','brush','blaster','slosher','brella'].includes(type)) {
-    for (const other of room.players.values()) {
-      if (other.team === p.team || other.deadFor > 0 || hit.has(other.id)) continue;
-      if (ends.some(end => Math.hypot(other.x-end.x,other.y-end.y) < gun.radius*.75+.65)) {
-        hit.add(other.id);
-        inflict(room, other, gun.damage, p);
+  if(['roller','brush','blaster','slosher','brella'].includes(type)){
+    for(const other of room.players.values()){
+      if(other.team===p.team||other.deadFor>0||hit.has(other.id))continue;
+      if(ends.some(end=>Math.hypot(other.x-end.x,other.y-end.y)<gun.radius*.75+.65)){
+        hit.add(other.id);inflict(room,other,gun.damage,p);
       }
     }
   }
-  const end = ends[Math.floor(ends.length/2)] || {x:p.x,y:p.y};
+  const end=ends[Math.floor(ends.length/2)]||{x:p.x,y:p.y};
+  awardPaint(room,p,before);
   room.effects.push({type:'shot',x:p.x,y:p.y,tx:end.x,ty:end.y,
-    team:p.team,weapon:p.weapon,weaponType:type,seed});
+    team:p.team,weapon:p.weapon,weaponType:type,charge,seed});
 }
 // Q launches a real projectile. The server integrates its arc and paints only
 // after ground contact or obstacle collision; clients render the same flight.
