@@ -193,39 +193,167 @@ function shoot(room,p,charge=1) {
 }
 // Q launches a real projectile. The server integrates its arc and paints only
 // after ground contact or obstacle collision; clients render the same flight.
-function bomb(room, p) {
-  if (p.bombCd > 0 || p.ink < 48 || p.deadFor > 0 || room.bombs.length >= 32) return;
-  p.ink -= 48;
-  p.bombCd = 7;
+function throwBomb(room,p,mega=false){
+  const inkCost=mega?0:48;
+  if(p.deadFor>0||p.jump||room.bombs.length>=32||(!mega&&(p.bombCd>0||p.ink<inkCost)))return false;
+  if(!mega){p.ink-=inkCost;p.bombCd=7;}
   room.bombs.push({
-    id: ++room.nextBomb, owner: p.id, team:p.team,
-    x:p.x, y:p.y, z:.7,
-    vx:Math.cos(p.aim)*13.5, vy:Math.sin(p.aim)*13.5,
-    vz:9, seed:Math.round(room.elapsed*1000) + room.nextBomb
+    id:++room.nextBomb, owner:p.id, team:p.team,kind:mega?'mega':'normal',
+    x:p.x,y:p.y,z:.7,vx:Math.cos(p.aim)*(mega?11.5:13.5),
+    vy:Math.sin(p.aim)*(mega?11.5:13.5),
+    vz:mega?11:9,seed:Math.round(room.elapsed*1000)+room.nextBomb
   });
+  return true;
 }
-function updateBombs(room, dt) {
-  for(let i=room.bombs.length-1;i>=0;i--) {
+function bomb(room,p){return throwBomb(room,p,false);}
+function updateBombs(room,dt){
+  for(let i=room.bombs.length-1;i>=0;i--){
     const b=room.bombs[i];
     const oldX=b.x,oldY=b.y;
-    b.x += b.vx*dt; b.y += b.vy*dt;
-    b.z += b.vz*dt;
-    b.vz -= 19*dt;
+    b.x+=b.vx*dt;b.y+=b.vy*dt;b.z+=b.vz*dt;b.vz-=19*dt;
     const collision=nearWall(b.x,b.y,.2);
-    if(collision) {b.x=oldX; b.y=oldY;}
-    if(b.z > 0 && !collision) continue;
+    if(collision){b.x=oldX;b.y=oldY;}
+    if(b.z>0&&!collision)continue;
     room.bombs.splice(i,1);
     const owner=room.players.get(b.owner);
     if(!owner)continue;
-    splash(room,b.x,b.y,5.1,b.team,Math.atan2(b.vy,b.vx),b.seed,'bomb');
-    for(const target of room.players.values()) {
-      if(target.team!==b.team && target.deadFor<=0) {
-        const dist=Math.hypot(target.x-b.x,target.y-b.y);
-        if(dist<4.9)inflict(room,target,dist<2.5?80:42,owner);
+    const large=b.kind==='mega',radius=large?10.5:5.1;
+    splash(room,b.x,b.y,radius,b.team,Math.atan2(b.vy,b.vx),b.seed,'bomb');
+    for(const other of room.players.values()){
+      if(other.team===b.team||other.deadFor>0)continue;
+      const distance=Math.hypot(other.x-b.x,other.y-b.y);
+      if(distance<radius-.2)inflict(room,other,
+        distance<radius*.55?(large?95:80):(large?58:42),owner);
+    }
+    room.effects.push({type:large?'mega_bomb':'bomb',x:b.x,y:b.y,team:b.team,seed:b.seed});
+  }
+}
+function activateSpecial(room,p){
+  if(p.deadFor>0||p.jump||p.specialCharge<100||!SPRA_SPECIALS[p.special])return false;
+  p.specialCharge=0;
+  const direction={x:Math.cos(p.aim),y:Math.sin(p.aim)};
+  const at={x:p.x+direction.x*3.5,y:p.y+direction.y*3.5};
+  if(p.special==='flight'){
+    p.flightFor=7;
+    room.effects.push({type:'flight',x:p.x,y:p.y,team:p.team});
+  }else if(p.special==='shield'){
+    for(const ally of room.players.values())if(ally.team===p.team&&ally.deadFor===0){
+      ally.shieldFor=8;ally.shieldHp=80;
+    }
+    room.effects.push({type:'shield',x:p.x,y:p.y,team:p.team});
+  }else if(p.special==='mega_bomb'){
+    throwBomb(room,p,true);
+  }else if(p.special==='tornado'){
+    if(room.specials.length>=30)return false;
+    room.specials.push({
+      id:++room.nextSpecial,kind:'tornado',x:at.x,y:at.y,
+      vx:direction.x*3.2,vy:direction.y*3.2,
+      team:p.team,owner:p.id,time:7,interval:0
+    });
+  }else if(p.special==='turret'){
+    if(room.specials.length>=30)return false;
+    let x=at.x,y=at.y;
+    if(isBlocked(WALLS,SPRA_WIDTH,SPRA_HEIGHT,x,y,.6)){x=p.x;y=p.y;}
+    room.specials.push({
+      id:++room.nextSpecial,kind:'turret',x,y,
+      team:p.team,owner:p.id,time:13,interval:0
+    });
+  }else if(p.special==='missiles'){
+    if(room.specials.length>24)return false;
+    const enemies=[...room.players.values()].filter(e=>e.team!==p.team&&e.deadFor===0);
+    for(let j=0;j<Math.min(6,Math.max(3,enemies.length+2));j++){
+      room.specials.push({
+        id:++room.nextSpecial,kind:'missile',
+        x:p.x,y:p.y,team:p.team,owner:p.id,time:4.8,
+        target:enemies[j%Math.max(1,enemies.length)]?.id||null,
+        vx:direction.x*8,vy:direction.y*8,interval:0
+      });
+    }
+  }
+  room.effects.push({type:'special',kind:p.special,x:p.x,y:p.y,team:p.team});
+  return true;
+}
+function updateSpecials(room,dt){
+  for(let i=room.specials.length-1;i>=0;i--){
+    const s=room.specials[i],owner=room.players.get(s.owner);
+    if(!owner){room.specials.splice(i,1);continue;}
+    s.time-=dt;s.interval-=dt;
+    if(s.kind==='tornado'){
+      const nx=s.x+s.vx*dt,ny=s.y+s.vy*dt;
+      if(isBlocked(WALLS,SPRA_WIDTH,SPRA_HEIGHT,nx,ny,.5)){
+        s.vx*=-.8;s.vy*=-.8;
+      }else{s.x=nx;s.y=ny;}
+      if(s.interval<=0){
+        s.interval=.29;
+        splash(room,s.x,s.y,3.5,s.team,room.elapsed*5,Math.floor(room.elapsed*1000),'bomb');
+        for(const target of room.players.values()){
+          if(target.team!==s.team&&target.deadFor===0&&Math.hypot(target.x-s.x,target.y-s.y)<4)
+            inflict(room,target,12,owner);
+        }
+      }
+    }else if(s.kind==='turret'&&s.interval<=0){
+      s.interval=.5;
+      splash(room,s.x,s.y,1.45,s.team,room.elapsed,Math.floor(room.elapsed*400),'shooter');
+      const targets=[...room.players.values()].filter(t=>t.team!==s.team&&t.deadFor===0&&!t.swimming)
+        .sort((a,b)=>Math.hypot(a.x-s.x,a.y-s.y)-Math.hypot(b.x-s.x,b.y-s.y));
+      const target=targets.find(t=>Math.hypot(t.x-s.x,t.y-s.y)<21);
+      if(target){
+        let blocked=false;
+        const dx=target.x-s.x,dy=target.y-s.y,dist=Math.hypot(dx,dy);
+        for(let d=1.5;d<dist;d+=1){
+          if(isBlocked(WALLS,SPRA_WIDTH,SPRA_HEIGHT,s.x+dx*d/dist,s.y+dy*d/dist,.05)){blocked=true;break;}
+        }
+        if(!blocked){
+          inflict(room,target,15,owner);
+          room.ink.trail(s.x,s.y,target.x,target.y,.17,s.team,room.elapsed*1000,false);
+          splash(room,target.x,target.y,1.2,s.team,0,room.elapsed*130,'shooter');
+          room.effects.push({type:'shot',x:s.x,y:s.y,tx:target.x,ty:target.y,team:s.team,weaponType:'splatling'});
+        }
+      }
+    }else if(s.kind==='missile'){
+      const target=room.players.get(s.target);
+      if(target&&target.deadFor===0){
+        const dx=target.x-s.x,dy=target.y-s.y,dist=Math.hypot(dx,dy)||1;
+        s.vx+=(dx/dist*23-s.vx)*Math.min(1,dt*5);
+        s.vy+=(dy/dist*23-s.vy)*Math.min(1,dt*5);
+      }
+      const nx=s.x+s.vx*dt,ny=s.y+s.vy*dt;
+      const hit=isBlocked(WALLS,SPRA_WIDTH,SPRA_HEIGHT,nx,ny,.2);
+      if(!hit){s.x=nx;s.y=ny;}
+      const close=target&&target.deadFor===0&&Math.hypot(target.x-s.x,target.y-s.y)<1.5;
+      if(hit||close||s.time<=0){
+        splash(room,s.x,s.y,2.35,s.team,0,room.elapsed*1000,'bomb');
+        for(const enemy of room.players.values())if(enemy.team!==s.team&&enemy.deadFor===0
+          &&Math.hypot(enemy.x-s.x,enemy.y-s.y)<2.7)inflict(room,enemy,36,owner);
+        room.effects.push({type:'bomb',x:s.x,y:s.y,team:s.team});
+        room.specials.splice(i,1);
+        continue;
       }
     }
-    room.effects.push({type:'bomb',x:b.x,y:b.y,team:b.team,seed:b.seed});
+    if(s.time<=0)room.specials.splice(i,1);
   }
+}
+function attemptSuperJump(room,p,message){
+  if(p.deadFor>0||p.jump||p.jumpCd>0||p.flightFor>0)return false;
+  const source={x:p.x,y:p.y};
+  let dest;
+  if(typeof message.targetPlayerId==='string'){
+    const teammate=room.players.get(message.targetPlayerId);
+    if(!teammate||teammate.team!==p.team||teammate.deadFor>0||teammate.id===p.id)return false;
+    dest={x:teammate.x,y:teammate.y};
+  }else{
+    if(!Number.isFinite(message.x)||!Number.isFinite(message.y))return false;
+    dest={x:message.x,y:message.y};
+  }
+  const landing=connectedInkLanding({ink:room.ink,width:SPRA_WIDTH,height:SPRA_HEIGHT,
+    walls:WALLS},source,dest,p.team);
+  if(!landing||Math.hypot(landing.x-p.x,landing.y-p.y)<3)return false;
+  const dist=Math.hypot(landing.x-p.x,landing.y-p.y);
+  p.jump={from:{x:p.x,y:p.y},to:landing,progress:0,duration:clamp(.5+dist/110,.55,1.55)};
+  p.jumpCd=14;
+  p.swimming=false;
+  room.effects.push({type:'jump',x:p.x,y:p.y,tx:landing.x,ty:landing.y,team:p.team});
+  return true;
 }
 function botInput(room, p) {
   const enemy = [...room.players.values()]
