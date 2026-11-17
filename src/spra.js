@@ -37,7 +37,7 @@ function makeRoom(code) {
   return {
     code, host: null, state: 'lobby', ink: createInkSurface(SPRA_WIDTH, SPRA_HEIGHT, WALLS),
     players: new Map(), effects: [], bombs: [], specials: [], wallInk: new Uint8Array(WALLS.length), nextBomb: 0, nextSpecial: 0, round:0, elapsed: 0,
-    winner: -1, updatedAt: Date.now(), broadcastAt: 0, practice: false
+    winner: -1, mode: 'turf', updatedAt: Date.now(), broadcastAt: 0, practice: false
   };
 }
 
@@ -551,7 +551,7 @@ function broadcast(room, object) {
   }
 }
 function snapshot(room) {
-  return { type: 'state', code: room.code, host: room.host, round: room.round, phase: room.state,
+  return { type: 'state', code: room.code, host: room.host, round: room.round, mode: room.mode, phase: room.state,
     remaining: Math.max(0, Math.ceil(SPRA_DURATION - room.elapsed)),
     scores: score(room), players: [...room.players.values()].map(pack),
     changes: room.ink.flush(), paintScale: INK_SCALE, effects: room.effects.splice(0, 30),
@@ -647,6 +647,22 @@ export function createSpra() {
         player.input.swim = msg.swim === true;
         if (Number.isFinite(msg.aim)) player.aim = clamp(msg.aim, -Math.PI * 2, Math.PI * 2);
         if (msg.bomb === true) bomb(room, player);
+        if (msg.special === true) activateSpecial(room,player);
+        if (msg.dodge === true && player.dodgeCd<=0 && player.deadFor<=0 &&
+          SPRA_WEAPONS[player.weapon]?.type==='shooter' && player.ink>=18){
+          player.dodgeCd=2;player.dodgeFor=.25;player.ink-=18;
+          player.invuln=Math.max(player.invuln,.17);
+          room.effects.push({type:'dodge',x:player.x,y:player.y,team:player.team});
+        }
+        if (msg.jump && typeof msg.jump==='object') attemptSuperJump(room,player,msg.jump);
+      } else if (msg.type === 'special' && room.state !== 'playing' && Object.hasOwn(SPRA_SPECIALS,msg.special)){
+        player.special=msg.special;
+        broadcast(room,snapshot(room));
+      } else if (msg.type === 'mode' && player.id === room.host && room.state==='lobby') {
+        if (['turf','ko'].includes(msg.mode)) {
+          room.mode=msg.mode;
+          broadcast(room,snapshot(room));
+        }
       } else if (msg.type === 'weapon' && room.state !== 'playing' && Object.hasOwn(SPRA_WEAPONS, msg.weapon)) {
         player.weapon = msg.weapon;
         broadcast(room, snapshot(room));
@@ -688,9 +704,16 @@ export function createSpra() {
       room.elapsed += STEP;
       for (const p of room.players.values()) move(room, p, STEP);
       updateBombs(room,STEP);
-      if (room.elapsed >= SPRA_DURATION) {
-        room.state = 'results';
-        room.winner = room.ink.counts[0] === room.ink.counts[1] ? -1 : room.ink.counts[0] > room.ink.counts[1] ? 0 : 1;
+      updateSpecials(room,STEP);
+      const kills=[0,0];
+      for(const p of room.players.values())kills[p.team]+=p.ko;
+      const elapsed=room.elapsed>=SPRA_DURATION;
+      const koEnd=room.mode==='ko'&&Math.max(...kills)>=20;
+      if (elapsed || koEnd) {
+        room.state='results';
+        if(room.mode==='ko')room.winner=kills[0]===kills[1]?-1:kills[0]>kills[1]?0:1;
+        else room.winner=room.ink.counts[0]===room.ink.counts[1]?-1:
+          room.ink.counts[0]>room.ink.counts[1]?0:1;
       }
       if (now - room.broadcastAt >= 125 || room.state === 'results') {
         room.broadcastAt = now;
