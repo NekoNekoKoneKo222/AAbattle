@@ -63,7 +63,7 @@ export function createSpraTutorial(canvas,{onComplete=()=>{},onSkip=()=>{}}={}){
  function refreshStep(){
   const info=STEPS[step];
   if(!info)return;
-  counter.textContent='TUTORIAL  '+String(step+1).padStart(2,'0')+' / '+STEPS.length;
+  counter.textContent='TUTORIAL  '+String(step+1).padStart(2,'0')+' / '+String(STEPS.length).padStart(2,'0');
   heading.textContent=info.title;
   description.textContent=info.message;
   objective.textContent=info.goal;
