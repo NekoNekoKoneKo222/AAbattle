@@ -392,3 +392,6 @@ body{position:fixed;inset:0;touch-action:pan-x pan-y;background:#0b1b2d}
  .game-foot .stats{font-size:8px;gap:5px;padding:3px}
  .game-foot .stats b{font-size:8px}
 }
+
+/* The transparent actor layer is always above ink effects and is never a pointer target. */
+#actorCanvas{position:absolute;inset:0;display:block;width:100%!important;height:100%!important;aspect-ratio:auto!important;image-rendering:pixelated;pointer-events:none;z-index:3;}
