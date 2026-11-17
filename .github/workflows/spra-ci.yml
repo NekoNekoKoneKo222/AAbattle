@@ -57,6 +57,6 @@ jobs:
       - name: SPRA PvP tests
         run: node --test test/spra.test.js test/spra-stress.test.js test/spra-astergum.test.js
       - name: Install Chromium for visual regression
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
       - name: SPRA browser visual regression
         run: node --test test/spra-browser.test.js
