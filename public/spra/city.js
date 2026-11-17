@@ -1,3 +1,4 @@
+import { FACILITY_LABELS, FASHION_COLORS } from './facilities.js';
 // SPRA: original pixel-art hub, locally simulated in every player's browser.
 // The battle server remains authoritative for combat; the town is a navigable UI.
 const MAP_W=176,MAP_H=118,S=16;
@@ -7,10 +8,11 @@ const buildings=[
  {x:45,y:26,w:26,h:24,color:'#263c65',roof:'#68d6ee',sign:'WEAPON',doorX:58,doorY:51,kind:'shop'},
  {x:99,y:23,w:30,h:27,color:'#43345d',roof:'#ffb454',sign:'BATTLE',doorX:113,doorY:51,kind:'battle'},
  {x:19,y:24,w:17,h:22,color:'#24464e',roof:'#55d6ad',sign:'ARCADE',doorX:28,doorY:47},
- {x:138,y:30,w:23,h:21,color:'#473655',roof:'#ce86ef',sign:'FOOD',doorX:151,doorY:52},
- {x:27,y:85,w:25,h:23,color:'#284658',roof:'#3ff2df',sign:'LOUNGE',doorX:39,doorY:109},
- {x:112,y:86,w:33,h:27,color:'#31415c',roof:'#e8a859',sign:'STUDIO',doorX:128,doorY:114},
- {x:71,y:9,w:25,h:23,color:'#27384a',roof:'#af92fd',sign:'PIXEL',doorX:82,doorY:33}
+ {x:138,y:30,w:23,h:21,color:'#473655',roof:'#ce86ef',sign:'FASHION',doorX:151,doorY:52,kind:'fashion'},
+ {x:27,y:85,w:25,h:23,color:'#284658',roof:'#3ff2df',sign:'WORKSHOP',doorX:39,doorY:109,kind:'workshop'},
+ {x:112,y:86,w:33,h:27,color:'#31415c',roof:'#e8a859',sign:'MY ROOM',doorX:128,doorY:114,kind:'room'},
+ {x:71,y:9,w:25,h:23,color:'#27384a',roof:'#af92fd',sign:'TRAINING',doorX:82,doorY:33,kind:'training'},
+ {x:64,y:88,w:25,h:18,color:'#374958',roof:'#ffd163',sign:'RANKING',doorX:76,doorY:107,kind:'ranking'}
 ];
 const bg='#112031';
 function fill(ctx,x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(x,y,w,h);}
@@ -61,7 +63,7 @@ function collision(x,y) {
  if(x<1||y<1||x>MAP_W-1||y>MAP_H-1)return true;
  return buildings.some(b=>x>b.x-1&&x<b.x+b.w+1&&y>b.y-1&&y<b.y+b.h);
 }
-export function createCity(canvas, {onShop,onBattle,onHint}={}){
+export function createCity(canvas, {onShop,onBattle,onFacility,onHint,getAppearance}={}){
  const ctx=canvas.getContext('2d',{alpha:false});
  ctx.imageSmoothingEnabled=false;
  const player={x:85,y:73};
@@ -76,11 +78,15 @@ export function createCity(canvas, {onShop,onBattle,onHint}={}){
   const doors=buildings.filter(b=>b.kind&&Math.hypot(player.x-b.doorX,player.y-b.doorY)<6.2);
   return doors[0]?.kind||null;
  };
+ function enterFacility(kind) {
+   if(kind==='shop')onShop?.();
+   else if(kind==='battle')onBattle?.();
+   else if(FACILITY_LABELS[kind])onFacility?.(kind);
+ }
  function interact() {
   const thing=near();
-  if(thing==='shop'){onShop?.();return true;}
-  if(thing==='battle'){onBattle?.();return true;}
-  onHint?.('武器屋かバトル受付まで移動してください。');
+  if(thing){enterFacility(thing);return true;}
+  onHint?.('施設の入り口付近へ移動してください。');
   return false;
  }
  const keyDown=e=>{
@@ -107,7 +113,7 @@ export function createCity(canvas, {onShop,onBattle,onHint}={}){
   const wx=(e.clientX-box.left)*canvas.width/box.width/S+camX;
   const wy=(e.clientY-box.top)*canvas.height/box.height/S+camY;
   const b=buildings.find(b=>b.kind&&wx>b.x&&wx<b.x+b.w&&wy>b.y&&wy<b.y+b.h);
-  if(b){(b.kind==='shop'?onShop:onBattle)?.();}
+  if(b)enterFacility(b.kind);
  });
  function frame(now) {
   if(!run)return;
@@ -155,11 +161,13 @@ export function createCity(canvas, {onShop,onBattle,onHint}={}){
   // Player is rendered last, with a bright pixel outline and directional marker.
   const px=(player.x-camX)*S,py=(player.y-camY)*S;
   fill(ctx,Math.round(px)-13,Math.round(py)-24,26,33,'#d7f9ff');
-  drawPerson(ctx,px,py,'#a3ff4a','#3740a1',Math.floor(time*8)%2?2:-2);
+  const appearance=getAppearance?.()||{};
+  drawPerson(ctx,px,py,FASHION_COLORS[appearance.shirt]||'#a3ff4a',
+    FASHION_COLORS[appearance.hat]||'#3740a1',Math.floor(time*8)%2?2:-2);
   fill(ctx,Math.round(px)-2,Math.round(py)-30,5,5,'#c8ff60');
   const target=near();
   if(target) {
-   const label=target==='shop'?'E : 武器屋':'E : バトル受付';
+   const label='E : '+(FACILITY_LABELS[target]||'入る');
    fill(ctx,canvas.width/2-105,canvas.height-68,210,29,'#101728');
    fill(ctx,canvas.width/2-103,canvas.height-66,206,25,'#c7ff67');
    ctx.font='bold 17px monospace';ctx.textAlign='center';ctx.fillStyle='#162135';

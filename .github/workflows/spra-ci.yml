@@ -6,6 +6,9 @@ on:
     paths:
       - 'src/spra.js'
       - 'src/spra-ink.js'
+      - 'src/spra-navigation.js'
+      - 'src/spra-leaderboard.js'
+      - 'test/spra-astergum.test.js'
       - 'public/spra/**'
       - 'test/spra.test.js'
       - 'src/server.js'
@@ -15,6 +18,9 @@ on:
     paths:
       - 'src/spra.js'
       - 'src/spra-ink.js'
+      - 'src/spra-navigation.js'
+      - 'src/spra-leaderboard.js'
+      - 'test/spra-astergum.test.js'
       - 'public/spra/**'
       - 'test/spra.test.js'
       - 'src/server.js'
@@ -38,14 +44,19 @@ jobs:
       - name: Syntax checks
         run: |
           node --check src/spra.js
+          node --check src/spra-navigation.js
+          node --check src/spra-leaderboard.js
           node --check src/spra-ink.js
           node --check public/spra/game.js
           node --check public/spra/city.js
           node --check public/spra/weapons.js
+          node --check public/spra/specials.js
+          node --check public/spra/facilities.js
+          node --check public/spra/cosmic-render.js
           node --check src/server.js
       - name: SPRA PvP tests
-        run: node --test test/spra.test.js test/spra-stress.test.js
+        run: node --test test/spra.test.js test/spra-stress.test.js test/spra-astergum.test.js
       - name: Install Chromium for visual regression
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
       - name: SPRA browser visual regression
         run: node --test test/spra-browser.test.js

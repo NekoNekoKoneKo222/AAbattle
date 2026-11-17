@@ -12,7 +12,7 @@ test('SPRA is a bounded top-down ink arena with different weapons', () => {
   assert.equal(INK_SCALE, 4);
   assert.equal(SPRA_INK_MAX, 300);
   assert.ok(Object.keys(SPRA_WEAPONS).length >= 40);
-  assert.equal(SPRA_CATEGORIES.length, 10);
+  assert.ok(SPRA_CATEGORIES.length >= 13, 'Includes wiper, drill and cosmic blaster classes');
   assert.ok(Object.values(SPRA_WEAPONS).every(w => w.delay > 0 && w.cost > 0 && w.range > 0));
 
 });

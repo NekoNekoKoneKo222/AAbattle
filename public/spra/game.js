@@ -1,5 +1,8 @@
 import { SPRA_WEAPONS, SPRA_CATEGORIES } from './weapons.js';
 import { createCity } from './city.js';
+import { SPRA_SPECIALS } from './specials.js';
+import { drawCosmic } from './cosmic-render.js';
+import { createSpraFacilities, FASHION_COLORS } from './facilities.js';
 
 const $ = id => document.getElementById(id);
 const W=160,H=100,TILE=16,PAINT_SCALE=4,INK_MAX=300;
@@ -14,14 +17,19 @@ const paintImage=paintCtx.createImageData(PW,PH);
 const COLORS=['#26d7ec','#ff9835'];
 let paint=new Uint8Array(PW*PH),paintDirty=true;
 let ws=null,myId=null,roomCode='',isHost=false,scene='city',phase='lobby',round=0;
-let players=[],walls=[],bombs=[],effects=[],remaining=180,scores=[0,0],winner=-1;
+let players=[],walls=[],bombs=[],gumShots=[],specialObjects=[],wallColors=[],effects=[],remaining=180,scores=[0,0],winner=-1,mode='turf';
 let lastFrame=performance.now(),clock=0,cameraX=0,cameraY=0,smooth=new Map(),toastTimer=null;
 let selectedWeapon=localStorage.getItem('spra_equipped_v2')||'shooter';
+let selectedSpecial=localStorage.getItem('spra_special_v3')||'tornado';
+let trainingRequested=false,jumpQueued=null,specialQueued=false,dodgeQueued=false,tapQueued=false;
+let currentSpecialTarget={x:0,y:0};
 const defaultOwned=['shooter','roller','blaster'];
 let owned;
 try {owned=new Set([...defaultOwned,...JSON.parse(localStorage.getItem('spra_owned_v2')||'[]')]);}
 catch {owned=new Set(defaultOwned);}
 if(!owned.has(selectedWeapon)||!SPRA_WEAPONS[selectedWeapon])selectedWeapon='shooter';
+if(SPRA_WEAPONS[selectedWeapon]?.type==='cosmic')selectedSpecial='final_frontier';
+else if(!SPRA_SPECIALS[selectedSpecial]||selectedSpecial==='final_frontier')selectedSpecial='tornado';
 let credits=Math.max(0,Number(localStorage.getItem('spra_coins_v2')||1200)||0);
 const nickname=$('nickname');
 nickname.value=localStorage.getItem('spra_name')||'';
@@ -39,6 +47,7 @@ function toast(msg){
 function saveBag(){
  localStorage.setItem('spra_owned_v2',JSON.stringify([...owned]));
  localStorage.setItem('spra_equipped_v2',selectedWeapon);
+ localStorage.setItem('spra_special_v3',selectedSpecial);
  localStorage.setItem('spra_coins_v2',String(credits));
  $('cityCoins').textContent=credits;
  $('shopCoins').textContent=credits;
@@ -69,7 +78,26 @@ function closeShop(){
  $('shopOverlay').classList.add('hidden');
  city.setActive(scene==='city');
 }
-const city=createCity($('cityCanvas'),{onShop:openShop,onBattle:openReception,onHint:toast});
+const facilities=createSpraFacilities({
+  getCoins:()=>credits,
+  spendCoins:amount=>{
+    const sum=Math.max(0,Math.floor(Number(amount)||0));
+    if(credits<sum)return false;
+    credits-=sum;saveBag();return true;
+  },
+  addCoins:amount=>{credits+=Math.max(0,Math.floor(Number(amount)||0));saveBag();},
+  getWeapon:()=>SPRA_WEAPONS[selectedWeapon],
+  getNickname:()=>nickname.value.trim(),
+  onTraining:()=>join('',true),onWeaponTrial:()=>join('',true),
+  onBattle:openReception,
+  onAppearance:cosmetics=>send({type:'cosmetics',cosmetics}),
+  notify:toast
+});
+const city=createCity($('cityCanvas'),{
+  onShop:openShop,onBattle:openReception,onHint:toast,
+  onFacility:id=>facilities.open(id),
+  getAppearance:()=>facilities.getAppearance()
+});
 function disconnectToCity(){
  if(ws){const old=ws;ws=null;old.onclose=null;old.close();}
  myId=null;roomCode='';isHost=false;phase='lobby';round=0;
@@ -81,7 +109,16 @@ function disconnectToCity(){
  toast('カラフルシティに戻りました');
 }
 $('openMatch').addEventListener('click',openReception);
+for(const b of document.querySelectorAll('[data-town-facility]')){
+ b.addEventListener('click',()=>{
+   const id=b.dataset.townFacility;
+   if(id==='shop')openShop();
+   else if(id==='battle')openReception();
+   else facilities.open(id);
+ });
+}
 $('openShop').addEventListener('click',openShop);
+$('shopTryBtn').addEventListener('click',()=>{closeShop();facilities.open('shop');});
 $('joinBackCity').addEventListener('click',()=>sceneTo('city'));
 $('roomBackCity').addEventListener('click',disconnectToCity);
 $('leaveToCity').addEventListener('click',disconnectToCity);
@@ -100,8 +137,10 @@ window.addEventListener('keydown',e=>{
 function equip(id){
  if(!owned.has(id)||!SPRA_WEAPONS[id])return;
  selectedWeapon=id;
- saveBag();send({type:'weapon',weapon:id});
- drawShop();drawRoomWeapons();
+ if(SPRA_WEAPONS[id]?.type==='cosmic')selectedSpecial='final_frontier';
+ else if(selectedSpecial==='final_frontier')selectedSpecial='tornado';
+ saveBag();send({type:'weapon',weapon:id});send({type:'special',special:selectedSpecial});
+ drawShop();drawRoomWeapons();drawRoomSpecials();
  toast(SPRA_WEAPONS[id].label+' を装備！');
 }
 function purchase(id){
@@ -151,7 +190,29 @@ function drawRoomWeapons(){
   list.append(b);
  }
 }
-saveBag();drawShop();drawRoomWeapons();
+function drawRoomSpecials(){
+ const list=$('specialSelect');
+ if(!list)return;
+ list.replaceChildren();
+ const cosmic=SPRA_WEAPONS[selectedWeapon]?.type==='cosmic';
+ for(const special of Object.values(SPRA_SPECIALS)){
+  if(cosmic ? special.id!=='final_frontier' : special.id==='final_frontier')continue;
+  const b=document.createElement('button');
+  b.className='spra-special-option'+(selectedSpecial===special.id?' chosen':'');
+  b.append(textItem(special.icon+' '+special.label),textItem(special.description,'special-description'));
+  b.addEventListener('click',()=>{
+    selectedSpecial=special.id;
+    localStorage.setItem('spra_special_v3',selectedSpecial);
+    send({type:'special',special:selectedSpecial});
+    drawRoomSpecials();
+  });
+  list.append(b);
+ }
+}
+$('roomMode').addEventListener('change',()=>{
+ if(isHost)send({type:'mode',mode:$('roomMode').value});
+});
+saveBag();drawShop();drawRoomWeapons();drawRoomSpecials();
 if(queryRoom&&/^[a-z0-9]{6}$/i.test(queryRoom))sceneTo('reception');else sceneTo('city');
 
 function send(data){if(ws?.readyState===WebSocket.OPEN)ws.send(JSON.stringify(data));}
@@ -159,7 +220,8 @@ function updateConnection(online){
  $('connection').classList.toggle('online',online);
  $('connection').lastChild.textContent=online?' ONLINE':' OFFLINE';
 }
-function join(code=''){
+function join(code='',training=false){
+ trainingRequested=Boolean(training);
  if(ws&&[WebSocket.OPEN,WebSocket.CONNECTING].includes(ws.readyState))return toast('すでに接続しています');
  const name=nickname.value.trim().slice(0,18)||'PLAYER';
  localStorage.setItem('spra_name',name);
@@ -167,7 +229,9 @@ function join(code=''){
  const proto=location.protocol==='https:'?'wss:':'ws:';
  const socket=new WebSocket(proto+'//'+location.host+'/spra/ws');
  ws=socket;
- socket.onopen=()=>{updateConnection(true);send({type:'join',name,code});};
+ socket.onopen=()=>{updateConnection(true);send({type:'join',name,code,
+    mode:training?'training':$('matchMode').value,
+    cosmetics:facilities.getAppearance()});};
  socket.onerror=()=>toast('サーバーに接続できませんでした');
  socket.onclose=()=>{
   if(socket!==ws)return;
@@ -259,22 +323,28 @@ function receive(msg){
   $('roomInput').value=roomCode;
   history.replaceState(null,'','/spra/?room='+roomCode);
   send({type:'weapon',weapon:selectedWeapon});
+  send({type:'special',special:selectedSpecial});
   sceneTo('room');
+  if(trainingRequested){
+    trainingRequested=false;
+    send({type:'start'});
+  }
   toast('部屋に参加しました');
   return;
  }
  if(msg.type==='reset'){
   decodePaint(msg.paint);
-  effects=[];smooth.clear();bombs=[];cameraX=0;cameraY=0;
+  effects=[];smooth.clear();bombs=[];gumShots=[];specialObjects=[];cameraX=0;cameraY=0;
   $('result').classList.add('hidden');
   return;
  }
  if(msg.type==='state'){
   if(!myId)return;
-  phase=msg.phase;round=msg.round||0;remaining=msg.remaining;
+  phase=msg.phase;round=msg.round||0;remaining=msg.remaining;mode=msg.mode||'turf';
   scores=Array.isArray(msg.scores)?msg.scores:[0,0];
   winner=msg.winner;isHost=msg.host===myId;
   players=msg.players||[];bombs=msg.bombs||[];
+  gumShots=msg.gumShots||[];specialObjects=msg.specials||[];wallColors=msg.wallsInk||[];
   // Recover gracefully when this client fell behind on ink packets.
   if(typeof msg.fullPaint==='string')decodePaint(msg.fullPaint);
   else readChanges(msg.changes);
@@ -289,6 +359,10 @@ function updateUI(){
  if(scene!==(active?'battle':'room'))sceneTo(active?'battle':'room');
  if(!active){
   playerRoster(0);playerRoster(1);
+  $('roomMode').value=mode;
+  $('roomMode').disabled=!isHost;
+  $('roomModeText').textContent='モード：'+
+     (mode==='ko'?'KOバトル（20KO先取）':mode==='training'?'CPUトレーニング':'ナワバリバトル');
   $('startBtn').disabled=!isHost;
   $('botBtn').disabled=!isHost||players.length>=8;
   $('hostNote').textContent=isHost?
@@ -302,7 +376,15 @@ function updateUI(){
   $('myHp').textContent=me.hp;
   $('myInk').textContent=me.ink+'/'+(me.maxInk||INK_MAX);
   $('myKo').textContent=me.ko;
-  $('myBomb').textContent=me.bombCd>0?Math.ceil(me.bombCd)+'s':'READY';
+  $('myBomb').textContent=me.bombCd>0?Math.ceil(me.bombCd)+'s':
+     (SPRA_WEAPONS[me.weapon]?.type==='cosmic'?'風船 / INK 225':'READY');
+  $('specialFill').style.width=Math.max(0,Math.min(100,me.specialCharge||0))+'%';
+  $('specialValue').textContent=String(me.specialCharge||0)+'%';
+  $('specialName').textContent=(SPRA_SPECIALS[me.special]?.label||'スペシャル')+
+    (me.specialCharge>=100?' / READY':'');
+  $('inkStatus').textContent=me.swim?'潜伏中 / HP+INK回復':
+      SPRA_WEAPONS[me.weapon]?.type==='cosmic'&&me.charge>0?
+      'ガム風船チャージ '+Math.round(me.charge*100)+'%':'INK TANK';
   const pct=Math.max(0,Math.min(100,(me.ink/(me.maxInk||INK_MAX))*100));
   $('inkFill').style.width=pct+'%';
   $('inkCounter').textContent=me.ink+' / '+(me.maxInk||INK_MAX);
@@ -326,12 +408,15 @@ function updateUI(){
    'ホストの再開を待つか、街へ戻れます。';
  }
 }
-const controls=new Set(['w','a','s','d','q','shift','arrowup','arrowdown','arrowleft','arrowright',' ']);
+const controls=new Set(['w','a','s','d','q','e','r','j','shift','arrowup','arrowdown','arrowleft','arrowright',' ']);
 window.addEventListener('keydown',e=>{
  if(scene!=='battle'||phase!=='playing'||['INPUT','TEXTAREA','BUTTON'].includes(document.activeElement?.tagName))return;
  const key=e.key.toLowerCase();
  if(controls.has(key))e.preventDefault();
  if(key==='q'&&!keys.has(key))bombQueued=true;
+ if(key==='r'&&!keys.has(key))specialQueued=true;
+ if(key==='e'&&!keys.has(key))dodgeQueued=true;
+ if(key==='j'&&!keys.has(key))toast('右上のミニマップで、つながった味方インクの位置をタップしてください。');
  keys.add(key);
 });
 window.addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));
@@ -349,7 +434,7 @@ canvas.addEventListener('pointermove',e=>{
 canvas.addEventListener('pointerdown',e=>{
  if(phase!=='playing')return;
  aimAtPointer(e);
- if(e.button===0){pointer.down=true;if(e.pointerType==='mouse')canvas.setPointerCapture(e.pointerId);}
+ if(e.button===0){pointer.down=true;tapQueued=true;if(e.pointerType==='mouse')canvas.setPointerCapture(e.pointerId);}
 });
 window.addEventListener('pointerup',()=>{pointer.down=false;});
 canvas.addEventListener('pointercancel',()=>{pointer.down=false;});
@@ -368,11 +453,26 @@ stick.addEventListener('pointermove',e=>{if(e.pointerId===touch.stickId)updateSt
 function releaseStick(e){if(e.pointerId!==touch.stickId)return;touch.stickId=null;touch.moveX=touch.moveY=0;thumb.style.transform='translate(-50%,-50%)';}
 stick.addEventListener('pointerup',releaseStick);stick.addEventListener('pointercancel',releaseStick);
 function holdButton(id,name){
- const b=$(id);b.addEventListener('pointerdown',e=>{e.preventDefault();b.setPointerCapture(e.pointerId);touch[name]=true;});
+ const b=$(id);b.addEventListener('pointerdown',e=>{e.preventDefault();b.setPointerCapture(e.pointerId);touch[name]=true;if(name==='fire')tapQueued=true;});
  for(const event of ['pointerup','pointercancel'])b.addEventListener(event,()=>{touch[name]=false;});
 }
 holdButton('fireTouch','fire');holdButton('swimTouch','swim');
 $('bombTouch').addEventListener('pointerdown',e=>{e.preventDefault();bombQueued=true;});
+$('specialTouch').addEventListener('pointerdown',e=>{e.preventDefault();specialQueued=true;});
+$('dodgeTouch').addEventListener('pointerdown',e=>{e.preventDefault();dodgeQueued=true;});
+$('jumpTouch').addEventListener('pointerdown',e=>{
+ e.preventDefault();toast('右上のミニマップから味方インクへジャンプ！');
+});
+miniCanvas.addEventListener('pointerdown',event=>{
+ if(scene!=='battle'||phase!=='playing')return;
+ const box=miniCanvas.getBoundingClientRect();
+ if(!box.width||!box.height)return;
+ jumpQueued={
+  x:Math.max(0,Math.min(W,(event.clientX-box.left)*W/box.width)),
+  y:Math.max(0,Math.min(H,(event.clientY-box.top)*H/box.height))
+ };
+ toast('スーパージャンプを申請しました（自陣のつながったインクのみ）');
+});
 setInterval(()=>{
  if(scene!=='battle'||phase!=='playing'||!myId||ws?.readyState!==WebSocket.OPEN)return;
  const x=(+keys.has('d')||+keys.has('arrowright'))-(+keys.has('a')||+keys.has('arrowleft'))+touch.moveX;
@@ -380,9 +480,11 @@ setInterval(()=>{
  const me=players.find(p=>p.id===myId);
  let aim=me?.aim||0;
  if(me&&pointer.active)aim=Math.atan2(pointer.y-me.y,pointer.x-me.x);
- send({type:'input',x,y,aim,fire:pointer.down||touch.fire||keys.has(' '),
-  swim:keys.has('shift')||touch.swim,bomb:bombQueued});
- bombQueued=false;
+ send({type:'input',x,y,aim,fire:pointer.down||touch.fire||keys.has(' ')||tapQueued,
+  swim:keys.has('shift')||touch.swim,bomb:bombQueued,
+  dodge:dodgeQueued,special:specialQueued,
+  jump:jumpQueued,specialTarget:pointer.active?{x:pointer.x,y:pointer.y}:null});
+ bombQueued=false;specialQueued=false;dodgeQueued=false;jumpQueued=null;tapQueued=false;
 },65);
 
 function drawBox(x,y,w,h,color){ctx.fillStyle=color;ctx.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h));}
@@ -408,12 +510,18 @@ function drawFloor(){
  if(sw>0&&sh>0)ctx.drawImage(paintCanvas,sx,sy,sw,sh,
      sx*TILE/PAINT_SCALE,sy*TILE/PAINT_SCALE,
      sw*TILE/PAINT_SCALE,sh*TILE/PAINT_SCALE);
- for(const b of walls){
+ for(const [wallIndex,b] of walls.entries()){
   worldBox(b.x+.3,b.y+.5,b.w,b.h,'#071522');
   worldBox(b.x,b.y,b.w,b.h,'#3a5069');
   worldBox(b.x+.25,b.y+.25,b.w-.5,b.h-.5,'#506c83');
   worldBox(b.x+.75,b.y+.7,b.w-1.5,.5,'#688f9c');
   for(let i=2;i<b.w;i+=3)worldBox(b.x+i,b.y+b.h-1,.65,.65,'#263d51');
+  if(wallColors[wallIndex]===1||wallColors[wallIndex]===2){
+   const color=COLORS[wallColors[wallIndex]-1];
+   worldBox(b.x+.35,b.y+.2,b.w-.7,.42,color);
+   worldBox(b.x+.2,b.y+.5,.36,b.h-.9,color);
+   worldBox(b.x+b.w-.56,b.y+.5,.36,b.h-.9,color);
+  }
  }
  for(const [team,x] of [9,W-9].entries()){
   worldBox(x-2,H/2-2,4,4,team?'#a95c36':'#21738c');
@@ -476,13 +584,27 @@ function drawAvatar(p,dt,now){
   }
  }else{
   if(mine){drawBox(x-15,y-16,30,31,'#d7ff62');drawBox(x-13,y-14,26,27,'#112c42');}
-  drawBox(x-9,y+2,7,10,'#102534');drawBox(x+3,y+2,7,10,'#102534');
-  drawBox(x-11,y-8,22,16,color);
+  const look=p.cosmetics||{};
+  const shirt=FASHION_COLORS[look.shirt]||color;
+  const hat=FASHION_COLORS[look.hat]||(p.team?'#55295c':'#194961');
+  const shoes=FASHION_COLORS[look.shoes]||'#102534';
+  drawBox(x-9,y+2,7,10,shoes);drawBox(x+3,y+2,7,10,shoes);
+  drawBox(x-11,y-8,22,16,shirt);
   drawBox(x-9,y-18,18,13,'#f5bb9e');
-  drawBox(x-11,y-19,22,7,p.team?'#55295c':'#194961');
+  drawBox(x-11,y-19,22,7,hat);
   drawBox(x-5,y-11,3,3,'#071522');drawBox(x+4,y-11,3,3,'#071522');
   ctx.save();ctx.translate(Math.round(x),Math.round(y));ctx.rotate(s.aim);
-  drawBox(4,-4,15,7,'#132537');drawBox(12,-3,10,5,'#e1ff96');ctx.restore();
+  drawBox(4,-4,15,7,'#132537');
+  drawBox(12,-3,10,5,FASHION_COLORS[look.skin]||'#e1ff96');
+  ctx.restore();
+ }
+ if(p.shield>0){
+  ctx.strokeStyle='#b8e9ff';ctx.lineWidth=3;
+  ctx.strokeRect(Math.round(x)-17,Math.round(y)-20,34,37);
+ }
+ if(p.flight>0){
+  drawBox(x-2,y-30,5,11,'#c4edfa');
+  drawBox(x-10,y-32,21,6,'#ddd5ff');
  }
  // Label and health pip remain pixel-based.
  ctx.textAlign='center';ctx.font='bold 10px monospace';ctx.fillStyle='#f6ffff';
@@ -541,6 +663,8 @@ function render(now){
    if(now-lastErrorAt>7000){console.error('SPRA ink renderer:',err);toast('インク描画を修復中です');lastErrorAt=now;}
    paintDirty=true;
   }
+  drawCosmic(ctx,{specials:specialObjects,shots:gumShots,effects,cameraX,cameraY,
+    tile:TILE,width:canvas.width,height:canvas.height,elapsed:clock,now});
   drawBombs();
   drawEffects(now);
   // Avatars always render after ink and explosive effects.
