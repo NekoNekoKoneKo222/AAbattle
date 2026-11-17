@@ -11,3 +11,18 @@
 /* Each card keeps its own awakening instead of a generic CP refund. */
 .hand-card.awakened-card{border-color:#c38af3;box-shadow:0 0 0 1px #c38af366,0 0 16px #a56bdf44}
 .card-detail-dialog .detail-description{white-space:pre-line}
+
+/* Cooperative boss battle lobby */
+.boss-panel{margin:22px auto;max-width:1150px;padding:20px;background:linear-gradient(125deg,#26152f,#171c38);border:1px solid #935b9f;border-radius:18px;color:#f1ebff}
+.boss-heading h2{margin:5px 0;font-weight:800;color:#ffdda1}.boss-heading p,.boss-lobby p{color:#d0c2e5}
+.boss-controls,.boss-actions{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin-top:14px}
+.boss-controls label{display:flex;flex-direction:column;gap:5px;flex:1;min-width:168px;font-size:.88rem}
+.boss-controls input,.boss-controls select{width:100%;background:#18172e;color:#fff;border:1px solid #9379b2;padding:10px;border-radius:9px}
+.boss-panel button{color:white;background:#673ca0;border:1px solid #a26ad5;padding:10px 14px;border-radius:9px;cursor:pointer}
+.boss-panel button:disabled{opacity:.5;cursor:not-allowed}
+.boss-lobby{border-top:1px solid #58436e;margin-top:18px;padding-top:15px}
+.boss-room-info{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.boss-meter{display:flex;flex-direction:column;gap:7px;margin-top:12px}
+.boss-meter progress{height:19px;width:100%;accent-color:#ed6c6c}
+.hand-card.ultimate-card{border-color:#ffce6b;box-shadow:0 0 0 1px #ffce6b99,0 0 18px #e7aa4577}
+@media(max-width:600px){.boss-panel{padding:14px}.boss-controls{flex-direction:column;align-items:stretch}.boss-controls label,.boss-controls button{width:100%}}
