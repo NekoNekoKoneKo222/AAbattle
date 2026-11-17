@@ -85,7 +85,7 @@ async function currentUser(req) {
   return token ? store.findSession(digest(token)) : null;
 }
 const pixelMyth = mountPixelRoutes(app, { pool: store.pool || null, currentUser });
-const spra = createSpra();
+const spra = createSpra({pool:store.pool||null});
 function cookie(res, token, maxAge) {
   res.setHeader('Set-Cookie', `aa_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${secure ? '; Secure' : ''}`);
 }
@@ -600,6 +600,13 @@ app.get('/abn', (_req, res) => res.sendFile(path.join(staticRoot, 'abn', 'index.
 app.get('/model', (_req, res) => res.sendFile(path.join(staticRoot, 'sam', 'index.html')));
 app.get(['/draw', '/draw/'], (_req, res) => res.sendFile(path.join(staticRoot, 'draw', 'index.html')));
 app.get(['/CSH', '/CSH/'], (_req, res) => res.sendFile(path.join(staticRoot, 'CSH', 'index.html')));
+app.get('/api/spra/leaderboard', async (_req,res) => {
+  try { res.json(await spra.listRankings(20)); }
+  catch(error) {
+    console.error('SPRA rankings:',error);
+    res.json({scope:'unavailable',players:[]});
+  }
+});
 app.get(['/spra', '/spra/'], (_req, res) => res.sendFile(path.join(staticRoot, 'spra', 'index.html')));
 app.use(express.static(staticRoot, { index: 'index.html', maxAge: 60000 }));
 app.use((err, _req, res, _next) => {
