@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { WebSocket } from 'ws';
 import { createSpra, SPRA_WIDTH, SPRA_HEIGHT, SPRA_WEAPONS } from '../src/spra.js';
+import { INK_SCALE, createInkSurface } from '../src/spra-ink.js';
 
 test('SPRA is a bounded top-down ink arena with different weapons', () => {
   assert.equal(SPRA_WIDTH, 54);
@@ -51,7 +52,7 @@ test('PVP: two players join a room, start and paint while moving', { timeout: 90
     a.send(JSON.stringify({ type: 'join', name: 'BLUE' }));
     const welcomeA = await receiveA(x => x.type === 'welcome');
     assert.match(welcomeA.code, /^[A-F0-9]{6}$/);
-    assert.equal(Buffer.from(welcomeA.paint, 'base64').byteLength, SPRA_WIDTH * SPRA_HEIGHT);
+    assert.equal(Buffer.from(welcomeA.paint, 'base64').byteLength, SPRA_WIDTH * SPRA_HEIGHT * INK_SCALE * INK_SCALE);
 
     b = new WebSocket('ws://127.0.0.1:' + port);
     const receiveB = inbox(b);
@@ -95,4 +96,42 @@ test('PVP: clients cannot submit invalid room join codes', { timeout: 7000 }, as
     socket.close(); spra.close();
     await new Promise(resolve => server.close(resolve));
   }
+});
+test('organic ink: irregular splash stamps cover subcells and count painted area precisely', () => {
+  const ink = createInkSurface(20, 14, [{ x: 10, y: 5, w: 2, h: 3 }]);
+  assert.equal(ink.sample(7, 7), 0);
+  ink.impact(7, 7, 2.2, 0, 0.6, 341, 'shooter');
+  assert.equal(ink.sample(7, 7), 1);
+  assert.equal(ink.sample(11, 6), 0, 'ink must not cover solid walls');
+  assert.ok(ink.score()[0] > 0);
+  assert.ok(ink.score()[0] < 15);
+  assert.equal(ink.counts[0], ink.paint.reduce((total, c) => total + (c === 1), 0));
+  const delta = ink.flush();
+  assert.equal(delta.length % 3, 0);
+  assert.ok(delta.length > 0);
+  const replica = new Uint8Array(ink.paint.length);
+  for (let i = 0; i < delta.length; i += 3) {
+    replica.fill(delta[i + 2], delta[i], delta[i] + delta[i + 1]);
+  }
+  assert.deepEqual(replica, ink.paint);
+  assert.deepEqual(ink.flush(), []);
+  const before = ink.score()[0];
+  ink.impact(7, 7, 2.2, 0, 0.6, 341, 'shooter');
+  assert.equal(ink.score()[0], before, 'repainting same team does not gain extra points');
+  ink.impact(7, 7, 1.1, 1, 0.3, 997, 'bomb');
+  assert.ok(ink.counts[1] > 0 && ink.counts[0] > 0);
+  assert.ok(ink.score()[0] < before);
+  ink.clear();
+  assert.deepEqual(ink.score(), [0, 0]);
+  assert.equal(ink.sample(7, 7), 0);
+});
+
+test('organic ink: roller leaves a continuous band while shots scatter', () => {
+  const ink = createInkSurface(25, 18);
+  ink.trail(3, 9, 16, 9, 0.9, 0, 113, true);
+  assert.equal(ink.sample(9, 9), 1);
+  assert.equal(ink.sample(14, 9), 1);
+  const rollerArea = ink.counts[0];
+  ink.trail(3, 12, 16, 12, 0.2, 1, 431, false);
+  assert.ok(rollerArea > ink.counts[1] * 3);
 });
