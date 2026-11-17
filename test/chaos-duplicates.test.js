@@ -38,7 +38,7 @@ test('duplicate mastery XP uses regular mastery level-up coins exactly once',()=
 test('gacha-only duplicates are counted across packs and unaffected by shard conversion',async()=>{
   const store=createChaosCollection();
   await store.adminGrant('alice',{coins:100000});
-  const original=await store.profile('alice');
+  assert.equal((await store.profile('alice')).mastery.grant||0,0);
   const starter=new Set(STARTER_DECK);
   const drawn={};
   for(let n=0;n<20;n++){
@@ -62,7 +62,6 @@ test('gacha-only duplicates are counted across packs and unaffected by shard con
   const after=await store.profile('alice');
   assert.deepEqual(after.duplicateCounts,recorded);
   assert.deepEqual(after.mastery,mastery);
-  assert.equal(original.mastery.grant||0,0);
   // Admin awards and crafting are not counted as gacha duplicates.
   await store.adminGrant('alice',{cardId:'grant',count:1});
   const admin=await store.profile('alice');
