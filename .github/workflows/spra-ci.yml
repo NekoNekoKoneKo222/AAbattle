@@ -1,0 +1,42 @@
+name: SPRA checks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/spra.js'
+      - 'public/spra/**'
+      - 'test/spra.test.js'
+      - 'src/server.js'
+      - '.github/workflows/spra-ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/spra.js'
+      - 'public/spra/**'
+      - 'test/spra.test.js'
+      - 'src/server.js'
+      - '.github/workflows/spra-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  spra:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci --include=dev
+      - name: Syntax checks
+        run: |
+          node --check src/spra.js
+          node --check public/spra/game.js
+          node --check src/server.js
+      - name: SPRA PvP tests
+        run: node --test test/spra.test.js
