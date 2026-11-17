@@ -1,11 +1,47 @@
 const $ = id => document.getElementById(id);
 const canvas = $('gameCanvas');
 const ctx = canvas.getContext('2d', { alpha: false });
-const W = 54, H = 34, TILE = 30;
+const W = 54, H = 34, TILE = 30, PAINT_SCALE = 8;
+const PAINT_W = W * PAINT_SCALE, PAINT_H = H * PAINT_SCALE;
+const paintCanvas = document.createElement('canvas');
+paintCanvas.width = PAINT_W;
+paintCanvas.height = PAINT_H;
+const paintCtx = paintCanvas.getContext('2d');
+const paintImage = paintCtx.createImageData(PAINT_W, PAINT_H);
+let paintDirty = true;
+function setPaintPixel(index, value) {
+  if (index < 0 || index >= PAINT_W * PAINT_H || value < 0 || value > 2) return;
+  paint[index] = value;
+  const i = index * 4;
+  if (value === 0) {
+    paintImage.data[i + 3] = 0;
+    return;
+  }
+  const noise = (((index * 2654435761) >>> 9) % 15) - 7;
+  if (value === 1) {
+    paintImage.data[i] = 18 + noise;
+    paintImage.data[i + 1] = 204 + noise;
+    paintImage.data[i + 2] = 231 + noise;
+  } else {
+    paintImage.data[i] = 249 + Math.min(noise, 6);
+    paintImage.data[i + 1] = 146 + noise;
+    paintImage.data[i + 2] = 38 + noise;
+  }
+  paintImage.data[i + 3] = 255;
+}
+function drawPaint() {
+  if (paintDirty) {
+    paintCtx.putImageData(paintImage, 0, 0);
+    paintDirty = false;
+  }
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(paintCanvas, 0, 0, canvas.width, canvas.height);
+}
 const COLORS = ['#27d7f3', '#ff9b36'];
 let ws = null, myId = null, roomCode = '', isHost = false;
 let phase = 'lobby', selectedWeapon = 'shooter', players = [], walls = [];
-let paint = new Uint8Array(W * H), effects = [], remaining = 180, scores = [0, 0], winner = -1;
+let paint = new Uint8Array(PAINT_W * PAINT_H), effects = [], remaining = 180, scores = [0, 0], winner = -1;
 let smooth = new Map(), prevFrame = performance.now(), elapsed = 0, bombQueued = false, toastTimer;
 const keys = new Set();
 const pointer = { x: W / 2, y: H / 2, active: false, down: false };
@@ -66,8 +102,10 @@ function join(code = '') {
 function decodePaint(base64) {
   try {
     const bytes = atob(base64 || '');
-    if (bytes.length !== W * H) return;
+    if (bytes.length !== PAINT_W * PAINT_H) return;
     paint = Uint8Array.from(bytes, char => char.charCodeAt(0));
+    for (let i = 0; i < paint.length; i++) setPaintPixel(i, paint[i]);
+    paintDirty = true;
   } catch { toast('インク情報を取得できませんでした。'); }
 }
 function receive(msg) {
@@ -101,9 +139,13 @@ function receive(msg) {
     isHost = msg.host === myId;
     players = Array.isArray(msg.players) ? msg.players : [];
     const changes = Array.isArray(msg.changes) ? msg.changes : [];
-    for (let i = 0; i + 1 < changes.length; i += 2) {
-      const ix = changes[i], v = changes[i + 1];
-      if (Number.isInteger(ix) && ix >= 0 && ix < paint.length && v >= 0 && v <= 2) paint[ix] = v;
+    for (let i = 0; i + 2 < changes.length; i += 3) {
+      const start = changes[i], count = changes[i + 1], color = changes[i + 2];
+      if (!Number.isInteger(start) || !Number.isInteger(count) ||
+        count < 1 || count > paint.length || start < 0 ||
+        start + count > paint.length || ![0, 1, 2].includes(color)) continue;
+      for (let j = start; j < start + count; j++) setPaintPixel(j, color);
+      paintDirty = true;
     }
     if (Array.isArray(msg.effects)) {
       for (const fx of msg.effects) effects.push({ ...fx, time: performance.now() });
@@ -275,20 +317,10 @@ function drawArena() {
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     rect(x, y, 1, 1, (x + y) % 2 === 0 ? '#1a3341' : '#18313e');
   }
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const team = paint[y * W + x];
-    if (!team) continue;
-    const seed = Math.sin(x * 13.15 + y * 2.9);
-    const c = team === 1 ? '#19c9eb' : '#fc902a';
-    const dark = team === 1 ? '#0daacb' : '#e87927';
-    rect(x - 0.03, y - 0.03, 1.06, 1.06, seed < -0.25 ? dark : c);
-    // small unpainted corners make block-based paint look more organic
-    if (seed > .6) rect(x + .78, y + .78, .24, .24, '#1a3341');
-    if (seed < -.7) rect(x + .08, y + .05, .09, .1, '#ffffff2d');
-  }
   ctx.strokeStyle = '#e5f6ff12';ctx.lineWidth = 1;
   for (let i = 0; i <= W; i++) { ctx.beginPath();ctx.moveTo(i * TILE, 0);ctx.lineTo(i * TILE, canvas.height);ctx.stroke(); }
   for (let i = 0; i <= H; i++) { ctx.beginPath();ctx.moveTo(0, i * TILE);ctx.lineTo(canvas.width, i * TILE);ctx.stroke(); }
+  drawPaint();
   for (const w of walls) {
     roundedRect((w.x + .17) * TILE, (w.y + .3) * TILE, w.w * TILE, w.h * TILE, 8, '#030f19a0');
     roundedRect(w.x * TILE, w.y * TILE, w.w * TILE, w.h * TILE, 8, '#395366');
@@ -310,12 +342,54 @@ function drawEffects(now) {
     const age = (now - fx.time) / 550, alpha = Math.max(0, 1 - age);
     ctx.save();ctx.globalAlpha = alpha;
     if (fx.type === 'shot') {
-      ctx.strokeStyle = colorOf(fx.team);ctx.lineWidth = (fx.weapon === 'roller' ? 13 : 5) * (1 - age * .75);
-      ctx.lineCap = 'round';ctx.beginPath();ctx.moveTo(fx.x * TILE, fx.y * TILE);
-      ctx.lineTo(fx.tx * TILE, fx.ty * TILE);ctx.stroke();
-      for (let j = 0; j < 5; j++) {
-        const t = j / 5, x = (fx.x + (fx.tx - fx.x) * t) * TILE, y = (fx.y + (fx.ty - fx.y) * t) * TILE;
-        ctx.fillStyle = colorOf(fx.team);ctx.beginPath();ctx.arc(x, y, 5 + (j % 3) * 3, 0, Math.PI * 2);ctx.fill();
+      const teamColor = colorOf(fx.team);
+      const dx = fx.tx - fx.x, dy = fx.ty - fx.y;
+      const theta = Math.atan2(dy, dx);
+      const seed = fx.seed || 1;
+      const hash = k => {
+        const x = Math.sin(seed * .731 + k * 43.77) * 43758.5453;
+        return x - Math.floor(x);
+      };
+      // Individual droplets travel outward, never a single flat beam.
+      const count = fx.weapon === 'roller' ? 25 : 18;
+      for (let k = 0; k < count; k++) {
+        const t = (k + .45 + hash(k) * .3) / count;
+        const offset = (hash(k + 60) - .5) * (fx.weapon === 'roller' ? .65 : .28);
+        const px = (fx.x + dx * t - Math.sin(theta) * offset) * TILE;
+        const py = (fx.y + dy * t + Math.cos(theta) * offset) * TILE;
+        ctx.fillStyle = teamColor;
+        ctx.globalAlpha = alpha * (0.45 + .4 * hash(k + 110));
+        ctx.beginPath();
+        ctx.arc(px, py, (fx.weapon === 'roller' ? 4.5 : 2.8) + hash(k + 140) * 5,
+          0, Math.PI * 2);
+        ctx.fill();
+      }
+      // Wet, angular splash bloom + detached particles at the impact point.
+      const bloomSize = fx.weapon === 'blaster' ? 2.6 :
+        fx.weapon === 'roller' ? 2.1 : 1.25;
+      const bloom = Math.min(1, age * 4);
+      ctx.globalAlpha = alpha * .38;
+      ctx.fillStyle = teamColor;
+      ctx.beginPath();
+      const petals = 14;
+      for (let k = 0; k <= petals; k++) {
+        const a = k * Math.PI * 2 / petals;
+        const noisy = .62 + .35 * hash(k + 220);
+        const r = bloomSize * TILE * bloom * noisy;
+        const px = fx.tx * TILE + Math.cos(a) * r;
+        const py = fx.ty * TILE + Math.sin(a) * r;
+        if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = alpha * .8;
+      for (let k = 0; k < 14; k++) {
+        const a = hash(k + 290) * Math.PI * 2;
+        const d = bloomSize * TILE * bloom * (.8 + hash(k + 320) * .65);
+        const radius = 2.4 + hash(k + 350) * 4.8;
+        ctx.beginPath();
+        ctx.arc(fx.tx * TILE + Math.cos(a) * d,
+          fx.ty * TILE + Math.sin(a) * d, radius, 0, Math.PI * 2);
+        ctx.fill();
       }
     } else if (fx.type === 'bomb' || fx.type === 'ko') {
       const radius = (fx.type === 'bomb' ? 105 : 55) * age;
