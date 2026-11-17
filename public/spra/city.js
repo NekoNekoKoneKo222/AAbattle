@@ -111,6 +111,9 @@ export function createCity(canvas, {onShop,onBattle,onHint}={}){
  });
  function frame(now) {
   if(!run)return;
+  // The hub is hidden while playing. Keep its callback alive but do no
+  // offscreen pixel-city rendering or NPC simulation during a battle.
+  if(!active){ last=now; requestAnimationFrame(frame); return; }
   const dt=Math.min(.05,(now-last)/1000);last=now;time+=dt;
   if(active){
    let x=(+move.right)-(+move.left),y=(+move.down)-(+move.up);
