@@ -6,7 +6,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { createStore, TradeError } from './store.js';
-import { ShiftStore } from './shift-store.js';
+import { ShiftStore, isShiftAdminUser } from './shift-store.js';
 import { ShiftPartyManager } from './shift-party.js';
 import { validateArt, generateFighter, generationMode, ollamaStatus, ollamaModel } from './generator.js';
 import { createBattle, stepBattle } from './battle.js';
@@ -206,6 +206,23 @@ app.post('/api/shift/drop/open', shiftWrap(async (req,res)=>{const user=await re
 app.post('/api/shift/selected', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.setSelected(user, req.body?.character)); }));
 app.post('/api/shift/road/target', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.setTarget(user, req.body?.character)); }));
 app.post('/api/shift/road/unlock', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.unlock(user)); }));
+app.post('/api/shift/road/reroll',shiftWrap(async(req,res)=>{
+  const user=await requireUser(req,res);if(user)res.json(await shiftStore.rerollRoad(user));
+}));
+app.get('/api/shift/admin/status',shiftWrap(async(req,res)=>{
+  const user=await requireUser(req,res);if(user)res.json({admin:isShiftAdminUser(user)});
+}));
+app.post('/api/shift/admin/grant',shiftWrap(async(req,res)=>{
+  const user=await requireUser(req,res);if(!user)return;
+  if(!isShiftAdminUser(user))return res.status(403).json({error:'管理者のみ利用できます。'});
+  const origin=req.get('origin'),expected=`${req.protocol}://${req.get('host')}`;
+  if(origin!==expected)return res.status(403).json({error:'送信元を確認できません。'});
+  const username=String(req.body?.targetUsername||'').normalize('NFKC').trim().toLocaleLowerCase('und');
+  if(!/^[p{L}p{N}_]{3,20}$/u.test(username))return res.status(400).json({error:'対象のユーザー名が不正です。'});
+  const target=await store.findUser(username);
+  if(!target)return res.status(404).json({error:'対象アカウントが見つかりません。'});
+  res.json(await shiftStore.adminGrant(user,target,req.body?.item,req.body?.amount,req.body?.character));
+}));
 app.post('/api/shift/loadout', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.setLoadout(user, req.body?.character, req.body?.skill, req.body?.passive, req.body?.gear1, req.body?.gear2)); }));
 app.post('/api/shift/mission/claim', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.claimMission(user, req.body?.id)); }));
 app.post('/api/shift/mastery/claim', shiftWrap(async (req, res) => { const user = await requireUser(req, res); if (user) res.json(await shiftStore.claimMastery(user, req.body?.character, req.body?.reward)); }));
