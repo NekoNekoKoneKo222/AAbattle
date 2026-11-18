@@ -742,12 +742,37 @@ server.on('upgrade', async (req, socket, head) => {
 });
 
 const port = Number(process.env.PORT || 3000);
-await store.init();
-await glyphAdmin.init();
-glyphInfinity.refreshWorld({ source: glyphAdmin.source, version: glyphAdmin.version });
-await shiftStore.init();
-await shiftArena.listen(port);
-console.log(`AABattle and SHIFT ARENA listening on ${port}; generation: ${generationMode()}`);
+// Keep the published static site and local SHG matches reachable during a
+// temporary Neon quota outage. Do not create replacement users or accounts.
+let databaseAvailable = false;
+let databaseIssue = null;
+app.get('/api/SHG/status', (_req,res) => res.json({
+  databaseAvailable, onlineAvailable: databaseAvailable,
+  reason: databaseAvailable ? null : '既存Neonデータベースが利用できないため、オンライン対戦とガチャは一時停止中です。'
+}));
+try {
+  await store.init();
+  await glyphAdmin.init();
+  glyphInfinity.refreshWorld({ source: glyphAdmin.source, version: glyphAdmin.version });
+  await shiftStore.init();
+  await shiftArena.listen(port);
+  databaseAvailable = true;
+  console.log(`AABattle and SHIFT ARENA listening on ${port}; generation: ${generationMode()}`);
+} catch (error) {
+  const message = String(error?.message || error);
+  // Never conceal application bugs as database outages. Only quota failures
+  // can activate the limited-mode HTTP listener.
+  if (!/exceeded the quota|quota exceeded|insufficient quota/i.test(message)) throw error;
+  databaseIssue = message;
+  console.error('Neon quota exhausted. Serving public pages in limited mode; authentication and account-backed SHG features are unavailable.');
+  if (!server.listening) {
+    await new Promise((resolve,reject)=>{
+      server.once('error',reject);
+      server.listen(port,'0.0.0.0',()=>{server.off('error',reject);resolve();});
+    });
+  }
+  console.log(`AAbattle limited-mode HTTP listener active on port ${port}; database-backed features unavailable`);
+}
 
 async function shutdown() {
   wss.clients.forEach((c) => c.close());
