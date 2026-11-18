@@ -395,3 +395,42 @@ body{position:fixed;inset:0;touch-action:pan-x pan-y;background:#0b1b2d}
 
 /* The transparent actor layer is always above ink effects and is never a pointer target. */
 #actorCanvas{position:absolute;inset:0;display:block;width:100%!important;height:100%!important;aspect-ratio:auto!important;image-rendering:pixelated;pointer-events:none;z-index:3;}
+
+
+/* iPad / iOS Safari: never select UI text or zoom the active fight when
+   holding two controls, tapping rapidly or long-pressing the playfield. */
+html,body,#spraMain,.shell{
+  -webkit-user-select:none;
+  user-select:none;
+  -webkit-touch-callout:none;
+  -webkit-tap-highlight-color:transparent;
+  overscroll-behavior:none;
+}
+#spraMain *,#facilityOverlay *,#shopOverlay *{
+  -webkit-user-select:none;
+  user-select:none;
+  -webkit-touch-callout:none;
+  -webkit-tap-highlight-color:transparent;
+}
+#cityCanvas,#gameCanvas,#actorCanvas,#tutorialCanvas,
+.city-frame,.arena-frame,.tutorial-section,
+.city-dpad,.city-interact,.tutorial-dpad,.tutorial-actions,
+.joystick,.touch-actions,.touch-key,.thumb{
+  touch-action:none!important;
+  -webkit-user-drag:none;
+}
+button,a,.facility-item,.shop-weapon{
+  touch-action:manipulation;
+}
+input,textarea,[contenteditable="true"],select{
+  -webkit-user-select:text!important;
+  user-select:text!important;
+  -webkit-touch-callout:default;
+  touch-action:manipulation;
+}
+#joinCard,#roomCard,#shopOverlay .shop-panel,#facilityOverlay .facility-panel,
+#cityMenu{
+  touch-action:pan-y;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+}
