@@ -80,44 +80,75 @@ export function createInkSurface(width, height, walls = []) {
     }
   }
 
-  // Splashes have a body, directional fingers and detached small droplets.
-  function impact(x, y, radius, team, direction = 0, seed = 1, style = 'impact') {
-    const forward = style === 'shooter' ? 1.35 : style === 'roller' ? 1.15 : 1;
-    ellipse(x, y, radius * (style === 'bomb' ? 1.0 : 0.79), team, direction, forward, seed);
-    const fingers = style === 'bomb' ? 9 : style === 'roller' ? 5 : 6;
-    for (let i = 0; i < fingers; i++) {
-      const jitter = (seedRandom(seed, i + 1) - 0.5) * 0.5;
-      const angle = direction + (i / fingers) * Math.PI * 2 + jitter;
-      const reach = radius * (0.65 + 0.55 * seedRandom(seed, i + 21));
-      const offset = radius * (0.36 + 0.32 * seedRandom(seed, i + 31));
-      const width = radius * (0.15 + 0.16 * seedRandom(seed, i + 41));
-      ellipse(x + Math.cos(angle) * offset, y + Math.sin(angle) * offset,
-        width, team, angle, reach / Math.max(width * 2, 0.1), seed + i + 2);
-    }
-    const drops = style === 'bomb' ? 14 : style === 'roller' ? 5 : 9;
-    for (let i = 0; i < drops; i++) {
-      const a = seedRandom(seed, i + 110) * Math.PI * 2;
-      const d = radius * (0.74 + 0.63 * seedRandom(seed, i + 140));
-      const r = radius * (0.035 + 0.09 * seedRandom(seed, i + 180));
-      ellipse(x + Math.cos(a) * d, y + Math.sin(a) * d, r, team, a, 1.1, seed + i);
+  // Fast disk stamp for high-frequency movement trails and small droplets.
+  // Full organic ellipses are reserved for actual impact bursts.
+  function disk(x,y,radius,team) {
+    if(radius<=0||!Number.isFinite(x+y+radius))return;
+    const x0=Math.max(0,Math.floor((x-radius)*INK_SCALE));
+    const x1=Math.min(pixelWidth-1,Math.ceil((x+radius)*INK_SCALE));
+    const y0=Math.max(0,Math.floor((y-radius)*INK_SCALE));
+    const y1=Math.min(pixelHeight-1,Math.ceil((y+radius)*INK_SCALE));
+    const rr=radius*radius;
+    for(let iy=y0;iy<=y1;iy++){
+      const dy=(iy+.5)/INK_SCALE-y;
+      const dy2=dy*dy;
+      if(dy2>rr)continue;
+      const span=Math.sqrt(rr-dy2);
+      const lo=Math.max(x0,Math.ceil((x-span)*INK_SCALE-.5));
+      const hi=Math.min(x1,Math.floor((x+span)*INK_SCALE-.5));
+      for(let ix=lo;ix<=hi;ix++)mark(ix,iy,team);
     }
   }
 
-  // Continuous roller bands and intermittent shooter droplets are distinct.
-  function trail(x0, y0, x1, y1, radius, team, seed = 1, continuous = false) {
-    const length = Math.hypot(x1 - x0, y1 - y0);
-    if (length < 0.1) return;
-    const direction = Math.atan2(y1 - y0, x1 - x0);
-    const step = continuous ? Math.max(0.28, radius * 0.78) : Math.max(0.7, radius * 3.2);
-    const steps = Math.min(70, Math.max(1, Math.ceil(length / step)));
-    for (let i = 0; i <= steps; i++) {
-      if (!continuous && seedRandom(seed, i + 215) < 0.27) continue;
-      const t = i / steps;
-      const side = (seedRandom(seed, i + 251) - 0.5) * radius * (continuous ? 0.3 : 1.5);
-      const x = x0 + (x1 - x0) * t - Math.sin(direction) * side;
-      const y = y0 + (y1 - y0) * t + Math.cos(direction) * side;
-      const r = radius * (continuous ? 1 : 0.48 + seedRandom(seed, i + 264) * 0.72);
-      ellipse(x, y, r, team, direction, continuous ? 1.28 : 1.8, seed + i);
+  // Organic splashes: one asymmetric main body, directional fingers, and
+  // tiny detached droplets. Small details use the fast disk path.
+  function impact(x,y,radius,team,direction=0,seed=1,style='impact'){
+    if(radius<=0||!Number.isFinite(x+y+radius+direction))return;
+    const forward=style==='shooter'?1.35:style==='roller'?1.15:1;
+    ellipse(x,y,radius*(style==='bomb'?1:.79),team,direction,forward,seed);
+    const fingers=style==='bomb'?8:style==='roller'?5:6;
+    for(let i=0;i<fingers;i++){
+      const angle=direction+i/fingers*Math.PI*2+
+        (seedRandom(seed,i+1)-.5)*.5;
+      const offset=radius*(.36+.3*seedRandom(seed,i+31));
+      const reach=radius*(.63+.45*seedRandom(seed,i+21));
+      const width=radius*(.16+.13*seedRandom(seed,i+41));
+      const cs=Math.cos(angle),sn=Math.sin(angle);
+      // Tiny connected discs are cheaper than full rotated ellipses.
+      disk(x+cs*offset,y+sn*offset,width,team);
+      disk(x+cs*(offset+reach*.23),y+sn*(offset+reach*.23),
+           width*.8,team);
+    }
+    const drops=style==='bomb'?12:style==='roller'?5:8;
+    for(let i=0;i<drops;i++){
+      const angle=seedRandom(seed,i+110)*Math.PI*2;
+      const distance=radius*(.74+.63*seedRandom(seed,i+140));
+      disk(x+Math.cos(angle)*distance,y+Math.sin(angle)*distance,
+           radius*(.05+.09*seedRandom(seed,i+180)),team);
+    }
+  }
+
+  // Core fast path: no rotated ellipse, trig table or 15+ sub-ellipses per
+  // point. A continuous roller/gum trail is made from overlapping fast disks.
+  function trail(x0,y0,x1,y1,radius,team,seed=1,continuous=false){
+    if(radius<=0)return;
+    const dx=x1-x0,dy=y1-y0,length=Math.hypot(dx,dy);
+    if(length<.001){
+      disk(x0,y0,radius,team);
+      return;
+    }
+    const step=continuous?Math.max(.14,radius*.8):Math.max(.7,radius*2.6);
+    const steps=Math.min(100,Math.max(1,Math.ceil(length/step)));
+    const inv=1/steps;
+    const nx=-dy/length,ny=dx/length;
+    for(let i=0;i<=steps;i++){
+      if(!continuous&&seedRandom(seed,i+215)<.21)continue;
+      const t=i*inv;
+      const side=(seedRandom(seed,i+251)-.5)*radius*(continuous?.18:1.25);
+      const r=radius*(continuous?1:.57+seedRandom(seed,i+264)*.57);
+      const x=x0+dx*t+nx*side,y=y0+dy*t+ny*side;
+      disk(x,y,r,team);
+      if(continuous&&i%8===0)disk(x+nx*r*.72,y+ny*r*.72,r*.35,team);
     }
   }
 
