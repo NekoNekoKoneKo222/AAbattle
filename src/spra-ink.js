@@ -55,7 +55,7 @@ export function createInkSurface(width, height, walls = []) {
     const cs = Math.cos(direction), sn = Math.sin(direction);
     // A small angular lookup table replaces three expensive sine calls
     // for every painted sample. Inside the core we can skip atan2 entirely.
-    const bins = radius < .55 ? 24 : 48;
+    const bins = radius < .55 ? 16 : 32;
     const edgeSq = new Float32Array(bins);
     for (let i = 0; i < bins; i++) {
       const angle = (i + .5) * Math.PI * 2 / bins - Math.PI;
@@ -108,7 +108,7 @@ export function createInkSurface(width, height, walls = []) {
     const length = Math.hypot(x1 - x0, y1 - y0);
     if (length < 0.1) return;
     const direction = Math.atan2(y1 - y0, x1 - x0);
-    const step = continuous ? Math.max(0.15, radius * 0.62) : Math.max(0.7, radius * 3.2);
+    const step = continuous ? Math.max(0.28, radius * 0.78) : Math.max(0.7, radius * 3.2);
     const steps = Math.min(70, Math.max(1, Math.ceil(length / step)));
     for (let i = 0; i <= steps; i++) {
       if (!continuous && seedRandom(seed, i + 215) < 0.27) continue;
