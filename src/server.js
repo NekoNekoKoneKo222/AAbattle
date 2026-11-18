@@ -774,14 +774,14 @@ try {
   // can activate the limited-mode HTTP listener.
   if (!/exceeded the quota|quota exceeded|insufficient quota/i.test(message)) throw error;
   databaseIssue = message;
-  console.error('Neon quota exhausted. Serving public pages in limited mode; authentication and account-backed SHG features are unavailable.');
+  console.error('Original AAbattle Neon quota exhausted. Main AAbattle login is unavailable; the independent SHG database, login, and game APIs remain served.');
   if (!server.listening) {
     await new Promise((resolve,reject)=>{
       server.once('error',reject);
       server.listen(port,'0.0.0.0',()=>{server.off('error',reject);resolve();});
     });
   }
-  console.log(`AAbattle limited-mode HTTP listener active on port ${port}; database-backed features unavailable`);
+  console.log(`AAbattle limited-mode HTTP listener active on port ${port}; main AAbattle database unavailable, SHG uses its own database`);
 }
 
 async function shutdown() {
