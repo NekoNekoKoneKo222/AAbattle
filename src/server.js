@@ -1,4 +1,5 @@
 import express from 'express';
+import pg from 'pg';
 import http from 'node:http';
 import { createHash, randomBytes } from 'node:crypto';
 import argon2 from 'argon2';
@@ -75,7 +76,9 @@ app.use((req, res, next) => {
 app.use('/api/draw', express.json({ limit: '2mb', type: 'application/json' }));
 app.use(express.json({ limit: '128kb', type: 'application/json' }));
 const chaosOnline = mountChaosShogi(app, { currentUser, findUser: key => store.findUser(key), collection: createChaosCollection(store.pool || null) });
-const shgCollection = createShgCollection(store.pool || null);
+// SHG inventory is isolated: an independent Neon project can be used without moving AAbattle user accounts.
+const shgPool = process.env.SHG_DATABASE_URL ? new pg.Pool({connectionString:process.env.SHG_DATABASE_URL,max:3,idleTimeoutMillis:30000,connectionTimeoutMillis:10000}) : null;
+const shgCollection = createShgCollection(shgPool || store.pool || null);
 mountShgCollection(app, {currentUser, collection: shgCollection});
 mountCastleShogi(app, {currentUser, collection: shgCollection});
 
@@ -752,6 +755,7 @@ async function shutdown() {
   spra.close();
   await shiftArena.shutdown();
   await glyphInfinity.shutdown();
+  if (shgPool) await shgPool.end();
   await store.close();
   process.exit(0);
 }
