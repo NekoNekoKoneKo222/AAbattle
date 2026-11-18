@@ -86,6 +86,12 @@ export const SPRA_CATEGORIES = Object.freeze(CATEGORIES.map(([id,label,descripti
 const weapons = [];
 for (const [type,,description,baseDelay,baseDamage,baseRange,baseRadius,baseCost,basePaint,baseSpread,variants] of CATEGORIES) {
   variants.forEach(([id,label,delay,damage,range,radius,spread], index) => {
+    const tier = ({
+      shooter:1,dualies:3,roller:1,brush:2,blaster:1,charger:4,
+      slosher:3,splatling:6,bow:5,wiper:6,drill:8,
+      cosmic:10,brella:5
+    })[type] ?? 1;
+    const requiredLevel = id==='star_gum' ? 10 : Math.min(30,tier+index*2);
     weapons.push([id, Object.freeze({
       id, label, type, description,
       delay: Math.round(baseDelay*delay*100)/100,
@@ -95,7 +101,10 @@ for (const [type,,description,baseDelay,baseDamage,baseRange,baseRadius,baseCost
       cost: Math.round(baseCost*(.9 + index*.06)),
       spread: Math.max(0, Math.round((baseSpread+spread)*100)/100),
       projectiles: ['dualies','bow','brella','slosher'].includes(type) ? (type==='bow' ? 3 : type==='dualies' ? 2 : 5) : 1,
-      price: id === 'shooter' || id==='roller' || id==='blaster' ? 0 : 70 + index*75 + ['charger','splatling'].includes(type)*180
+      requiredLevel,
+      price: id==='star_gum' ? 500 :
+        id === 'shooter' || id==='roller' || id==='blaster' ? 0 :
+        70 + index*75 + ['charger','splatling'].includes(type)*180
     })]);
   });
 }

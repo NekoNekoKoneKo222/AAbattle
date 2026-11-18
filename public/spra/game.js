@@ -1,6 +1,9 @@
 import { SPRA_WEAPONS, SPRA_CATEGORIES } from './weapons.js';
 import { createCity } from './city.js';
 import { createSpraTutorial } from './tutorial.js';
+import { installSpraTouchGuards } from './touch-guard.js';
+installSpraTouchGuards();
+import { battleXpReward, levelFromXp, totalXpForLevel, SPRA_MAX_LEVEL } from './progression.js';
 import { SPRA_SPECIALS } from './specials.js';
 import { drawCosmic } from './cosmic-render.js';
 import { createSpraFacilities, FASHION_COLORS } from './facilities.js';
@@ -17,6 +20,7 @@ const paintCanvas=document.createElement('canvas');
 paintCanvas.width=PW;paintCanvas.height=PH;
 const paintCtx=paintCanvas.getContext('2d');
 const paintImage=paintCtx.createImageData(PW,PH);
+let dirtyLeft=PW,dirtyTop=PH,dirtyRight=-1,dirtyBottom=-1;
 const COLORS=['#26d7ec','#ff9835'];
 let paint=new Uint8Array(PW*PH),paintDirty=true;
 let ws=null,myId=null,roomCode='',isHost=false,scene='city',phase='lobby',round=0;
@@ -34,6 +38,14 @@ if(!owned.has(selectedWeapon)||!SPRA_WEAPONS[selectedWeapon])selectedWeapon='sho
 if(SPRA_WEAPONS[selectedWeapon]?.type==='cosmic')selectedSpecial='final_frontier';
 else if(!SPRA_SPECIALS[selectedSpecial]||selectedSpecial==='final_frontier')selectedSpecial='tornado';
 let credits=Math.max(0,Number(localStorage.getItem('spra_coins_v2')||1200)||0);
+let playerXP=Math.max(0,Math.min(1000000,Number(localStorage.getItem('spra_player_xp_v1')||0)||0));
+const playerLevel=()=>levelFromXp(playerXP);
+function xpProgress(){
+ const level=playerLevel();
+ if(level>=SPRA_MAX_LEVEL)return 'MAX';
+ const base=totalXpForLevel(level),next=totalXpForLevel(level+1);
+ return (playerXP-base)+' / '+(next-base);
+}
 const nickname=$('nickname');
 nickname.value=localStorage.getItem('spra_name')||'';
 const keys=new Set();
@@ -52,8 +64,13 @@ function saveBag(){
  localStorage.setItem('spra_equipped_v2',selectedWeapon);
  localStorage.setItem('spra_special_v3',selectedSpecial);
  localStorage.setItem('spra_coins_v2',String(credits));
+ localStorage.setItem('spra_player_xp_v1',String(playerXP));
  $('cityCoins').textContent=credits;
  $('shopCoins').textContent=credits;
+ $('cityLevel').textContent=playerLevel();
+ $('cityXP').textContent=xpProgress();
+ $('shopLevel').textContent=playerLevel();
+ $('shopXpText').textContent='XP '+xpProgress();
  $('shopCurrent').textContent='装備中：'+(SPRA_WEAPONS[selectedWeapon]?.label||'シューター');
 }
 function textItem(text,className=''){
@@ -186,6 +203,8 @@ function equip(id){
 function purchase(id){
  const weapon=SPRA_WEAPONS[id];if(!weapon)return;
  if(!owned.has(id)){
+  if(playerLevel()<weapon.requiredLevel)
+    return toast(weapon.label+' の購入にはLv.'+weapon.requiredLevel+'が必要です。（現在Lv.'+playerLevel()+'）');
   if(credits<weapon.price)return toast('コインが足りません。バトルで獲得できます。');
   credits-=weapon.price;owned.add(id);
  }
@@ -204,16 +223,21 @@ function drawShop(){
  const list=$('shopItems');list.replaceChildren();
  for(const weapon of Object.values(SPRA_WEAPONS).filter(w=>shopFilter==='all'||w.type===shopFilter)){
   const card=document.createElement('button');
-  card.className='shop-weapon'+(selectedWeapon===weapon.id?' equipped':'');
+  const locked=!owned.has(weapon.id)&&playerLevel()<weapon.requiredLevel;
+  card.className='shop-weapon'+(selectedWeapon===weapon.id?' equipped':'')+(locked?' level-locked':'');
   const header=document.createElement('div');header.className='shop-weapon-name';
   const icon=document.createElement('span');icon.className='weapon-pixel-icon';
-  icon.textContent={shooter:'⌁',dualies:'⌁⌁',roller:'▰',brush:'▥',blaster:'✸',charger:'→',slosher:'▤',splatling:'⊞',bow:'⋔',brella:'⌂'}[weapon.type]||'●';
+  icon.textContent={shooter:'⌁',dualies:'⌁⌁',roller:'▰',brush:'▥',blaster:'✸',charger:'→',slosher:'▤',splatling:'⊞',bow:'⋔',brella:'⌂',cosmic:'★',drill:'◈',wiper:'⚔'}[weapon.type]||'●';
   const title=document.createElement('strong');title.textContent=weapon.label;
   header.append(icon,title);
   const stat=document.createElement('small');
-  stat.textContent='威力 '+weapon.damage+' / 射程 '+weapon.range+' / 連射 '+(1/weapon.delay).toFixed(1)+'/s';
+  stat.textContent='必要 Lv.'+weapon.requiredLevel+' / 威力 '+weapon.damage+
+    ' / 射程 '+weapon.range+' / 連射 '+(1/weapon.delay).toFixed(1)+'/s';
   const price=document.createElement('b');
-  price.textContent=selectedWeapon===weapon.id?'[ 装備中 ]':owned.has(weapon.id)?'[ 装備する ]':'◎ '+weapon.price;
+  price.textContent=selectedWeapon===weapon.id?'[ 装備中 ]':
+    owned.has(weapon.id)?'[ 装備する ]':
+    locked?'🔒 Lv.'+weapon.requiredLevel+'で解放 / ◎ '+weapon.price:
+    '◎ '+weapon.price+' / 購入可能';
   card.append(header,stat,price);
   card.addEventListener('click',()=>purchase(weapon.id));
   list.append(card);
@@ -307,7 +331,13 @@ $('backLobbyBtn').addEventListener('click',()=>send({type:'lobby'}));
 
 function setInkPixel(index,value){
  if(index<0||index>=paint.length||value<0||value>2)return;
+ if(paint[index]===value)return;
  paint[index]=value;
+ const ix=index%PW,iy=Math.floor(index/PW);
+ dirtyLeft=Math.min(dirtyLeft,ix);
+ dirtyTop=Math.min(dirtyTop,iy);
+ dirtyRight=Math.max(dirtyRight,ix);
+ dirtyBottom=Math.max(dirtyBottom,iy);
  const i=index*4,d=paintImage.data;
  if(!value){d[i+3]=0;return;}
  const noise=((index*2654435761>>>8)%13)-6;
@@ -350,9 +380,14 @@ function maybeReward(){
  const me=players.find(p=>p.id===myId);
  if(!me)return;
  const reward=winner===-1?180:me.team===winner?350:150;
+ const xpEarned=battleXpReward({winner,team:me.team,kos:me.ko,mode});
+ const previousLevel=playerLevel();
  localStorage.setItem(key,'1');
- credits+=reward;saveBag();
- toast('バトル報酬 +'+reward+'コイン！');
+ credits+=reward;playerXP+=xpEarned;saveBag();
+ if(playerLevel()>previousLevel){
+   toast('LEVEL UP! Lv.'+previousLevel+' → Lv.'+playerLevel()+' / +'+xpEarned+' XP');
+ }else toast('バトル報酬 +'+reward+'コイン / +'+xpEarned+' XP');
+
 }
 function receive(msg){
  if(msg.type==='error'){toast(msg.message||'エラー');if(!myId)ws?.close();return;}
@@ -391,7 +426,7 @@ function receive(msg){
   if(typeof msg.fullPaint==='string')decodePaint(msg.fullPaint);
   else readChanges(msg.changes);
   if(Array.isArray(msg.effects))for(const fx of msg.effects)effects.push({...fx,time:performance.now()});
-  if(effects.length>90)effects.splice(0,effects.length-90);
+  if(effects.length>48)effects.splice(0,effects.length-48);
   updateUI();
   maybeReward();
  }
@@ -531,16 +566,33 @@ setInterval(()=>{
 
 function drawBox(x,y,w,h,color){ctx.fillStyle=color;ctx.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h));}
 function worldBox(x,y,w,h,c){drawBox(x*TILE,y*TILE,w*TILE,h*TILE,c);}
-function drawFloor(){
- const startX=Math.max(0,Math.floor(cameraX)-2),startY=Math.max(0,Math.floor(cameraY)-2);
- const endX=Math.min(W,Math.ceil(cameraX+canvas.width/TILE)+2);
- const endY=Math.min(H,Math.ceil(cameraY+canvas.height/TILE)+2);
- for(let y=startY;y<endY;y++)for(let x=startX;x<endX;x++){
-  const hash=(x*73856093 ^ y*19349663)>>>0;
-  worldBox(x,y,1.02,1.02,hash%7===0?'#213646':(x+y)%2?'#1b303f':'#1c3242');
-  if(hash%23===0)worldBox(x+.25,y+.25,.14,.1,'#314f5c');
+// Build low-resolution floor atlas one time, instead of issuing ~2400
+// Canvas fill operations on *every* battle frame.
+const floorCanvas=document.createElement('canvas');
+floorCanvas.width=16*TILE;floorCanvas.height=16*TILE;
+const floorCtx=floorCanvas.getContext('2d',{alpha:false});
+for(let y=0;y<16;y++)for(let x=0;x<16;x++){
+ const hash=(x*73856093 ^ y*19349663)>>>0;
+ floorCtx.fillStyle=hash%7===0?'#213646':(x+y)%2?'#1b303f':'#1c3242';
+ floorCtx.fillRect(x*TILE,y*TILE,TILE,TILE);
+ if(hash%23===0){
+   floorCtx.fillStyle='#314f5c';
+   floorCtx.fillRect(x*TILE+4,y*TILE+4,3,2);
  }
- if(paintDirty){paintCtx.putImageData(paintImage,0,0);paintDirty=false;}
+}
+const floorPattern=ctx.createPattern(floorCanvas,'repeat');
+function drawFloor(){
+ ctx.fillStyle=floorPattern;
+ ctx.fillRect(Math.floor(cameraX*TILE),Math.floor(cameraY*TILE),
+   canvas.width+TILE,canvas.height+TILE);
+ if(paintDirty){
+  // Re-upload only dirty subcells, not the entire giant 640x400 texture.
+  if(dirtyRight>=dirtyLeft&&dirtyBottom>=dirtyTop)paintCtx.putImageData(
+    paintImage,0,0,dirtyLeft,dirtyTop,
+    dirtyRight-dirtyLeft+1,dirtyBottom-dirtyTop+1);
+  dirtyLeft=PW;dirtyTop=PH;dirtyRight=-1;dirtyBottom=-1;
+  paintDirty=false;
+ }
  ctx.imageSmoothingEnabled=false;
 
  // Copy only the visible viewport, not the entire 2560x1600 world texture.
@@ -583,10 +635,16 @@ function drawBombs(){
 function drawEffects(now){
  effects=effects.filter(f=>now-f.time<480);
  for(const fx of effects){
-  const age=(now-f.time)/480,fade=1-age;
+  if(!Number.isFinite(fx.x)||!Number.isFinite(fx.y))continue;
+  const onX=(fx.x>=cameraX-12&&fx.x<=cameraX+canvas.width/TILE+12)||
+      (Number.isFinite(fx.tx)&&fx.tx>=cameraX-12&&fx.tx<=cameraX+canvas.width/TILE+12);
+  const onY=(fx.y>=cameraY-12&&fx.y<=cameraY+canvas.height/TILE+12)||
+      (Number.isFinite(fx.ty)&&fx.ty>=cameraY-12&&fx.ty<=cameraY+canvas.height/TILE+12);
+  if(!onX||!onY)continue;
+  const age=(now-fx.time)/480,fade=1-age;
   if(fx.type==='shot'){
    const dx=fx.tx-fx.x,dy=fx.ty-fx.y;
-   const n=fx.weaponType==='roller'?20:12;
+   const n=fx.weaponType==='roller'?10:6;
    ctx.globalAlpha=fade*.6;
    for(let i=0;i<n;i++){
     const t=i/n,shake=Math.sin(i*3.4+(fx.seed||0))*.24;
@@ -595,7 +653,7 @@ function drawEffects(now){
   } else if(fx.type==='bomb'||fx.type==='ko'){
    const radius=(fx.type==='bomb'?5.4:2.5)*age;
    ctx.globalAlpha=fade*.7;
-   for(let i=0;i<20;i++){
+   for(let i=0;i<12;i++){
     const a=(i*17%20)*Math.PI*2/20;
     const d=radius*(.65+(i%4)*.15);
     worldBox(fx.x+Math.cos(a)*d,fx.y+Math.sin(a)*d,.52,.52,COLORS[fx.team]);
@@ -694,7 +752,7 @@ function render(now){
  requestAnimationFrame(render);
  // A stable 30 FPS cap avoids rendering both massive map textures at full
  // refresh rate on lower-powered mobile browsers. Physics stays on the server.
- if(now-renderAt<33)return;
+ if(now-renderAt<(matchMedia('(pointer: coarse)').matches?42:33))return;
  const dt=Math.min(.1,(now-lastFrame)/1000);lastFrame=now;renderAt=now;clock+=dt;
  if(scene!=='battle')return;
  const me=players.find(p=>p.id===myId);
@@ -716,10 +774,21 @@ function render(now){
    if(now-lastErrorAt>7000){console.error('SPRA ink renderer:',err);toast('インク描画を修復中です');lastErrorAt=now;}
    paintDirty=true;
   }
-  drawCosmic(ctx,{specials:specialObjects,shots:gumShots,effects,cameraX,cameraY,
-    tile:TILE,width:canvas.width,height:canvas.height,elapsed:clock,now});
-  drawBombs();
-  drawEffects(now);
+  // Each effect is isolated: a malformed shot cannot blank the whole arena.
+  for(const [label,draw] of [
+   ['cosmic',()=>drawCosmic(ctx,{specials:specialObjects,shots:gumShots,effects,cameraX,cameraY,
+     tile:TILE,width:canvas.width,height:canvas.height,elapsed:clock,now})],
+   ['bombs',drawBombs],['effects',()=>drawEffects(now)]
+  ]) {
+   ctx.save();
+   try{draw();}
+   catch(err){
+     if(now-lastErrorAt>6000){
+       console.error('SPRA render '+label+':',err);
+       toast('描画を一部省略しました ('+label+')');lastErrorAt=now;
+     }
+   }finally{ctx.restore();}
+  }
  }catch(err){
   if(now-lastErrorAt>7000){console.error('SPRA battle renderer:',err);toast('描画エラーを検出しました');lastErrorAt=now;}
  }finally{ctx.restore();}
@@ -743,7 +812,7 @@ function render(now){
    actorCtx.globalAlpha=1;
    drawAim();
  }finally{actorCtx.restore();}
- if((frames++%3)===0){
+ if((frames++%8)===0){
   try{drawMiniMap();}catch(err){console.warn('SPRA minimap:',err);}
  }
 }

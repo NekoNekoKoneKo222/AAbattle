@@ -33,8 +33,12 @@ test('SPRA browser: player and CPU continue updating after sustained ink fire', 
   try {
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage({ viewport: {width:1280,height:860} });
-    const errors=[];
+    const errors=[],renderErrors=[];
     page.on('pageerror', e => errors.push(e.message));
+    page.on('console',e=>{
+      if(e.type()==='error' && /SPRA (render|battle renderer|ink renderer)/.test(e.text()))
+        renderErrors.push(e.text());
+    });
     const states=[];
     page.on('websocket', webSocket => {
       webSocket.on('framereceived', evt => {
@@ -58,8 +62,15 @@ test('SPRA browser: player and CPU continue updating after sustained ink fire', 
     await page.locator('.room-cell').first().click();
     await page.click('.facility-close');
     await page.click('#cityMenuToggle');
-    await page.click('[data-town-facility="arcade"]');
-    assert.equal(await page.locator('.arcade-cell').count(),25);
+    await page.click('[data-town-facility="furniture"]');
+    assert.equal(await page.locator('#facilityTitle').textContent(),'家具ショップ');
+    assert.ok(await page.locator('.facility-item').count()>=16);
+    await page.locator('.facility-item').filter({hasText:'観葉植物'}).click();
+    await page.locator('.facility-action').filter({hasText:'自分の部屋'}).click();
+    await page.locator('.furniture-item').filter({hasText:'観葉植物'}).click();
+    await page.locator('.room-cell').nth(1).click();
+    assert.ok(await page.locator('.room-cell').nth(1).textContent()==='♣',
+      'Purchased furniture should be placeable in personal room');
     await page.click('.facility-close');
     assert.equal(errors.length,0,'Town facilities must load without JavaScript errors');
     await page.click('#cityMenuToggle');
@@ -79,6 +90,7 @@ test('SPRA browser: player and CPU continue updating after sustained ink fire', 
     await page.waitForTimeout(3500);
     await page.mouse.up();
     assert.equal(errors.length, 0, 'canvas must not throw while shooting: '+errors.join(' | '));
+    assert.deepEqual(renderErrors,[],'No caught ink-effect renderer errors when shooting continuously');
     // Paint-covered arenas must still display actual avatars in a completely
     // independent transparent canvas, not merely a non-empty floor texture.
     const actorCanvasVisible=await page.evaluate(()=>{

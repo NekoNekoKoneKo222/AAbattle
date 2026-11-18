@@ -6,7 +6,7 @@ export const FASHION_COLORS = [
 ];
 export const FACILITY_LABELS = {
  shop:'武器ショップ',fashion:'ファッションショップ',battle:'バトル受付',
- training:'トレーニング場',arcade:'ゲームセンター',workshop:'カスタマイズ工房',
+ training:'トレーニング場',furniture:'家具ショップ',workshop:'カスタマイズ工房',
  ranking:'ランキング広場',room:'自分の部屋'
 };
 const fashionOptions={
@@ -17,7 +17,7 @@ const fashionOptions={
  shoes:['ベーシックシューズ','ピンクスニーカー','サイバーブーツ','サンセットブーツ',
   'バイオレットソール','ホワイトランナー','ダークシューズ','グリーンスニーカー']
 };
-const furniture=[
+export const SPRA_FURNITURE = Object.freeze([
  {id:'lamp',name:'ネオンランプ',icon:'✦',price:0,color:'#d9ff63'},
  {id:'chair',name:'ラウンジチェア',icon:'▟',price:75,color:'#49b0c4'},
  {id:'plant',name:'観葉植物',icon:'♣',price:115,color:'#87df86'},
@@ -26,7 +26,16 @@ const furniture=[
  {id:'star',name:'星型オブジェ',icon:'★',price:320,color:'#e5d776'},
  {id:'trophy',name:'トロフィー',icon:'♛',price:490,color:'#eea749'},
  {id:'frame',name:'武器展示台',icon:'⚑',price:370,color:'#88dbf0'}
-];
+  ,{id:'rug',name:'カラフルラグ',icon:'▦',price:110,color:'#dc75d7'}
+  ,{id:'books',name:'本棚',icon:'▥',price:210,color:'#c28b64'}
+  ,{id:'bed',name:'ふかふかベッド',icon:'▱',price:350,color:'#6ca9df'}
+  ,{id:'poster',name:'宇宙ポスター',icon:'☄',price:130,color:'#b8aaed'}
+  ,{id:'sofa',name:'ツインソファ',icon:'▰',price:270,color:'#e0a3b6'}
+  ,{id:'fish',name:'ミニ水槽',icon:'◈',price:430,color:'#78cae3'}
+  ,{id:'clock',name:'ドット時計',icon:'◷',price:160,color:'#e3bb6d'}
+  ,{id:'neoncat',name:'ネオンキャット',icon:'♠',price:550,color:'#d3ee90'}
+]);
+const furniture=SPRA_FURNITURE;
 const read=(key,fallback)=>{
  try{return JSON.parse(localStorage.getItem(key)||'null')??fallback;}
  catch{return fallback;}
@@ -48,7 +57,6 @@ export function createSpraFacilities({
  let weaponSkin=Number.isInteger(raw.weaponSkin)?raw.weaponSkin:0;
  let grid=Array.isArray(raw.grid)&&raw.grid.length===48?raw.grid:Array.from({length:48},()=>null);
  let chosenFurniture='lamp';
- let arcadeTimer=null,arcadeEnd=0,arcadeScore=0,arcadeSpot=-1,arcadeDone=false;
  const root=el('div','facility-overlay hidden');
  root.id='facilityOverlay';
  root.setAttribute('role','dialog');root.setAttribute('aria-modal','true');
@@ -78,17 +86,15 @@ export function createSpraFacilities({
  const coinText=()=>{status.textContent='所持コイン: '+getCoins()+' ◎　｜　'+(getNickname()||'PLAYER');};
  function close(){
   root.classList.add('hidden');
-  if(arcadeTimer){clearInterval(arcadeTimer);arcadeTimer=null;}
  }
  const open=id=>{
   if(!FACILITY_LABELS[id])return;
-  if(arcadeTimer){clearInterval(arcadeTimer);arcadeTimer=null;}
   root.classList.remove('hidden');
   title.textContent=FACILITY_LABELS[id];
   coinText();body.replaceChildren();
   if(id==='fashion')renderFashion();
   if(id==='workshop')renderWorkshop();
-  if(id==='arcade')renderArcade();
+  if(id==='furniture')renderFurnitureShop();
   if(id==='room')renderRoom();
   if(id==='ranking')void renderRanking();
   if(id==='training')renderTraining();
@@ -190,83 +196,56 @@ export function createSpraFacilities({
    group.append(el('p','facility-description','サーバーランキングに接続できませんでした。'));
   }
  }
- function renderRoom(){
-  const group=section('自分の部屋','家具を選択して、床の好きなマスに配置・移動できます。保存はこのブラウザ内です。');
-  const inventory=el('div','furniture-list');
+ function renderFurnitureShop(){
+  const group=section('家具のセレクトショップ',
+    'コインで家具を購入すると、自分の部屋で飾れます。購入した家具は保存されます。');
+  const items=el('div','facility-item-grid');
   for(const f of furniture){
-   const has=owned.has(f.id),b=el('button','furniture-item'+(chosenFurniture===f.id?' equipped':''));
-   b.append(el('span','furniture-icon',f.icon),el('strong','',f.name),el('small','',has?'配置する':'◎ '+f.price));
-   b.addEventListener('click',()=>{
-    if(!has){if(!money(f.price))return;owned.add(f.id);}
-    chosenFurniture=f.id;save();coinText();renderRoomRefresh();
-   });
-   inventory.append(b);
+    const has=owned.has(f.id);
+    const tile=el('button','facility-item'+(has?' equipped':''));
+    const preview=el('span','facility-swatch',f.icon);
+    preview.style.background=f.color;preview.style.fontSize='22px';preview.style.textAlign='center';
+    tile.append(preview,el('strong','',f.name),el('small','',has?'✓ 入手済み':'◎ '+f.price+' / 購入'));
+    tile.addEventListener('click',()=>{
+      if(owned.has(f.id))return notify?.('すでに持っています。自分の部屋で飾れます。');
+      if(!money(f.price))return;
+      owned.add(f.id);chosenFurniture=f.id;save();coinText();
+      body.replaceChildren();renderFurnitureShop();notify?.(f.name+' を入手しました！');
+    });
+    items.append(tile);
+  }
+  group.append(items,button('⌂ 自分の部屋で家具を配置',()=>open('room')));
+ }
+ function renderRoom(){
+  const group=section('自分の部屋','家具ショップで手に入れた家具を選び、床を押して配置。もう一度押すと外せます。');
+  const inventory=el('div','furniture-list');
+  for(const f of furniture.filter(item=>owned.has(item.id))){
+    const tile=el('button','furniture-item'+(chosenFurniture===f.id?' equipped':''));
+    tile.append(el('span','furniture-icon',f.icon),el('strong','',f.name),
+      el('small','',chosenFurniture===f.id?'選択中':'選択する'));
+    tile.addEventListener('click',()=>{chosenFurniture=f.id;renderRoomRefresh();});
+    inventory.append(tile);
   }
   group.append(inventory);
   const board=el('div','room-grid');
   grid.forEach((id,i)=>{
-   const tile=el('button','room-cell'+(id?' filled':''));
-   const f=furniture.find(item=>item.id===id);
-   tile.textContent=f?.icon||'';
-   tile.title=id?('置いている家具: '+f?.name):'家具を配置';
-   tile.addEventListener('click',()=>{
-     grid[i]=grid[i]===chosenFurniture?null:chosenFurniture;
-     save();renderRoomRefresh();
-   });
-   board.append(tile);
+    const tile=el('button','room-cell'+(id?' filled':''));
+    const item=furniture.find(f=>f.id===id);
+    tile.textContent=item?.icon||'';
+    tile.title=id?item?.name:'家具を配置';
+    tile.addEventListener('click',()=>{
+      if(!owned.has(chosenFurniture))return notify?.('家具ショップで入手してください。');
+      grid[i]=grid[i]===chosenFurniture?null:chosenFurniture;
+      save();renderRoomRefresh();
+    });
+    board.append(tile);
   });
-  group.append(board,button('✕ 選択したマスの家具を外す',()=>{
-    chosenFurniture='lamp';notify?.('配置マスをもう一度押すと家具を外せます。');
-  }));
+  group.append(board,button('▤ 家具ショップで新しい家具を見る',()=>open('furniture')));
  }
  const renderRoomRefresh=()=>{body.replaceChildren();renderRoom();};
- function renderArcade(){
-  arcadeDone=false;arcadeScore=0;arcadeSpot=-1;
-  const group=section('MINI GAME / インクキャッチ','20秒間で光る星をタップ！ 得点に応じてコインをもらえます。');
-  const score=el('div','arcade-score','SCORE 0  /  TIME 20s');
-  const board=el('div','arcade-board');
-  const tiles=Array.from({length:25},(_,i)=>{
-   const b=el('button','arcade-cell','·');
-   b.addEventListener('click',()=>{
-    if(arcadeDone||!arcadeTimer||i!==arcadeSpot)return;
-    arcadeScore++;nextSpot();update();
-   });
-   board.append(b);return b;
-  });
-  group.append(score,board);
-  const start=button('▶ スタート',()=>{
-    if(arcadeTimer)clearInterval(arcadeTimer);
-    arcadeDone=false;arcadeScore=0;arcadeEnd=performance.now()+20000;
-    nextSpot();update();
-    arcadeTimer=setInterval(()=>{
-      const remain=Math.max(0,Math.ceil((arcadeEnd-performance.now())/1000));
-      if(remain===0){
-        clearInterval(arcadeTimer);arcadeTimer=null;arcadeDone=true;
-        arcadeSpot=-1;nextSpot();update();
-        const prize=Math.min(200,arcadeScore*8);
-        addCoins(prize);coinText();
-        notify?.('ゲーム終了！ '+arcadeScore+'点 / +'+prize+'コイン');
-      }else update();
-    },100);
-   });
-  group.append(start);
-  function nextSpot(){
-    arcadeSpot=arcadeDone?-1:(arcadeSpot+1+Math.floor(Math.random()*24))%25;
-    for(let i=0;i<tiles.length;i++){
-      tiles[i].textContent=i===arcadeSpot?'★':'·';
-      tiles[i].classList.toggle('active',i===arcadeSpot);
-    }
-  }
-  function update(){
-    const remain=arcadeDone?0:Math.max(0,Math.ceil((arcadeEnd-performance.now())/1000));
-    score.textContent='SCORE '+arcadeScore+'  /  TIME '+remain+'s';
-  }
- }
  function getAppearance(){return {
   hat:Number(gear.hat)||0,shirt:Number(gear.shirt)||0,
   shoes:Number(gear.shoes)||0,skin:weaponSkin
  };}
- return {open,close,getAppearance,render:()=>open('room'),destroy(){
-  if(arcadeTimer)clearInterval(arcadeTimer);root.remove();
- }};
+ return {open,close,getAppearance,render:()=>open('room'),destroy(){root.remove();}};
 }

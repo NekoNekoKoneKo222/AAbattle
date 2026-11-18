@@ -10,6 +10,8 @@ on:
       - 'src/spra-leaderboard.js'
       - 'test/spra-astergum.test.js'
       - 'test/spra-tutorial.test.js'
+      - 'test/spra-ipad.test.js'
+      - 'test/spra-progression.test.js'
       - 'public/spra/**'
       - 'test/spra.test.js'
       - 'src/server.js'
@@ -23,6 +25,8 @@ on:
       - 'src/spra-leaderboard.js'
       - 'test/spra-astergum.test.js'
       - 'test/spra-tutorial.test.js'
+      - 'test/spra-ipad.test.js'
+      - 'test/spra-progression.test.js'
       - 'public/spra/**'
       - 'test/spra.test.js'
       - 'src/server.js'
@@ -56,10 +60,12 @@ jobs:
           node --check public/spra/facilities.js
           node --check public/spra/cosmic-render.js
           node --check public/spra/tutorial.js
+          node --check public/spra/touch-guard.js
+          node --check public/spra/progression.js
           node --check src/server.js
       - name: SPRA PvP tests
-        run: node --test test/spra.test.js test/spra-stress.test.js test/spra-astergum.test.js
+        run: node --test test/spra.test.js test/spra-stress.test.js test/spra-astergum.test.js test/spra-progression.test.js
       - name: Install Chromium for visual regression
         run: npx playwright install chromium
       - name: SPRA browser visual regression
-        run: node --test test/spra-browser.test.js test/spra-tutorial.test.js
+        run: node --test test/spra-browser.test.js test/spra-tutorial.test.js test/spra-ipad.test.js

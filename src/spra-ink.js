@@ -11,18 +11,24 @@ export function createInkSurface(width, height, walls = []) {
 
   const valid = (x, y) => x >= 1 && y >= 1 && x < width - 1 && y < height - 1 &&
     !walls.some(w => x >= w.x && x < w.x + w.w && y >= w.y && y < w.y + w.h);
+  // Precompute collision mask once, not for every subpixel of every shot.
+  const paintableMask = new Uint8Array(pixelWidth * pixelHeight);
   let paintable = 0;
   for (let iy = 0; iy < pixelHeight; iy++) {
     for (let ix = 0; ix < pixelWidth; ix++) {
-      if (valid((ix + 0.5) / INK_SCALE, (iy + 0.5) / INK_SCALE)) paintable++;
+      const index = iy * pixelWidth + ix;
+      if (valid((ix + 0.5) / INK_SCALE, (iy + 0.5) / INK_SCALE)) {
+        paintableMask[index] = 1;
+        paintable++;
+      }
     }
   }
 
   function mark(ix, iy, team) {
     if (team !== 0 && team !== 1) return;
     if (ix < 0 || iy < 0 || ix >= pixelWidth || iy >= pixelHeight) return;
-    if (!valid((ix + 0.5) / INK_SCALE, (iy + 0.5) / INK_SCALE)) return;
     const index = iy * pixelWidth + ix;
+    if (!paintableMask[index]) return;
     const value = team + 1;
     const previous = paint[index];
     if (previous === value) return;
@@ -47,17 +53,29 @@ export function createInkSurface(width, height, walls = []) {
     const x1 = Math.min(pixelWidth - 1, Math.ceil((x + reach) * INK_SCALE));
     const y1 = Math.min(pixelHeight - 1, Math.ceil((y + reach) * INK_SCALE));
     const cs = Math.cos(direction), sn = Math.sin(direction);
+    // A small angular lookup table replaces three expensive sine calls
+    // for every painted sample. Inside the core we can skip atan2 entirely.
+    const bins = radius < .55 ? 16 : 32;
+    const edgeSq = new Float32Array(bins);
+    for (let i = 0; i < bins; i++) {
+      const angle = (i + .5) * Math.PI * 2 / bins - Math.PI;
+      const edge = 1 + .11 * Math.sin(3 * angle + seed * .47) +
+        .08 * Math.sin(7 * angle - seed * .27) +
+        .04 * Math.cos(11 * angle + seed * .13);
+      edgeSq[i] = edge * edge;
+    }
+    const invAngle = bins / (Math.PI * 2);
     for (let iy = y0; iy <= y1; iy++) {
+      const dy = (iy + .5) / INK_SCALE - y;
       for (let ix = x0; ix <= x1; ix++) {
-        const dx = (ix + 0.5) / INK_SCALE - x;
-        const dy = (iy + 0.5) / INK_SCALE - y;
+        const dx = (ix + .5) / INK_SCALE - x;
         const u = (dx * cs + dy * sn) / rx;
         const v = (-dx * sn + dy * cs) / ry;
-        const angle = Math.atan2(v, u);
-        const edge = 1 + 0.11 * Math.sin(3 * angle + seed * 0.47) +
-          0.08 * Math.sin(7 * angle - seed * 0.27) +
-          0.04 * Math.cos(11 * angle + seed * 0.13);
-        if (u * u + v * v <= edge * edge) mark(ix, iy, team);
+        const distanceSq = u * u + v * v;
+        if (distanceSq > 1.55) continue;
+        if (distanceSq < .65) { mark(ix, iy, team); continue; }
+        const bin = Math.min(bins - 1, Math.max(0, Math.floor((Math.atan2(v,u) + Math.PI) * invAngle)));
+        if (distanceSq <= edgeSq[bin]) mark(ix, iy, team);
       }
     }
   }
@@ -66,7 +84,7 @@ export function createInkSurface(width, height, walls = []) {
   function impact(x, y, radius, team, direction = 0, seed = 1, style = 'impact') {
     const forward = style === 'shooter' ? 1.35 : style === 'roller' ? 1.15 : 1;
     ellipse(x, y, radius * (style === 'bomb' ? 1.0 : 0.79), team, direction, forward, seed);
-    const fingers = style === 'bomb' ? 12 : style === 'roller' ? 6 : 8;
+    const fingers = style === 'bomb' ? 9 : style === 'roller' ? 5 : 6;
     for (let i = 0; i < fingers; i++) {
       const jitter = (seedRandom(seed, i + 1) - 0.5) * 0.5;
       const angle = direction + (i / fingers) * Math.PI * 2 + jitter;
@@ -76,7 +94,7 @@ export function createInkSurface(width, height, walls = []) {
       ellipse(x + Math.cos(angle) * offset, y + Math.sin(angle) * offset,
         width, team, angle, reach / Math.max(width * 2, 0.1), seed + i + 2);
     }
-    const drops = style === 'bomb' ? 22 : style === 'roller' ? 8 : 14;
+    const drops = style === 'bomb' ? 14 : style === 'roller' ? 5 : 9;
     for (let i = 0; i < drops; i++) {
       const a = seedRandom(seed, i + 110) * Math.PI * 2;
       const d = radius * (0.74 + 0.63 * seedRandom(seed, i + 140));
@@ -90,8 +108,8 @@ export function createInkSurface(width, height, walls = []) {
     const length = Math.hypot(x1 - x0, y1 - y0);
     if (length < 0.1) return;
     const direction = Math.atan2(y1 - y0, x1 - x0);
-    const step = continuous ? Math.max(0.15, radius * 0.62) : Math.max(0.43, radius * 2.4);
-    const steps = Math.min(100, Math.max(1, Math.ceil(length / step)));
+    const step = continuous ? Math.max(0.28, radius * 0.78) : Math.max(0.7, radius * 3.2);
+    const steps = Math.min(70, Math.max(1, Math.ceil(length / step)));
     for (let i = 0; i <= steps; i++) {
       if (!continuous && seedRandom(seed, i + 215) < 0.27) continue;
       const t = i / steps;
@@ -113,25 +131,29 @@ export function createInkSurface(width, height, walls = []) {
     return counts.map(count => Math.round(1000 * count / Math.max(1, paintable)) / 10);
   }
   // Ordered run lengths compress contiguous same-colour subpixels in network deltas.
-  function flush() {
+  function flush(maxCells = Infinity) {
     if (!changed.size) return [];
-    const indices = [...changed.keys()].sort((a, b) => a - b);
-    const runs = [];
-    let start = indices[0], last = start, value = changed.get(start), length = 1;
-    for (let i = 1; i < indices.length; i++) {
-      const index = indices[i], color = changed.get(index);
-      if (index === last + 1 && color === value) {
-        last = index;
-        length++;
-      } else {
-        runs.push(start, length, value);
-        start = last = index;
-        value = color;
-        length = 1;
+    // Process a bounded batch at each broadcast. Unsent changes remain queued
+    // rather than causing a multi-megabyte spike during intense CPU battles.
+    const budget=Number.isFinite(maxCells)?Math.max(1,Math.floor(maxCells)):Infinity;
+    const indices=[];
+    for(const index of changed.keys()) {
+      indices.push(index);
+      if(indices.length>=budget)break;
+    }
+    indices.sort((a,b)=>a-b);
+    const runs=[];
+    let start=indices[0],last=start,value=changed.get(start),length=1;
+    for(let i=1;i<indices.length;i++){
+      const index=indices[i],color=changed.get(index);
+      if(index===last+1&&color===value){last=index;length++;}
+      else{
+        runs.push(start,length,value);
+        start=last=index;value=color;length=1;
       }
     }
-    runs.push(start, length, value);
-    changed.clear();
+    runs.push(start,length,value);
+    for(const index of indices)changed.delete(index);
     return runs;
   }
   function clear() {

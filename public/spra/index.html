@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#081320">
   <meta name="description" content="SPRA — チームでインクを塗り合うオンライン対戦ゲーム。PC・タブレット・スマートフォン対応。">
   <title>SPRA | INK BATTLE</title>
@@ -44,6 +44,7 @@
           <div class="city-hud">
             <span class="city-hud-logo">SPRA</span>
             <span class="city-hud-coin">COINS <b id="cityCoins">1200</b> ◎</span>
+            <span class="city-hud-level">LEVEL <b id="cityLevel">1</b> / XP <b id="cityXP">0 / 100</b></span>
             <span id="connection" class="connection"><i></i> OFFLINE</span>
           </div>
           <button id="cityMenuToggle" class="city-menu-toggle" aria-expanded="false" aria-controls="cityMenu">☰ メニュー</button>
@@ -56,7 +57,7 @@
               <button data-town-facility="fashion">ファッション</button>
               <button data-town-facility="battle">バトル受付</button>
               <button data-town-facility="training">トレーニング</button>
-              <button data-town-facility="arcade">ゲームセンター</button>
+              <button data-town-facility="furniture">家具ショップ</button>
               <button data-town-facility="workshop">カスタマイズ工房</button>
               <button data-town-facility="ranking">ランキング広場</button>
               <button data-town-facility="room">自分の部屋</button>
@@ -80,11 +81,12 @@
         <div class="shop-panel">
           <div class="shop-head"><div><span class="pixel-kicker">COLOR GARAGE / WEAPON SHOP</span><h2 id="shopTitle">ガラクの武器屋</h2><p>オリキャラ「ガラク」が店番中。ブキを買って装備しよう！</p></div><button id="closeShop" class="shop-close" aria-label="閉じる">✕</button></div>
           <div class="shop-top"><span>所持コイン <strong id="shopCoins">1200</strong> ◎</span>
+            <span class="shop-level-info">プレイヤー Lv.<strong id="shopLevel">1</strong> <small id="shopXpText">XP 0 / 100</small></span>
             <span id="shopCurrent">装備中：スプラッシュ・Mk1</span>
             <button id="shopTryBtn" class="btn secondary">▶ 選んだブキを試し撃ち</button></div>
           <div id="shopCategories" class="shop-categories"></div>
           <div id="shopItems" class="shop-items"></div>
-          <p class="smallnote">所持コインと購入したブキはこのブラウザ内に保存されます。バトルでコイン獲得！</p>
+          <p class="smallnote">武器ごとに購入必要Lvがあります。バトルでXPを獲得し、レベルアップすると購入できます。購入履歴・コイン・レベルはこのブラウザ内に保存されます。</p>
         </div>
       </section>
 
