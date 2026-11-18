@@ -426,7 +426,7 @@ function receive(msg){
   if(typeof msg.fullPaint==='string')decodePaint(msg.fullPaint);
   else readChanges(msg.changes);
   if(Array.isArray(msg.effects))for(const fx of msg.effects)effects.push({...fx,time:performance.now()});
-  if(effects.length>90)effects.splice(0,effects.length-90);
+  if(effects.length>48)effects.splice(0,effects.length-48);
   updateUI();
   maybeReward();
  }
@@ -635,10 +635,16 @@ function drawBombs(){
 function drawEffects(now){
  effects=effects.filter(f=>now-f.time<480);
  for(const fx of effects){
-  const age=(now-f.time)/480,fade=1-age;
+  if(!Number.isFinite(fx.x)||!Number.isFinite(fx.y))continue;
+  const onX=(fx.x>=cameraX-12&&fx.x<=cameraX+canvas.width/TILE+12)||
+      (Number.isFinite(fx.tx)&&fx.tx>=cameraX-12&&fx.tx<=cameraX+canvas.width/TILE+12);
+  const onY=(fx.y>=cameraY-12&&fx.y<=cameraY+canvas.height/TILE+12)||
+      (Number.isFinite(fx.ty)&&fx.ty>=cameraY-12&&fx.ty<=cameraY+canvas.height/TILE+12);
+  if(!onX||!onY)continue;
+  const age=(now-fx.time)/480,fade=1-age;
   if(fx.type==='shot'){
    const dx=fx.tx-fx.x,dy=fx.ty-fx.y;
-   const n=fx.weaponType==='roller'?20:12;
+   const n=fx.weaponType==='roller'?10:6;
    ctx.globalAlpha=fade*.6;
    for(let i=0;i<n;i++){
     const t=i/n,shake=Math.sin(i*3.4+(fx.seed||0))*.24;
@@ -647,7 +653,7 @@ function drawEffects(now){
   } else if(fx.type==='bomb'||fx.type==='ko'){
    const radius=(fx.type==='bomb'?5.4:2.5)*age;
    ctx.globalAlpha=fade*.7;
-   for(let i=0;i<20;i++){
+   for(let i=0;i<12;i++){
     const a=(i*17%20)*Math.PI*2/20;
     const d=radius*(.65+(i%4)*.15);
     worldBox(fx.x+Math.cos(a)*d,fx.y+Math.sin(a)*d,.52,.52,COLORS[fx.team]);
@@ -746,7 +752,7 @@ function render(now){
  requestAnimationFrame(render);
  // A stable 30 FPS cap avoids rendering both massive map textures at full
  // refresh rate on lower-powered mobile browsers. Physics stays on the server.
- if(now-renderAt<33)return;
+ if(now-renderAt<(matchMedia('(pointer: coarse)').matches?42:33))return;
  const dt=Math.min(.1,(now-lastFrame)/1000);lastFrame=now;renderAt=now;clock+=dt;
  if(scene!=='battle')return;
  const me=players.find(p=>p.id===myId);
