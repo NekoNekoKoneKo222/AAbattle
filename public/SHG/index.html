@@ -27,9 +27,20 @@
 <button id="cpu" class="mode-card"><strong>⚔ CPU対戦</strong><small>1人で戦術を練習。報酬あり</small></button>
 <button id="local" class="mode-card"><strong>♟ 同じ端末でPvP</strong><small>交互に操作する2人対戦</small></button>
 </div>
-<div class="online-box"><h3>クイックマッチ</h3><p class="subtle">他のプレイヤーと自動マッチング。ガチャで入手した駒を使い、対戦報酬を獲得できます。</p>
+<div class="online-box">
+<div class="shg-auth">
+<h3>SHG専用アカウント</h3>
+<p class="subtle">Neonに独立保存します。元のAAbattleアカウントとは別です。ゲストで試した後も同じ端末から本登録すれば、駒・コイン・欠片を引き継げます。</p>
+<p id="shgAuthState" class="subtle" role="status">SHGアカウントを確認中…</p>
+<div class="controls auth-actions">
+<input id="shgUsername" maxlength="20" autocomplete="username" placeholder="ユーザー名（英数字・_）" aria-label="SHGユーザー名">
+<input id="shgPassword" type="password" minlength="10" maxlength="128" autocomplete="current-password" placeholder="パスワード（10文字以上）" aria-label="SHGパスワード">
+<button id="shgLogin">ログイン</button><button id="shgRegister">新規登録／ゲストを本登録</button>
+<button id="shgGuest">ゲストで始める</button><button id="shgLogout" hidden>ログアウト</button>
+</div></div>
+<h3>クイックマッチ</h3><p class="subtle">他のプレイヤーと自動マッチング。ガチャで入手した駒を使い、対戦報酬を獲得できます。</p>
 <div class="controls"><button id="quickMatch" class="primary">⚡ クイックマッチ開始</button><button id="quickCancel" hidden>待機をキャンセル</button></div><div id="quickStatus" class="quick-info" hidden>対戦相手を検索中…</div>
-<h3>オンライン・フレンドPvP</h3><p class="subtle">AAbattleアカウントでログインした2人がルームコードで対戦。サーバー側で手を判定します。</p>
+<h3>オンライン・フレンドPvP</h3><p class="subtle">SHG専用アカウントでログインした2人がルームコードで対戦。サーバー側で手を判定します。</p>
 <div class="controls"><button id="createRoom" class="primary">ルーム作成</button><input id="roomCode" maxlength="6" placeholder="6桁コード" aria-label="ルームコード"><button id="joinRoom">参加</button></div>
 <p id="loginInfo" class="subtle">アカウントを確認中…</p></div>
 <div class="wallet"><span>所持コイン <b id="coins">0</b></span><span>欠片 <b id="shards">0</b></span><button id="gacha" class="gold">1回ガチャ 150コイン</button><button id="gachaTen" class="gold">10連 1500コイン</button><button id="daily">ログイン報酬 +300</button></div><p id="gachaMessage" class="subtle" role="status"></p></div>
@@ -53,7 +64,7 @@
 <div class="battle-sidebar"><div class="panel" id="selectedPanel"><h3>駒の情報</h3><p class="subtle">マスを選ぶと性能と能力を表示します。</p></div><div class="panel"><h3>対局ログ</h3><div id="battleLog" class="battle-log"></div></div></div>
 </div><div id="emptyMatch" class="panel empty-match">ここに対局盤面が表示されます。ホームで「CPU対戦」「同じ端末でPvP」「オンラインルーム」を選択してください。</div>
 </section>
-</main><footer>CASTLE SHOGI ∞ · AAbattle内の独立ゲーム · 対局データはローカル／オンライン一時保存、収集データはAAbattleアカウントに保存</footer>
+</main><footer>CASTLE SHOGI ∞ · AAbattle内の独立ゲーム · 対局データはローカル／オンライン一時保存、収集データはSHG専用アカウントに保存</footer>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <script type="module" src="./app.js"></script>
 </body></html>
