@@ -23,7 +23,7 @@ export function mountCastleShogi(app,{currentUser,collection}){
   }
   async function user(req,res){
     const u=await currentUser(req);
-    if(!u)error(res,401,'AAbattleアカウントにログインしてください。');
+    if(!u)error(res,401,'SHG専用アカウントにログインしてください。');
     return u;
   }
   function view(r,u){
@@ -58,7 +58,8 @@ export function mountCastleShogi(app,{currentUser,collection}){
       const ids=req.body?.loadout||[];
       if(!await verifyLoadout(u,ids,res))return;
       const found=rooms.get(quickByUser.get(u.id));
-      if(found)return res.json({status:'matched',room:view(found,u)});
+      if(found?.game?.win)quickByUser.delete(u.id);
+      else if(found)return res.json({status:'matched',room:view(found,u)});
       if(waiting.has(u.id)){waiting.get(u.id).updated=Date.now();return res.json({status:'waiting',waitingCount:waiting.size});}
       if(rooms.size>=MAX_ROOMS)return error(res,503,'マッチの上限に達しています。');
       const opponent=[...waiting.values()].sort((a,b)=>a.created-b.created).find(q=>q.user.id!==u.id);
