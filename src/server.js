@@ -24,6 +24,7 @@ import { mountPixelRoutes } from './pixel-routes.js';
 import { mountChaosShogi } from './chaos-routes.js';
 import { mountCastleShogi } from './shg-routes.js';
 import { createShgCollection, mountShgCollection } from './shg-collection.js';
+import { createShgAuth, mountShgAuth } from './shg-auth.js';
 import { createChaosCollection } from './chaos-collection.js';
 import { createSpra } from './spra.js';
 
@@ -79,8 +80,10 @@ const chaosOnline = mountChaosShogi(app, { currentUser, findUser: key => store.f
 // SHG inventory is isolated: an independent Neon project can be used without moving AAbattle user accounts.
 const shgPool = process.env.SHG_DATABASE_URL ? new pg.Pool({connectionString:process.env.SHG_DATABASE_URL,max:3,idleTimeoutMillis:30000,connectionTimeoutMillis:10000}) : null;
 const shgCollection = createShgCollection(shgPool || store.pool || null);
-mountShgCollection(app, {currentUser, collection: shgCollection});
-mountCastleShogi(app, {currentUser, collection: shgCollection});
+const shgAuth = createShgAuth(shgPool || store.pool || null);
+mountShgAuth(app, shgAuth);
+mountShgCollection(app, {currentUser:shgAuth.current, collection: shgCollection});
+mountCastleShogi(app, {currentUser:shgAuth.current, collection: shgCollection});
 
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 function cookieToken(req) {
@@ -746,10 +749,17 @@ const port = Number(process.env.PORT || 3000);
 // temporary Neon quota outage. Do not create replacement users or accounts.
 let databaseAvailable = false;
 let databaseIssue = null;
-app.get('/api/SHG/status', (_req,res) => res.json({
-  databaseAvailable, onlineAvailable: databaseAvailable,
-  reason: databaseAvailable ? null : '既存Neonデータベースが利用できないため、オンライン対戦とガチャは一時停止中です。'
-}));
+app.get('/api/SHG/status', async (_req,res) => {
+  try {
+    await shgAuth.ensure();
+    res.json({onlineAvailable:true,accountMode:'shg',
+      aabattleDatabaseAvailable:databaseAvailable,
+      reason:databaseAvailable?null:'既存AAbattleデータベースは停止していますが、SHG専用アカウントとDBは利用できます。'});
+  } catch (error) {
+    res.json({onlineAvailable:false,accountMode:'unavailable',aabattleDatabaseAvailable:databaseAvailable,
+      reason:'SHG専用データベースに接続できません。CPU・ローカル対戦のみ利用できます。'});
+  }
+});
 try {
   await store.init();
   await glyphAdmin.init();
