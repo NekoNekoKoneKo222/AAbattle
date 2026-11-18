@@ -70,6 +70,7 @@ function spawn(p) {
   p.shieldFor=0; p.shieldHp=0; p.dodgeCd=0; p.dodgeFor=0;
   p.drillFor=0; p.rollHitCd=0; p.wallCd=0;
   p.jumpCd=0; p.jump=null; p.stealth=false;
+  p.botThinkDelay=0;
 }
 function inflict(room, target, damage, by) {
   if (target.deadFor > 0 || target.invuln > 0 || target.team === by.team || target.jump) return;
@@ -566,7 +567,14 @@ function move(room,p,dt){
     if(t>=1){p.x=jump.to.x;p.y=jump.to.y;p.jump=null;p.invuln=Math.max(p.invuln,.3);}
     return;
   }
-  if(p.bot)botInput(room,p);
+  if(p.bot){
+    p.botThinkDelay=(p.botThinkDelay||0)-dt;
+    if(p.botThinkDelay<=0){
+      // Steering 5x/second is enough; movement and gun cooldown remain 20Hz.
+      p.botThinkDelay=.2+(p.id.charCodeAt(0)%3)*.01;
+      botInput(room,p);
+    }
+  }
   const own=room.ink.sample(p.x,p.y)===p.team+1;
   const enemyInk=room.ink.sample(p.x,p.y)>0&&!own;
   const swim=Boolean(p.input.swim&&own&&p.flightFor<=0);
@@ -699,7 +707,7 @@ function snapshot(room) {
   return { type: 'state', code: room.code, host: room.host, round: room.round, mode: room.mode, phase: room.state,
     remaining: Math.max(0, Math.ceil(SPRA_DURATION - room.elapsed)),
     scores: score(room), players: [...room.players.values()].map(pack),
-    changes: room.ink.flush(12000), paintScale: INK_SCALE, effects: room.effects.splice(0, 30),
+    changes: room.ink.flush(4000), paintScale: INK_SCALE, effects: room.effects.splice(0, 30),
     winner: room.winner, colors: COLORS,
     wallsInk: [...room.wallInk],
     specials: room.specials.map(o=>({id:o.id,kind:o.kind,team:o.team,
