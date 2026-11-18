@@ -1,6 +1,6 @@
 // CASTLE SHOGI ∞ shared catalogue. No copyrighted images or external assets required.
 // id | name | class | HP | attack | defense | move | effect | range | power | cooldown | normal | awakening | ultimate
-const DATA = \`
+const DATA = `
 slash|斬鉄|攻撃|2|2|0|gold|pierce|1|1|3|防御を1無視する斬撃|攻撃後に退避できる|直線2マスへ貫通斬撃
 combo|連撃士|攻撃|2|1|0|silver|strike|1|2|3|隣接敵に2ダメージ|命中でHP1回復|撃破すると追加移動
 spear|槍兵|攻撃|2|1|1|spear|strike|2|2|3|前方2マスを突く|敵を1マス押し出す|前方3マスへ貫通攻撃
@@ -65,7 +65,7 @@ gatsu|ガッ|ミーム|2|2|0|king|rescue|2|1|3|ぬるぽへの攻撃を援護|�
 kita|キター|ミーム|2|1|0|cross2|cheer|1|1|3|味方撃破で追加移動|自分を回復|味方にも追加移動
 grass|草原|ミーム|3|0|0|horizontal|grass|1|1|0|周囲に草を生やして足止め|3マス草を生成|草上の敵の能力を妨害
 errorcat|エラー猫|ミーム|2|1|0|king|silence|2|0|4|敵の能力を不発にする|射程3に延長|自動能力も停止
-\`;
+`;
 export const SPECIALS = Object.freeze(DATA.trim().split('\n').map((line) => {
   const [id,name,category,hp,attack,defense,move,kind,range,power,cd,ability,awakening,ultimate] = line.split('|');
   return Object.freeze({id,name,category,hp:+hp,attack:+attack,defense:+defense,move,
