@@ -37,8 +37,8 @@ export function newGame(options={}){
   for(const owner of [-1,1]){
     const back=owner===1?8:0,minor=owner===1?7:1,pawns=owner===1?6:2;
     for(let x=0;x<9;x++){add(s,x,back,owner,rank[x]);add(s,x,pawns,owner,'P');}
-    add(s,1,minor,owner,owner===1?'B':'R');
-    add(s,7,minor,owner,owner===1?'R':'B');
+    add(s,1,minor,owner,owner===1?'R':'B');
+    add(s,7,minor,owner,owner===1?'B':'R');
     (loadouts[owner]||[]).forEach((id,i)=>{
       const x=[2,4,6][i],level=Math.max(0,Math.min(2,Number(levels[owner]?.[id])||0));
       add(s,x,pawns,owner,'special',id,level);
