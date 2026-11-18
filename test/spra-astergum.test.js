@@ -70,6 +70,24 @@ test('Aster Gum: charge -> star projectile -> paint explosion; Q gravity balloon
   const sawProjectile=net.packets.some(p=>p.type==='state'&&p.gumShots?.length);
   assert.ok(sawProjectile);
   await net.waitFor(p=>p.type==='state'&&p.effects?.some(e=>e.type==='gum_pop'),5000);
+  // The flight path itself must become our color BEFORE the final gum burst,
+  // so shots paint a line under the bouncing projectile instead of just a dot.
+  const startCellX=you.x+2, endCellX=you.x+8;
+  const gridWidth=160*4;
+  let pathPainted=0;
+  for(const packet of net.packets){
+    if(packet.type!=='state'||!Array.isArray(packet.changes))continue;
+    for(let j=0;j+2<packet.changes.length;j+=3){
+      const [offset,length,team]=packet.changes.slice(j,j+3);
+      if(team!==you.team+1)continue;
+      for(let k=0;k<length;k++){
+        const index=offset+k;
+        const cx=(index%gridWidth)/4,cy=Math.floor(index/gridWidth)/4;
+        if(cx>=startCellX&&cx<=endCellX&&Math.abs(cy-you.y)<1.1)pathPainted++;
+      }
+    }
+  }
+  assert.ok(pathPainted>3,'moving Aster Gum projectile must paint along its trajectory');
   const inkBeforeBubble=net.packets.filter(p=>p.type==='state'&&p.phase==='playing').at(-1)
     .players.find(p=>p.id===welcome.id).ink;
   net.socket.send(JSON.stringify({type:'input',x:0,y:0,aim:0,fire:false,swim:false,bomb:true}));
