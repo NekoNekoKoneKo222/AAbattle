@@ -81,13 +81,53 @@ async function collection(){
   try{
     const p=await api('/api/SHG/collection');setProfile(p);
     gameState.logged=true;
-    $('loginInfo').textContent='AAbattleアカウントでログイン済み。ガチャ・所持駒はサーバーに保存されます。';
+    $('loginInfo').textContent='SHG専用アカウントでログイン済み。ガチャ・所持駒はNeonに保存されます。';
     ['gacha','gachaTen','createRoom','joinRoom','quickMatch'].forEach(id=>$(id).disabled=false);
   }catch(e){
     gameState.logged=false;
     $('loginInfo').textContent='データベースへの接続またはログインが必要です：'+e.message;
     setProfile({coins:0,shards:0,pieces:{slash:1,guardian:1,sniper:1},mastery:{},dailyAvailable:false});
     ['gacha','gachaTen','createRoom','joinRoom','quickMatch','daily'].forEach(id=>$(id).disabled=true);
+  }
+}
+function offlineProfile(message){
+  gameState.logged=false;
+  $('loginInfo').textContent=message||'SHG専用アカウントでログインするとクイックマッチとガチャを利用できます。';
+  setProfile({coins:0,shards:0,pieces:{slash:1,guardian:1,sniper:1},mastery:{},dailyAvailable:false});
+  ['gacha','gachaTen','createRoom','joinRoom','quickMatch','daily'].forEach(id=>$(id).disabled=true);
+}
+function displayAuth(user){
+  gameState.shgUser=user||null;
+  $('shgAuthState').textContent=user?(user.username+(user.is_guest?'（ゲスト・登録すると引き継げます）':'（登録アカウント）')):'未ログイン。ゲストで開始するか、ユーザー名とパスワードを登録してください。';
+  $('shgGuest').hidden=Boolean(user);
+  $('shgLogout').hidden=!user;
+  $('shgRegister').disabled=Boolean(user&&!user.is_guest);
+  $('shgRegister').textContent=user?.is_guest?'ゲストを本登録':'新規登録';
+}
+async function refreshAuth(){
+  try{
+    const r=await api('/api/SHG/auth/me');
+    displayAuth(r.user);
+    await collection();
+  }catch(e){
+    displayAuth(null);
+    offlineProfile('SHGアカウントでログインしてください。データベースに接続できない場合はCPU戦を利用できます。');
+  }
+}
+async function authAction(mode){
+  const user=$('shgUsername').value.trim(),pass=$('shgPassword').value;
+  const payload=mode==='guest'?{}:{username:user,password:pass};
+  for(const id of ['shgGuest','shgRegister','shgLogin'])$(id).disabled=true;
+  try{
+    const r=await api('/api/SHG/auth/'+mode,payload);
+    displayAuth(r.user);
+    $('shgPassword').value='';
+    await collection();
+    toast(mode==='guest'?'ゲストアカウントで開始しました。':mode==='register'?'SHGアカウントを登録しました！':'SHGにログインしました。');
+  }catch(e){toast(e.message);}
+  finally{
+    $('shgGuest').disabled=false;$('shgLogin').disabled=false;
+    $('shgRegister').disabled=Boolean(gameState.shgUser&&!gameState.shgUser.is_guest);
   }
 }
 async function pull(count){
@@ -247,6 +287,10 @@ function init(){
   $('cpu').onclick=()=>startTraining(true);$('local').onclick=()=>startTraining(false);
   $('gacha').onclick=()=>pull(1);$('gachaTen').onclick=()=>pull(10);
   $('daily').onclick=async()=>{try{const r=await api('/api/SHG/collection/daily',{});setProfile(r.profile);toast('300コインを獲得しました。');}catch(e){toast(e.message);}};
+  $('shgGuest').onclick=()=>authAction('guest');
+  $('shgLogin').onclick=()=>authAction('login');
+  $('shgRegister').onclick=()=>authAction('register');
+  $('shgLogout').onclick=async()=>{try{await api('/api/SHG/auth/logout',{});displayAuth(null);offlineProfile();toast('SHGからログアウトしました。');}catch(e){toast(e.message);}};
   $('createRoom').onclick=createRoom;$('joinRoom').onclick=joinRoom;
   $('quickMatch').onclick=quick;$('quickCancel').onclick=()=>cancelQuick();
   $('copyCode').onclick=async()=>{if(!gameState.room)return;try{await navigator.clipboard.writeText(gameState.room.code);toast('コピーしました。');}catch(e){toast('ルームコード：'+gameState.room.code);}};
@@ -256,6 +300,6 @@ function init(){
   $('passTurn').onclick=()=>perform({kind:'pass'});
   $('undo').onclick=()=>{if(gameState.mode==='local'&&gameState.history.length){gameState.game=gameState.history.pop();gameState.selected=-1;renderBoard();}};
   document.addEventListener('visibilitychange',()=>{if(!document.hidden){if(gameState.room)syncRoom();else if(gameState.quick)quickStatus();}});
-  showTab('home');void collection();
+  showTab('home');void refreshAuth();
 }
 init();
