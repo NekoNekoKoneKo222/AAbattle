@@ -33,7 +33,7 @@ export function createShgCollection(pool){
   }
   function view(row){
     return {coins:row.coins,shards:row.shards,pieces:row.pieces||{},mastery:row.mastery||{},wins:row.wins,losses:row.losses,
-      dailyAvailable:row.daily_day!==new Date().toISOString().slice(0,10)};
+      dailyAvailable:(!row.daily_day||new Date(row.daily_day).toISOString().slice(0,10)!==new Date().toISOString().slice(0,10))};
   }
   async function locked(userId,fn){
     await ensure();const client=await pool.connect();
