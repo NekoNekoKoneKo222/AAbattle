@@ -1,6 +1,8 @@
 import { SPRA_WEAPONS, SPRA_CATEGORIES } from './weapons.js';
 import { createCity } from './city.js';
 import { createSpraTutorial } from './tutorial.js';
+import { installSpraTouchGuards } from './touch-guard.js';
+installSpraTouchGuards();
 import { battleXpReward, levelFromXp, totalXpForLevel, SPRA_MAX_LEVEL } from './progression.js';
 import { SPRA_SPECIALS } from './specials.js';
 import { drawCosmic } from './cosmic-render.js';
