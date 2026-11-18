@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ja"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>CASTLE SHOGI ∞ | 特殊駒PvP</title>
+<meta name="theme-color" content="#0b1020">
+<link rel="stylesheet" href="./style.css">
+</head><body>
+<div class="stars"></div>
+<header class="sitebar"><a class="brand" href="/SHG"><span class="logo">城</span><span>CASTLE <b>SHOGI</b><small>INFINITY</small></span></a>
+<nav><button class="nav active" data-tab="home">ホーム</button><button class="nav" data-tab="collection">駒図鑑</button><button class="nav" data-tab="match">対局</button></nav>
+<a class="back" href="/CSH">CHAOS SHOGI ↗</a></header>
+<main>
+<section id="home" class="page">
+<div class="hero">
+ <div><span class="eyebrow">TACTICAL PVP · 9 × 9</span><h1>城を守れ。<br><em>常識を壊せ。</em></h1>
+ <p>HP3の王城を守りながら、普通の将棋駒と64種類の異能力駒を編成して戦う、PvP将棋。</p>
+ <div class="hero-badges"><span>♜ 王城破壊で勝利</span><span>✦ 特殊駒64種類</span><span>♢ 覚醒・究極覚醒</span></div></div>
+ <div class="castle-graphic"><div class="castle-glow">♜</div><span>THE CASTLE MUST SURVIVE</span></div>
+</div>
+<div class="columns">
+<div class="panel"><div class="panel-head"><div><span class="eyebrow">LOADOUT</span><h2>特殊駒編成</h2></div><strong id="costText">0 / 9</strong></div>
+<p class="subtle">普通の駒と置き換えて出撃。最大3体・合計コスト9。ローカル戦は所持駒から、オンラインフレンド戦は全駒を試用可能です。</p>
+<div id="loadout" class="loadout"></div><div class="controls"><button id="openCollection">駒を選ぶ →</button><button id="clearLoadout" class="quiet">編成解除</button></div>
+<div class="aa-box"><h3>二局のAA召喚設定</h3><p class="subtle">任意のAAをコピーして入力（最大2体）。二局を編成すると開始時に召喚されます。</p><div class="aa-fields"><textarea id="aa1" rows="3" maxlength="160" placeholder="AA 1"></textarea><textarea id="aa2" rows="3" maxlength="160" placeholder="AA 2"></textarea></div></div></div>
+<div class="panel"><div class="panel-head"><div><span class="eyebrow">MATCH</span><h2>対局を始める</h2></div><span class="tiny-tag">9×9</span></div>
+<div class="mode-grid">
+<button id="cpu" class="mode-card"><strong>⚔ CPU対戦</strong><small>1人で戦術を練習。報酬あり</small></button>
+<button id="local" class="mode-card"><strong>♟ 同じ端末でPvP</strong><small>交互に操作する2人対戦</small></button>
+</div>
+<div class="online-box"><h3>オンライン・フレンドPvP</h3><p class="subtle">AAbattleアカウントでログインした2人がルームコードで対戦。サーバー側で手を判定します。</p>
+<div class="controls"><button id="createRoom" class="primary">ルーム作成</button><input id="roomCode" maxlength="6" placeholder="6桁コード" aria-label="ルームコード"><button id="joinRoom">参加</button></div>
+<p id="loginInfo" class="subtle">アカウントを確認中…</p></div>
+<div class="wallet"><span>所持コイン <b id="coins">0</b></span><span>欠片 <b id="shards">0</b></span><button id="gacha" class="gold">ガチャ 150コイン</button></div></div>
+</div>
+<div class="panel guide"><div class="panel-head"><h2>ルール</h2><span class="tiny-tag">QUICK START</span></div><div class="rule-grid">
+<article><b>01 王城HP3</b><p>城は移動できません。攻撃を3回受けると敗北。1ターン中の王城被害は最大1。</p></article>
+<article><b>02 通常駒は固定</b><p>歩・香・桂・銀・金・角・飛はHP1／攻1／防0。成りで移動だけ変わります。</p></article>
+<article><b>03 特殊駒は固有能力</b><p>攻撃・回復・妨害・召喚など。駒を選んで「能力」から対象マスを指定します。</p></article>
+<article><b>04 連動ミーム</b><p>二局が倒されると五局に変化。同時に殺夫も破壊されます。</p></article>
+</div></div>
+</section>
+<section id="collection" class="page" hidden><div class="page-head"><span class="eyebrow">PIECE COLLECTION</span><h1>64の異能を、その手に。</h1><p>PvP・CPU戦でコインとマスタリーXPを集め、駒を解放して強化しよう。</p></div>
+<div class="panel"><div class="controls search"><input id="pieceSearch" type="search" placeholder="駒の名前や能力を検索"><select id="category"><option value="">すべてのカテゴリー</option></select><select id="ownership"><option value="">すべて表示</option><option value="owned">所持済</option><option value="unowned">未所持</option></select></div><p id="catalogCount" class="subtle"></p><div id="catalog" class="catalog"></div></div></section>
+<section id="match" class="page" hidden><div class="match-head"><div><span class="eyebrow">BATTLE ARENA</span><h1>王城決戦</h1><p id="matchMode" class="subtle">ホームから対局を開始してください。</p></div><button id="goHome">ホームへ戻る</button></div>
+<div id="roomBanner" class="room-banner" hidden><span>ルーム <b id="currentRoomCode"></b></span><span id="roomStatus">参加待ち</span><button id="copyCode">コードをコピー</button></div>
+<div id="gamePanel" class="match-layout" hidden>
+<div class="battle-main"><div class="turnbar"><div id="sideMinus">△ 後手 <b id="castleMinus">城 3 / 3</b></div><div id="turnText">先手の番</div><div id="sidePlus">▲ 先手 <b id="castlePlus">城 3 / 3</b></div></div>
+<div class="board-scroll"><div id="board" class="board" role="grid" aria-label="将棋盤"></div></div>
+<div class="actions"><button id="moveMode" class="active">移動・攻撃</button><button id="skillMode">固有能力</button><button id="passTurn">パス</button><button id="undo" class="quiet" title="ローカル対局のみ">一手戻す</button></div>
+<div id="gameMessage" class="notice" role="status">自分の駒を選んでください。</div></div>
+<div class="battle-sidebar"><div class="panel" id="selectedPanel"><h3>駒の情報</h3><p class="subtle">マスを選ぶと性能と能力を表示します。</p></div><div class="panel"><h3>対局ログ</h3><div id="battleLog" class="battle-log"></div></div></div>
+</div><div id="emptyMatch" class="panel empty-match">ここに対局盤面が表示されます。ホームで「CPU対戦」「同じ端末でPvP」「オンラインルーム」を選択してください。</div>
+</section>
+</main><footer>CASTLE SHOGI ∞ · AAbattle内の独立ゲーム · 対局データはローカル／オンライン一時保存、収集データはこの端末に保存</footer>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script type="module" src="./app.js"></script>
+</body></html>
