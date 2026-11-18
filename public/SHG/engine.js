@@ -83,13 +83,19 @@ function rawDirs(p){
 export function moves(s,from){
   const p=s.board[from];if(!p||p.frozen||!inside(...xy(from)))return [];
   const [x,y]=xy(from),cfg=rawDirs(p),result=[];
-  const push=(tx,ty)=>{if(!inside(tx,ty))return false;const to=pos(tx,ty),q=s.board[to];
-    if(!same(p,q)&&(q===null||p.type==='A'?q===null||p.aaKind==='attack'&&p.attack>0:q?.type!=='C'||p.attack>0)) result.push(to);
-    return q===null;
-  };
-  for(const [dx,dy] of cfg.steps){const tx=x+dx,ty=y+dy*p.owner;if(inside(tx,ty)){const q=s.board[pos(tx,ty)];if(!same(p,q)&&(q===null||p.type!=='A'||p.aaKind==='attack')&&(q===null||p.type==='special'?p.type==='special'?BY_ID[p.id].attack>0:p.attack>0:p.type==='C'?false:true))result.push(pos(tx,ty));}}
-  for(const [dx,dy] of cfg.slide)for(let n=1;n<=cfg.limit;n++){const tx=x+dx*n,ty=y+dy*n*p.owner;if(!inside(tx,ty))break;const q=s.board[pos(tx,ty)];if(!same(p,q)&&(q===null||p.type!=='special'||BY_ID[p.id].attack>0))result.push(pos(tx,ty));if(q)break;}
-  return result.filter(i=>!terrainAt(s,i,'wall'));
+  const owner=p.reversed>0?-p.owner:p.owner;
+  const canCapture=p.type==='special'?BY_ID[p.id].attack>0:p.type==='A'?p.aaKind==='attack':BASE[p.type].attack>0;
+  function consider(tx,ty){
+    if(!inside(tx,ty))return false;
+    const to=pos(tx,ty),q=at(s,to);
+    if(!same(p,q)&&(!q||canCapture)&&!terrainAt(s,to,'wall'))result.push(to);
+    return !q;
+  }
+  for(const [dx,dy] of cfg.steps)consider(x+dx,y+dy*owner);
+  for(const [dx,dy] of cfg.slide){
+    for(let n=1;n<=cfg.limit;n++)if(!consider(x+dx*n,y+dy*n*owner))break;
+  }
+  return result;
 }
 export function canPromote(p,from,to){
   if(p.type==='special'||p.type==='A'||p.type==='G'||p.type==='C'||p.promoted)return false;
