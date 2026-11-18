@@ -21,6 +21,8 @@ import { GlyphStore } from './glyph-store.js';
 import { GlyphAdminStore, isGlyphAdmin } from './glyph-admin.js';
 import { mountPixelRoutes } from './pixel-routes.js';
 import { mountChaosShogi } from './chaos-routes.js';
+import { mountCastleShogi } from './shg-routes.js';
+import { createShgCollection, mountShgCollection } from './shg-collection.js';
 import { createChaosCollection } from './chaos-collection.js';
 import { createSpra } from './spra.js';
 
@@ -73,6 +75,9 @@ app.use((req, res, next) => {
 app.use('/api/draw', express.json({ limit: '2mb', type: 'application/json' }));
 app.use(express.json({ limit: '128kb', type: 'application/json' }));
 const chaosOnline = mountChaosShogi(app, { currentUser, findUser: key => store.findUser(key), collection: createChaosCollection(store.pool || null) });
+const shgCollection = createShgCollection(store.pool || null);
+mountShgCollection(app, {currentUser, collection: shgCollection});
+mountCastleShogi(app, {currentUser, collection: shgCollection});
 
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 function cookieToken(req) {
@@ -600,6 +605,7 @@ app.get('/abn', (_req, res) => res.sendFile(path.join(staticRoot, 'abn', 'index.
 app.get('/model', (_req, res) => res.sendFile(path.join(staticRoot, 'sam', 'index.html')));
 app.get(['/draw', '/draw/'], (_req, res) => res.sendFile(path.join(staticRoot, 'draw', 'index.html')));
 app.get(['/CSH', '/CSH/'], (_req, res) => res.sendFile(path.join(staticRoot, 'CSH', 'index.html')));
+app.get(['/SHG', '/SHG/'], (_req, res) => res.sendFile(path.join(staticRoot, 'SHG', 'index.html')));
 app.get('/api/spra/leaderboard', async (_req,res) => {
   try { res.json(await spra.listRankings(20)); }
   catch(error) {
