@@ -20,7 +20,10 @@ const paintCanvas=document.createElement('canvas');
 paintCanvas.width=PW;paintCanvas.height=PH;
 const paintCtx=paintCanvas.getContext('2d');
 const paintImage=paintCtx.createImageData(PW,PH);
-let dirtyLeft=PW,dirtyTop=PH,dirtyRight=-1,dirtyBottom=-1;
+// Dirty 32x32 ink chunks are merged horizontally into narrow upload stripes.
+const PAINT_CHUNK=32,PAINT_COLS=Math.ceil(PW/PAINT_CHUNK);
+const PAINT_ROWS=Math.ceil(PH/PAINT_CHUNK);
+const dirtyChunks=new Uint8Array(PAINT_COLS*PAINT_ROWS);
 const COLORS=['#26d7ec','#ff9835'];
 let paint=new Uint8Array(PW*PH),paintDirty=true;
 let ws=null,myId=null,roomCode='',isHost=false,scene='city',phase='lobby',round=0;
@@ -334,10 +337,7 @@ function setInkPixel(index,value){
  if(paint[index]===value)return;
  paint[index]=value;
  const ix=index%PW,iy=Math.floor(index/PW);
- dirtyLeft=Math.min(dirtyLeft,ix);
- dirtyTop=Math.min(dirtyTop,iy);
- dirtyRight=Math.max(dirtyRight,ix);
- dirtyBottom=Math.max(dirtyBottom,iy);
+ dirtyChunks[Math.floor(iy/PAINT_CHUNK)*PAINT_COLS+Math.floor(ix/PAINT_CHUNK)]=1;
  const i=index*4,d=paintImage.data;
  if(!value){d[i+3]=0;return;}
  const noise=((index*2654435761>>>8)%13)-6;
@@ -586,11 +586,22 @@ function drawFloor(){
  ctx.fillRect(Math.floor(cameraX*TILE),Math.floor(cameraY*TILE),
    canvas.width+TILE,canvas.height+TILE);
  if(paintDirty){
-  // Re-upload only dirty subcells, not the entire giant 640x400 texture.
-  if(dirtyRight>=dirtyLeft&&dirtyBottom>=dirtyTop)paintCtx.putImageData(
-    paintImage,0,0,dirtyLeft,dirtyTop,
-    dirtyRight-dirtyLeft+1,dirtyBottom-dirtyTop+1);
-  dirtyLeft=PW;dirtyTop=PH;dirtyRight=-1;dirtyBottom=-1;
+  // One distant CPU splash no longer forces an upload of the whole ink map:
+  // merge adjacent dirty 32x32 chunks into compact horizontal rectangles.
+  for(let cy=0;cy<PAINT_ROWS;cy++){
+    const offset=cy*PAINT_COLS,y=cy*PAINT_CHUNK;
+    for(let cx=0;cx<PAINT_COLS;){
+      if(!dirtyChunks[offset+cx]){cx++;continue;}
+      const start=cx;
+      while(cx<PAINT_COLS&&dirtyChunks[offset+cx]){
+        dirtyChunks[offset+cx]=0;
+        cx++;
+      }
+      const x=start*PAINT_CHUNK;
+      paintCtx.putImageData(paintImage,0,0,x,y,
+        Math.min(PW-x,(cx-start)*PAINT_CHUNK),Math.min(PH-y,PAINT_CHUNK));
+    }
+  }
   paintDirty=false;
  }
  ctx.imageSmoothingEnabled=false;
