@@ -7,7 +7,7 @@
 </head><body>
 <div class="stars"></div>
 <header class="sitebar"><a class="brand" href="/SHG"><span class="logo">城</span><span>CASTLE <b>SHOGI</b><small>INFINITY</small></span></a>
-<nav><button class="nav active" data-tab="home">ホーム</button><button class="nav" data-tab="collection">駒図鑑</button><button class="nav" data-tab="match">対局</button></nav>
+<nav><button class="nav active" data-tab="home">ホーム</button><button class="nav" data-tab="collection">駒図鑑・交換所</button><button class="nav" data-tab="match">対局</button></nav>
 <a class="back" href="/CSH">CHAOS SHOGI ↗</a></header>
 <main>
 <section id="home" class="page">
@@ -27,10 +27,12 @@
 <button id="cpu" class="mode-card"><strong>⚔ CPU対戦</strong><small>1人で戦術を練習。報酬あり</small></button>
 <button id="local" class="mode-card"><strong>♟ 同じ端末でPvP</strong><small>交互に操作する2人対戦</small></button>
 </div>
-<div class="online-box"><h3>オンライン・フレンドPvP</h3><p class="subtle">AAbattleアカウントでログインした2人がルームコードで対戦。サーバー側で手を判定します。</p>
+<div class="online-box"><h3>クイックマッチ</h3><p class="subtle">他のプレイヤーと自動マッチング。ガチャで入手した駒を使い、対戦報酬を獲得できます。</p>
+<div class="controls"><button id="quickMatch" class="primary">⚡ クイックマッチ開始</button><button id="quickCancel" hidden>待機をキャンセル</button></div><div id="quickStatus" class="quick-info" hidden>対戦相手を検索中…</div>
+<h3>オンライン・フレンドPvP</h3><p class="subtle">AAbattleアカウントでログインした2人がルームコードで対戦。サーバー側で手を判定します。</p>
 <div class="controls"><button id="createRoom" class="primary">ルーム作成</button><input id="roomCode" maxlength="6" placeholder="6桁コード" aria-label="ルームコード"><button id="joinRoom">参加</button></div>
 <p id="loginInfo" class="subtle">アカウントを確認中…</p></div>
-<div class="wallet"><span>所持コイン <b id="coins">0</b></span><span>欠片 <b id="shards">0</b></span><button id="gacha" class="gold">ガチャ 150コイン</button></div></div>
+<div class="wallet"><span>所持コイン <b id="coins">0</b></span><span>欠片 <b id="shards">0</b></span><button id="gacha" class="gold">1回ガチャ 150コイン</button><button id="gachaTen" class="gold">10連 1500コイン</button><button id="daily">ログイン報酬 +300</button></div><p id="gachaMessage" class="subtle" role="status"></p></div>
 </div>
 <div class="panel guide"><div class="panel-head"><h2>ルール</h2><span class="tiny-tag">QUICK START</span></div><div class="rule-grid">
 <article><b>01 王城HP3</b><p>城は移動できません。攻撃を3回受けると敗北。1ターン中の王城被害は最大1。</p></article>
@@ -40,7 +42,7 @@
 </div></div>
 </section>
 <section id="collection" class="page" hidden><div class="page-head"><span class="eyebrow">PIECE COLLECTION</span><h1>64の異能を、その手に。</h1><p>PvP・CPU戦でコインとマスタリーXPを集め、駒を解放して強化しよう。</p></div>
-<div class="panel"><div class="controls search"><input id="pieceSearch" type="search" placeholder="駒の名前や能力を検索"><select id="category"><option value="">すべてのカテゴリー</option></select><select id="ownership"><option value="">すべて表示</option><option value="owned">所持済</option><option value="unowned">未所持</option></select></div><p id="catalogCount" class="subtle"></p><div id="catalog" class="catalog"></div></div></section>
+<div class="panel"><div class="controls search"><input id="pieceSearch" type="search" placeholder="駒の名前や能力を検索"><select id="category"><option value="">すべてのカテゴリー</option></select><select id="ownership"><option value="">すべて表示</option><option value="owned">所持済</option><option value="unowned">未所持</option></select></div><p id="catalogCount" class="subtle"></p><p class="subtle">所持数が2体以上の駒は余剰分を欠片へ変換できます。1体しかない駒も変換できますが、編成から外れます。欠片を使って指定の駒を確定入手できます。</p><p id="collectionMessage" class="subtle" role="status"></p><div id="catalog" class="catalog"></div></div></section>
 <section id="match" class="page" hidden><div class="match-head"><div><span class="eyebrow">BATTLE ARENA</span><h1>王城決戦</h1><p id="matchMode" class="subtle">ホームから対局を開始してください。</p></div><button id="goHome">ホームへ戻る</button></div>
 <div id="roomBanner" class="room-banner" hidden><span>ルーム <b id="currentRoomCode"></b></span><span id="roomStatus">参加待ち</span><button id="copyCode">コードをコピー</button></div>
 <div id="gamePanel" class="match-layout" hidden>
@@ -51,7 +53,7 @@
 <div class="battle-sidebar"><div class="panel" id="selectedPanel"><h3>駒の情報</h3><p class="subtle">マスを選ぶと性能と能力を表示します。</p></div><div class="panel"><h3>対局ログ</h3><div id="battleLog" class="battle-log"></div></div></div>
 </div><div id="emptyMatch" class="panel empty-match">ここに対局盤面が表示されます。ホームで「CPU対戦」「同じ端末でPvP」「オンラインルーム」を選択してください。</div>
 </section>
-</main><footer>CASTLE SHOGI ∞ · AAbattle内の独立ゲーム · 対局データはローカル／オンライン一時保存、収集データはこの端末に保存</footer>
+</main><footer>CASTLE SHOGI ∞ · AAbattle内の独立ゲーム · 対局データはローカル／オンライン一時保存、収集データはAAbattleアカウントに保存</footer>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <script type="module" src="./app.js"></script>
 </body></html>
