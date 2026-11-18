@@ -58,8 +58,15 @@ test('SPRA browser: player and CPU continue updating after sustained ink fire', 
     await page.locator('.room-cell').first().click();
     await page.click('.facility-close');
     await page.click('#cityMenuToggle');
-    await page.click('[data-town-facility="arcade"]');
-    assert.equal(await page.locator('.arcade-cell').count(),25);
+    await page.click('[data-town-facility="furniture"]');
+    assert.equal(await page.locator('#facilityTitle').textContent(),'家具ショップ');
+    assert.ok(await page.locator('.facility-item').count()>=16);
+    await page.locator('.facility-item').filter({hasText:'観葉植物'}).click();
+    await page.locator('.facility-action').filter({hasText:'自分の部屋'}).click();
+    await page.locator('.furniture-item').filter({hasText:'観葉植物'}).click();
+    await page.locator('.room-cell').nth(1).click();
+    assert.ok(await page.locator('.room-cell').nth(1).textContent()==='♣',
+      'Purchased furniture should be placeable in personal room');
     await page.click('.facility-close');
     assert.equal(errors.length,0,'Town facilities must load without JavaScript errors');
     await page.click('#cityMenuToggle');
