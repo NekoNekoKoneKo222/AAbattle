@@ -1,0 +1,51 @@
+name: SPRA isolated Funnel security and browser checks
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/spra-funnel-server.js'
+      - 'public/spra/funnel-access.*'
+      - 'scripts/spra-funnel.ps1'
+      - 'START_SPRA_FUNNEL.bat'
+      - 'STOP_SPRA_FUNNEL.bat'
+      - 'test/spra-funnel*.test.js'
+      - '.github/workflows/spra-funnel-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/spra-funnel-server.js'
+      - 'public/spra/funnel-access.*'
+      - 'scripts/spra-funnel.ps1'
+      - 'START_SPRA_FUNNEL.bat'
+      - 'STOP_SPRA_FUNNEL.bat'
+      - 'test/spra-funnel*.test.js'
+      - '.github/workflows/spra-funnel-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  spra-funnel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Install Node dependencies
+        run: npm ci --include=dev
+      - name: Syntax checks
+        run: |
+          node --check src/spra-funnel-server.js
+          node --check public/spra/funnel-access.js
+          node --check test/spra-funnel.test.js
+          node --check test/spra-funnel-browser.test.js
+      - name: Auth, HTTP MIME and WebSocket tests
+        run: node --test test/spra-funnel.test.js
+      - name: Install browser
+        run: npx playwright install chromium
+      - name: SPRA Funnel browser regression
+        run: node --test test/spra-funnel-browser.test.js
