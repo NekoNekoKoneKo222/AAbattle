@@ -125,3 +125,24 @@ test('SPRA Funnel WS requires authenticated same-origin session and accepts a re
     await service.close();
   }
 });
+
+test('SPRA Funnel logout invalidates assets and closes existing game socket', {timeout:8000}, async()=>{
+  const { service, base } = await start();
+  let ws;
+  try {
+    const cookie=await login(base);
+    const result=await socket(base,cookie,base);
+    assert.equal(result.ok,true);
+    ws=result.ws;
+    const closed=new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>reject(new Error('WebSocket remained open after logout')),3000);
+      ws.once('close',()=>{clearTimeout(timer);resolve();});
+    });
+    const response=await fetch(base+'/spra/logout',{
+      method:'POST',headers:{Origin:base,Cookie:cookie}
+    });
+    assert.equal(response.status,200);
+    await closed;
+    assert.equal((await fetch(base+'/spra/style.css',{headers:{Cookie:cookie}})).status,401);
+  } finally {ws?.terminate();await service.close();}
+});
