@@ -89,7 +89,7 @@ test('SPRA Funnel guards login by origin/password, serves real 2D client assets'
     assert.match(page, /\/spra\/style\.css/);
     assert.match(page, /\/spra\/game\.js/);
     assert.equal((await fetch(base + '/api/spra/leaderboard', {headers:{Cookie:token}})).status, 200);
-    const badCookie = await fetch(base + '/spra/game.js', {headers:{Cookie:token.replace(/.$/,'0')}});
+    const badCookie = await fetch(base + '/spra/game.js', {headers:{Cookie:token.slice(0,-1) + (token.endsWith('0')?'1':'0')}});
     assert.equal(badCookie.status, 401);
   } finally { await service.close(); }
 });
