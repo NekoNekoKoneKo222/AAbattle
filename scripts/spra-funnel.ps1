@@ -29,6 +29,7 @@ try {
     $env:SPRA_FRIEND_PASSWORD = $password
     $env:SPRA_PORT = [string]$Port
     $serverProcess = Start-Process -FilePath $node.Source -ArgumentList 'src/spra-funnel-server.js' -WorkingDirectory $root -NoNewWindow -PassThru
+    Remove-Item Env:SPRA_FRIEND_PASSWORD -ErrorAction SilentlyContinue
     $base = "http://127.0.0.1:$Port"
     $ready = $false
     for ($i = 0; $i -lt 20; $i++) {
