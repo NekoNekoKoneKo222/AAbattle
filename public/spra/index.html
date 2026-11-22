@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#081320">
+  <meta name="description" content="SPRA — チームでインクを塗り合うオンライン対戦ゲーム。PC・タブレット・スマートフォン対応。">
+  <title>SPRA | INK BATTLE</title>
+  <link rel="stylesheet" href="/spra/style.css">
+  <script type="module" defer src="/spra/game.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <main id="spraMain">
+      <section id="tutorialSection" class="tutorial-section hidden" aria-label="はじめての操作チュートリアル">
+        <canvas id="tutorialCanvas" width="960" height="600" aria-label="操作を学べるドット絵の練習ステージ"></canvas>
+        <div class="tutorial-brand">SPRA <span>INK TRAINING</span></div>
+        <button id="tutorialSkip" class="tutorial-skip">スキップして街へ ▸</button>
+        <div class="tutorial-guide" role="status" aria-live="polite">
+          <div class="tutorial-step-index" id="tutorialCounter">TUTORIAL 01 / 07</div>
+          <h2 id="tutorialHeading">まずは歩こう！</h2>
+          <p id="tutorialDescription">WASDで移動しよう</p>
+          <div class="tutorial-goal">目標：<strong id="tutorialObjective">8マス移動する</strong></div>
+          <button id="tutorialFinish" class="tutorial-finish hidden">カラフルシティへ行く ▸</button>
+        </div>
+        <div class="tutorial-touch">
+          <div id="tutorialDpad" class="tutorial-dpad">
+            <button data-tutorial-move="up" aria-label="上へ">▲</button>
+            <div><button data-tutorial-move="left" aria-label="左へ">◀</button>
+              <button data-tutorial-move="down" aria-label="下へ">▼</button>
+              <button data-tutorial-move="right" aria-label="右へ">▶</button></div>
+          </div>
+          <div class="tutorial-actions">
+            <button id="tutorialSwim">潜る<br>SWIM</button>
+            <button id="tutorialBomb">ボム<br>Q</button>
+            <button id="tutorialFire">撃つ<br>SHOT</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="citySection" class="city-section hidden" aria-label="カラフルシティ">
+        <div class="city-frame">
+          <canvas id="cityCanvas" width="800" height="480" aria-label="探索できるドット絵の街"></canvas>
+          <div class="city-hud">
+            <span class="city-hud-logo">SPRA</span>
+            <span class="city-hud-coin">COINS <b id="cityCoins">1200</b> ◎</span>
+            <span class="city-hud-level">LEVEL <b id="cityLevel">1</b> / XP <b id="cityXP">0 / 100</b></span>
+            <span id="connection" class="connection"><i></i> OFFLINE</span>
+          </div>
+          <button id="cityMenuToggle" class="city-menu-toggle" aria-expanded="false" aria-controls="cityMenu">☰ メニュー</button>
+          <div id="cityMenu" class="city-menu hidden" aria-label="街のメニュー">
+            <strong>カラフルシティ</strong>
+            <div class="city-tools"><button id="openShop" class="btn secondary">武器屋</button>
+              <button id="openMatch" class="btn primary">バトル受付</button></div>
+            <div class="facility-shortcuts" aria-label="街の施設">
+              <button data-town-facility="shop">武器ショップ</button>
+              <button data-town-facility="fashion">ファッション</button>
+              <button data-town-facility="battle">バトル受付</button>
+              <button data-town-facility="training">トレーニング</button>
+              <button data-town-facility="furniture">家具ショップ</button>
+              <button data-town-facility="workshop">カスタマイズ工房</button>
+              <button data-town-facility="ranking">ランキング広場</button>
+              <button data-town-facility="room">自分の部屋</button>
+            </div>
+            <button id="replayTutorial" class="pixel-back">▶ 操作チュートリアルをもう一度</button>
+          </div>
+          <div class="city-corner">WASD 移動 ／ E 施設へ ／ メニューから施設を選択</div>
+          <div class="city-touch">
+            <div class="city-dpad"><button data-city-control="up" aria-label="上">▲</button><div>
+              <button data-city-control="left" aria-label="左">◀</button>
+              <button data-city-control="down" aria-label="下">▼</button>
+              <button data-city-control="right" aria-label="右">▶</button></div></div>
+            <button id="cityInteract" class="city-interact">E<br>話す</button>
+          </div>
+        </div>
+      </section>
+
+      <div id="modalBackdrop" class="modal-backdrop hidden"></div>
+
+      <section id="shopOverlay" class="shop-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="shopTitle">
+        <div class="shop-panel">
+          <div class="shop-head"><div><span class="pixel-kicker">COLOR GARAGE / WEAPON SHOP</span><h2 id="shopTitle">ガラクの武器屋</h2><p>オリキャラ「ガラク」が店番中。ブキを買って装備しよう！</p></div><button id="closeShop" class="shop-close" aria-label="閉じる">✕</button></div>
+          <div class="shop-top"><span>所持コイン <strong id="shopCoins">1200</strong> ◎</span>
+            <span class="shop-level-info">プレイヤー Lv.<strong id="shopLevel">1</strong> <small id="shopXpText">XP 0 / 100</small></span>
+            <span id="shopCurrent">装備中：スプラッシュ・Mk1</span>
+            <button id="shopTryBtn" class="btn secondary">▶ 選んだブキを試し撃ち</button></div>
+          <div id="shopCategories" class="shop-categories"></div>
+          <div id="shopItems" class="shop-items"></div>
+          <p class="smallnote">武器ごとに購入必要Lvがあります。バトルでXPを獲得し、レベルアップすると購入できます。購入履歴・コイン・レベルはこのブラウザ内に保存されます。</p>
+        </div>
+      </section>
+
+      <section id="joinCard" class="lobby-card panel hidden">
+        <div class="card-heading"><span class="index">01</span><div><h2>アリーナに参加</h2><p>名前を決めて、部屋を作るかコードで参加。</p></div></div>
+        <div class="join-fields">
+          <label>プレイヤー名<input id="nickname" maxlength="18" autocomplete="nickname" placeholder="PLAYER" value=""></label>
+          <label>部屋コード（参加時のみ）<input id="roomInput" inputmode="latin" maxlength="6" autocomplete="off" spellcheck="false" placeholder="例：1A2B3C"></label>
+        </div>
+        <div class="action-row">
+          <button id="createBtn" class="btn primary"><span>新しい部屋を作成</span><b>＋</b></button>
+          <button id="joinBtn" class="btn secondary">コードで参加 <span>→</span></button>
+        </div>
+        <label class="spra-mode-label">対戦ルールを選択
+          <select id="matchMode" class="spra-mode-select">
+            <option value="turf">ナワバリバトル（塗り面積）</option>
+            <option value="ko">KOバトル（20KO先取）</option>
+          </select>
+        </label>
+        <div class="smallnote">人数不足の場合は試合開始時にCPUで最大4対4まで自動補充します。</div>
+        <button id="joinBackCity" class="pixel-back">◀ 街に戻る</button>
+      </section>
+
+      <section id="roomCard" class="room-card panel hidden" aria-live="polite">
+        <div class="card-heading"><span class="index">02</span><div><h2>バトル準備</h2><p>チームと武器を選んだら、ホストが試合開始。</p></div></div>
+        <div class="room-info">
+          <div><small>ROOM CODE</small><strong id="roomCode" class="mono">------</strong></div>
+          <button id="copyBtn" class="btn ghost">招待URLをコピー <span>↗</span></button>
+        </div>
+        <div class="team-list"><div class="team-box blue"><h3><span class="color-dot"></span> BLUE TEAM</h3><div id="blueRoster" class="roster"></div><button id="blueBtn" class="mini-btn">このチームに入る</button></div>
+          <div class="versus">VS</div>
+          <div class="team-box orange"><h3><span class="color-dot"></span> ORANGE TEAM</h3><div id="orangeRoster" class="roster"></div><button id="orangeBtn" class="mini-btn">このチームに入る</button></div>
+        </div>
+        <div class="weapon-area"><h3>SELECT WEAPON</h3>
+          <div id="roomWeaponList" class="weapon-list"></div>
+          <button id="roomShopBtn" class="pixel-back">▤ ブキを変更・購入</button>
+        </div>
+        <div class="spra-gear-section"><h3>スペシャルウェポン</h3><div id="specialSelect" class="spra-special-list"></div>
+          <span id="roomModeText" class="spra-mode-description">モード：ナワバリバトル</span>
+          <select id="roomMode" class="spra-mode-select" aria-label="対戦ルール">
+            <option value="turf">ナワバリバトル</option>
+            <option value="ko">KOバトル</option>
+            <option value="training">トレーニング</option>
+          </select>
+        </div>
+        <div class="action-row"><button id="startBtn" class="btn primary">試合開始 <span>▶</span></button><button id="botBtn" class="btn secondary">CPUを追加 ＋</button></div>
+        <p id="hostNote" class="smallnote">ホストが試合を開始するまで待機してください。</p>
+        <button id="roomBackCity" class="pixel-back">◀ 部屋を抜けて街に戻る</button>
+      </section>
+
+      <section id="arenaPanel" class="arena-panel hidden">
+        <div class="game-head">
+          <div class="score blue-score"><b>BLUE</b><strong id="blueScore">0.0%</strong><div class="scorebar"><span id="blueBar"></span></div></div>
+          <div class="clock-box"><small>TIME REMAINING</small><b id="clock">3:00</b></div>
+          <div class="score orange-score"><b>ORANGE</b><strong id="orangeScore">0.0%</strong><div class="scorebar"><span id="orangeBar"></span></div></div>
+        </div>
+        <div id="arenaFrame" class="arena-frame">
+          <canvas id="gameCanvas" width="960" height="600" aria-label="超大型ドット絵バトルフィールド"></canvas>
+          <canvas id="actorCanvas" width="960" height="600" aria-hidden="true"></canvas>
+          <div class="battle-minimap"><div>FULL MAP / 160×100</div><canvas id="miniMap" width="320" height="200" aria-label="塗り状況と位置のミニマップ"></canvas></div>
+          <div id="specialHud" class="spra-special-hud"><span id="specialName">SPECIAL</span>
+            <div class="special-progress"><span id="specialFill"></span></div>
+            <strong id="specialValue">0%</strong>
+            <span class="special-hint">Rで発動 / マップタップでスーパージャンプ</span>
+          </div>
+          <div id="inkHud" class="ink-hud"><div class="ink-hud-title"><span id="inkStatus">INK TANK</span><strong id="inkCounter">300 / 300</strong></div><div class="ink-track"><span id="inkFill"></span></div><div id="inkRecovery" class="ink-recovery">自陣インクに潜ると高速回復！</div></div>
+          <div class="corner-label top-left">SPRA FIELD <span>/ 01</span></div>
+          <div class="corner-label bottom-right">TURF WAR <span>● LIVE</span></div>
+          <div id="mobileControls" class="mobile-controls">
+            <div id="joystick" class="joystick"><div id="thumb" class="thumb"></div></div>
+            <div class="touch-actions">
+              <button id="jumpTouch" class="touch-key">ジャンプ<br>MAP</button>
+              <button id="dodgeTouch" class="touch-key">回避<br>E</button>
+              <button id="specialTouch" class="touch-key spra-special-touch">SP<br>R</button>
+              <button id="swimTouch" class="touch-key">潜る<br>SWIM</button>
+              <button id="bombTouch" class="touch-key">サブ<br>Q</button>
+              <button id="fireTouch" class="touch-key shoot">SHOT</button></div>
+          </div>
+          <div id="result" class="result hidden"><div class="result-card"><span class="eyebrow">BATTLE FINISHED</span><h2 id="resultTitle">RESULT</h2><div id="resultScores"></div><button id="backLobbyBtn" class="btn primary">次の試合へ →</button><button id="leaveToCity" class="btn secondary">街へ戻る</button><p id="resultHint" class="smallnote">ホストが次の部屋を準備できます。</p></div></div>
+        </div>
+        <div class="game-foot"><div class="stats"><span class="stats-name" id="myTeam">BLUE TEAM</span><span>HP <b id="myHp">100</b></span><span>INK <b id="myInk">300</b></span><span>KO <b id="myKo">0</b></span><span>ボム <b id="myBomb">READY</b></span></div><div class="control-hint">WASD 移動 / 左クリック 射撃（アスターガムは長押し→離す） / Shift 潜伏＋HP回復 / Q サブ / E 回避 / R スペシャル / ミニマップでジャンプ</div></div>
+      </section>
+
+    </main>
+  </div>
+  <div id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

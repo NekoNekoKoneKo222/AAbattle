@@ -1,0 +1,18 @@
+{
+  "name": "spra-ink-battle-standalone",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "SPRA 2D ink PvP standalone Tailscale Funnel edition",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/spra-funnel-server.js",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "ws": "^8.18.3"
+  }
+}
