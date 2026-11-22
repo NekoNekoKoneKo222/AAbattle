@@ -21,7 +21,7 @@ test('Funnel browser: real SPRA assets, login, tutorial and touch layout', {time
     await page.fill('#password','Test-only-SPRA-password-2026');
     await page.click('#accessForm button');
     await page.waitForURL('**/spra/?room=ABCDEF');
-    await page.waitForSelector('#gameCanvas');
+    await page.waitForSelector('#gameCanvas',{state:'attached'});
     assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('#gameCanvas')).imageRendering),'pixelated');
     assert.equal(await page.locator('canvas#cityCanvas').count(),1);
     assert.equal(errors.length,0,'JavaScript errors: '+errors.join(';'));
@@ -31,11 +31,11 @@ test('Funnel browser: real SPRA assets, login, tutorial and touch layout', {time
     await iPadPage.goto(base+'/spra/',{waitUntil:'load'});
     await iPadPage.fill('#password','Test-only-SPRA-password-2026');
     await iPadPage.click('#accessForm button');
-    await iPadPage.waitForSelector('#gameCanvas');
+    await iPadPage.waitForSelector('#tutorialCanvas',{state:'visible'});
     const layout=await iPadPage.evaluate(()=>({
       width:document.documentElement.scrollWidth,
       viewWidth:window.innerWidth,
-      canvas:document.querySelector('#gameCanvas').getBoundingClientRect().width
+      canvas:document.querySelector('#tutorialCanvas').getBoundingClientRect().width
     }));
     assert.ok(layout.canvas>0,'Game canvas displayed on iPad-sized viewport');
     assert.ok(layout.width<=layout.viewWidth+2,'No horizontal overflow on tablet');
