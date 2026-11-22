@@ -6,7 +6,23 @@ export function createInkSurface(width, height, walls = []) {
   const pixelWidth = width * INK_SCALE;
   const pixelHeight = height * INK_SCALE;
   const paint = new Uint8Array(pixelWidth * pixelHeight);
-  const changed = new Map();
+  // The paint buffer remains the authoritative color source. A compact typed
+  // FIFO stores each outstanding pixel once, avoiding a Map entry allocation
+  // for every ink subpixel during a crowded 4v4 match.
+  const queued = new Uint8Array(pixelWidth * pixelHeight);
+  const queue = new Int32Array(pixelWidth * pixelHeight);
+  let queueHead = 0, queueTail = 0;
+  function enqueue(index) {
+    if (queued[index]) return;
+    if (queueTail === queue.length) {
+      // Old drained entries may be reclaimed without changing FIFO ordering.
+      queue.copyWithin(0, queueHead, queueTail);
+      queueTail -= queueHead;
+      queueHead = 0;
+    }
+    queued[index] = 1;
+    queue[queueTail++] = index;
+  }
   const counts = [0, 0];
 
   const valid = (x, y) => x >= 1 && y >= 1 && x < width - 1 && y < height - 1 &&
@@ -35,7 +51,7 @@ export function createInkSurface(width, height, walls = []) {
     if (previous) counts[previous - 1]--;
     counts[team]++;
     paint[index] = value;
-    changed.set(index, value);
+    enqueue(index);
   }
   function seedRandom(seed, index) {
     const n = Math.sin(seed * 1.173 + index * 76.91 + 0.43) * 43758.5453;
@@ -163,34 +179,31 @@ export function createInkSurface(width, height, walls = []) {
   }
   // Ordered run lengths compress contiguous same-colour subpixels in network deltas.
   function flush(maxCells = Infinity) {
-    if (!changed.size) return [];
-    // Process a bounded batch at each broadcast. Unsent changes remain queued
-    // rather than causing a multi-megabyte spike during intense CPU battles.
-    const budget=Number.isFinite(maxCells)?Math.max(1,Math.floor(maxCells)):Infinity;
-    const indices=[];
-    for(const index of changed.keys()) {
-      indices.push(index);
-      if(indices.length>=budget)break;
+    if (queueHead === queueTail) return [];
+    // Keep the same FIFO budget and sorted run-length encoding as before.
+    // Unsent pixels stay pending; later repaints simply use paint[index].
+    const budget = Number.isFinite(maxCells) ? Math.max(1, Math.floor(maxCells)) : Infinity;
+    const end = Math.min(queueTail, queueHead + budget);
+    const indices = Array.from(queue.subarray(queueHead, end));
+    for (let i = queueHead; i < end; i++) queued[queue[i]] = 0;
+    queueHead = end;
+    if (queueHead === queueTail) queueHead = queueTail = 0;
+    indices.sort((a, b) => a - b);
+    const runs = [];
+    let start = indices[0], last = start, value = paint[start], length = 1;
+    for (let i = 1; i < indices.length; i++) {
+      const index = indices[i], color = paint[index];
+      if (index === last + 1 && color === value) { last = index; length++; }
+      else { runs.push(start, length, value); start = last = index; value = color; length = 1; }
     }
-    indices.sort((a,b)=>a-b);
-    const runs=[];
-    let start=indices[0],last=start,value=changed.get(start),length=1;
-    for(let i=1;i<indices.length;i++){
-      const index=indices[i],color=changed.get(index);
-      if(index===last+1&&color===value){last=index;length++;}
-      else{
-        runs.push(start,length,value);
-        start=last=index;value=color;length=1;
-      }
-    }
-    runs.push(start,length,value);
-    for(const index of indices)changed.delete(index);
+    runs.push(start, length, value);
     return runs;
   }
   function clear() {
     paint.fill(0);
     counts[0] = counts[1] = 0;
-    changed.clear();
+    queued.fill(0);
+    queueHead = queueTail = 0;
   }
   return {
     width: pixelWidth, height: pixelHeight, paint, counts, paintable,
