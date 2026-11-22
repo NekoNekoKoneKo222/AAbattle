@@ -13,6 +13,9 @@ on:
       - 'test/spra-ipad.test.js'
       - 'test/spra-progression.test.js'
       - 'test/spra-perf.test.js'
+      - 'test/spra-stress.test.js'
+      - 'test/spra-ink-queue.test.js'
+      - 'test/spra-ink-bench.mjs'
       - 'public/spra/**'
       - 'test/spra.test.js'
       - 'src/server.js'
@@ -29,6 +32,9 @@ on:
       - 'test/spra-ipad.test.js'
       - 'test/spra-progression.test.js'
       - 'test/spra-perf.test.js'
+      - 'test/spra-stress.test.js'
+      - 'test/spra-ink-queue.test.js'
+      - 'test/spra-ink-bench.mjs'
       - 'public/spra/**'
       - 'test/spra.test.js'
       - 'src/server.js'
@@ -66,7 +72,12 @@ jobs:
           node --check public/spra/progression.js
           node --check src/server.js
       - name: SPRA PvP tests
-        run: node --test test/spra.test.js test/spra-stress.test.js test/spra-astergum.test.js test/spra-progression.test.js test/spra-perf.test.js
+        run: node --test test/spra.test.js test/spra-stress.test.js test/spra-astergum.test.js test/spra-progression.test.js test/spra-perf.test.js test/spra-ink-queue.test.js
+      - name: Before/after ink performance and pixel equivalence
+        run: |
+          git fetch --depth=1 origin main
+          git show FETCH_HEAD:src/spra-ink.js > "$RUNNER_TEMP/spra-ink-baseline.mjs"
+          node test/spra-ink-bench.mjs "$RUNNER_TEMP/spra-ink-baseline.mjs"
       - name: Install Chromium for visual regression
         run: npx playwright install chromium
       - name: SPRA browser visual regression
