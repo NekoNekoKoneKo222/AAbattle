@@ -47,7 +47,7 @@ function sameOrigin(req) {
 function publicCookie(req) {
   // Production browsers receive a Secure cookie over the Funnel HTTPS URL.
   // Only permit the non-Secure version for an actual localhost development origin.
-  return !localHost(req.headers.host);
+  return !localHost(req.headers.host) || String(req.headers.origin || '').startsWith('https:');
 }
 
 function setSessionCookie(req, res, value, maxAge) {
