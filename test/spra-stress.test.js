@@ -1,11 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
 import { WebSocket } from 'ws';
 import { createSpra } from '../src/spra.js';
 
 test('firing continuously cannot stop PVP state, player rendering data, or CPU movement', { timeout: 18000 }, async () => {
  const game=createSpra();
+ const latency=monitorEventLoopDelay({resolution:20});
+ latency.enable();
+ const startedAt=performance.now();
  const server=createServer();
  server.on('upgrade',(req,socket,head)=>game.upgrade(req,socket,head));
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -43,7 +47,16 @@ test('firing continuously cannot stop PVP state, player rendering data, or CPU m
   assert.ok(moved.length>=3,'at least 3 bots should continue moving while ink spreads, got '+moved.length);
   for(const size of sizes)maxMessage=Math.max(maxMessage,size);
   assert.ok(maxMessage<800000,'messages should not exceed 800KB: '+maxMessage);
+  console.log('[SPRA 7-CPU REALTIME PROFILE]',JSON.stringify({
+    elapsedMs:+(performance.now()-startedAt).toFixed(1),
+    snapshots:states.length,movedBots:moved.length,
+    loopP99Ms:+(latency.percentile(99)/1e6).toFixed(2),
+    loopMaxMs:+(latency.max/1e6).toFixed(2),
+    maxWebSocketBytes:maxMessage,
+    averageWebSocketBytes:Math.round(sizes.reduce((sum,n)=>sum+n,0)/Math.max(1,sizes.length))
+  }));
  }finally{
+   latency.disable();
    ws.close();
    game.close();
    await new Promise(resolve=>server.close(resolve));
