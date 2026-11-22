@@ -145,7 +145,11 @@ export function createSpraFunnelServer({ password = process.env.SPRA_FRIEND_PASS
   app.post('/spra/logout', (req, res) => {
     if (!sameOrigin(req)) return res.status(403).end();
     const token = getCookie(req);
-    if (token) sessions.delete(digest(token));
+    if (token) {
+      const key = digest(token);
+      sessions.delete(key);
+      for (const socket of socketsBySession.get(key) || []) socket.destroy();
+    }
     setSessionCookie(req, res, '', 0);
     res.json({ ok: true });
   });
@@ -182,15 +186,19 @@ export function createSpraFunnelServer({ password = process.env.SPRA_FRIEND_PASS
     if (req.url !== '/spra/ws' || !sameOrigin(req)) return fail('403 Forbidden');
     const key = isAuthed(req);
     if (!key) return fail('401 Unauthorized');
-    const used = socketsBySession.get(key) || 0;
-    if (activeWs >= MAX_WS || used >= MAX_WS_PER_SESSION) return fail('429 Too Many Requests');
+    const used = socketsBySession.get(key) || new Set();
+    if (activeWs >= MAX_WS || used.size >= MAX_WS_PER_SESSION) return fail('429 Too Many Requests');
     activeWs++;
-    socketsBySession.set(key, used + 1);
+    used.add(socket);
+    socketsBySession.set(key, used);
+    const expiresIn = Math.max(1, sessions.get(key) - Date.now());
+    const expiryTimer = setTimeout(() => socket.destroy(), expiresIn);
+    expiryTimer.unref?.();
     socket.once('close', () => {
+      clearTimeout(expiryTimer);
       activeWs = Math.max(0, activeWs - 1);
-      const remaining = (socketsBySession.get(key) || 1) - 1;
-      if (remaining > 0) socketsBySession.set(key, remaining);
-      else socketsBySession.delete(key);
+      used.delete(socket);
+      if (!used.size) socketsBySession.delete(key);
     });
     try { spra.upgrade(req, socket, head); }
     catch { socket.destroy(); }
