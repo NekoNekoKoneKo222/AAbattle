@@ -1,0 +1,95 @@
+name: SPRA standalone game ZIP
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/spra*.js'
+      - 'public/spra/**'
+      - 'public/fonts/**'
+      - 'scripts/build-spra-standalone.mjs'
+      - 'scripts/spra-funnel.ps1'
+      - 'test/spra-standalone.test.mjs'
+      - 'SPRA_STANDALONE_README.md'
+      - 'START_SPRA_FUNNEL.bat'
+      - 'STOP_SPRA_FUNNEL.bat'
+      - '.github/workflows/spra-standalone.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/spra*.js'
+      - 'public/spra/**'
+      - 'public/fonts/**'
+      - 'scripts/build-spra-standalone.mjs'
+      - 'scripts/spra-funnel.ps1'
+      - 'test/spra-standalone.test.mjs'
+      - 'SPRA_STANDALONE_README.md'
+      - 'START_SPRA_FUNNEL.bat'
+      - 'STOP_SPRA_FUNNEL.bat'
+      - '.github/workflows/spra-standalone.yml'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Assemble only SPRA game
+        run: node scripts/build-spra-standalone.mjs
+      - name: Generate standalone dependency lockfile
+        working-directory: dist/SPRA_INK_BATTLE
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Install minimal production dependencies
+        working-directory: dist/SPRA_INK_BATTLE
+        run: npm ci --omit=dev --ignore-scripts --no-fund
+      - name: Standalone server and CSS security smoke tests
+        working-directory: dist/SPRA_INK_BATTLE
+        run: npm test
+      - name: Check standalone dependency vulnerabilities
+        working-directory: dist/SPRA_INK_BATTLE
+        run: npm audit --omit=dev --audit-level=moderate
+      - name: Remove installed dependencies from distribution
+        run: rm -rf dist/SPRA_INK_BATTLE/node_modules
+      - name: Package complete standalone SPRA-only ZIP
+        run: |
+          cd dist
+          zip -q -r SPRA_INK_BATTLE_2D_ONLY.zip SPRA_INK_BATTLE
+          unzip -l SPRA_INK_BATTLE_2D_ONLY.zip | head -40
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SPRA_INK_BATTLE_2D_ONLY
+          path: dist/SPRA_INK_BATTLE_2D_ONLY.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-standalone-branch:
+    needs: build-and-test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: SPRA_INK_BATTLE_2D_ONLY
+      - name: Extract tested archive and publish standalone branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          unzip -q SPRA_INK_BATTLE_2D_ONLY.zip
+          cd SPRA_INK_BATTLE
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -qb spra-only
+          git add .
+          git commit -qm "Distribute SPRA INK BATTLE standalone"
+          git remote add origin "https://x-access-token:$GITHUB_TOKEN@github.com/$GITHUB_REPOSITORY.git"
+          git push --force origin HEAD:refs/heads/spra-only
